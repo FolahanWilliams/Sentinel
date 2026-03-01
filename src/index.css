@@ -51,7 +51,14 @@
   --color-sentinel-800: #1e1e32;
   --color-sentinel-900: #12121a;
   --color-sentinel-950: #0a0a0f;
+}
 
+/*
+ * Custom design tokens that must NOT live inside @theme because
+ * Tailwind v4 treats --spacing-*, --radius-*, and --shadow-* as
+ * reserved namespaces and will override its built-in scales.
+ */
+:root {
   /* Spacing scale */
   --spacing-xs: 0.25rem;
   --spacing-sm: 0.5rem;
