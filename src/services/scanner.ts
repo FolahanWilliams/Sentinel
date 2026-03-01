@@ -60,8 +60,9 @@ export class ScannerService {
             const outcome = outcomeMap.get(s.id);
             if (!outcome) continue;
             if (!tickerWinRates[s.ticker]) tickerWinRates[s.ticker] = { wins: 0, total: 0 };
-            tickerWinRates[s.ticker].total++;
-            if (outcome === 'win') tickerWinRates[s.ticker].wins++;
+            const wr = tickerWinRates[s.ticker]!;
+            wr.total++;
+            if (outcome === 'win') wr.wins++;
         }
 
         // Count RSS mentions (articles in cache)
