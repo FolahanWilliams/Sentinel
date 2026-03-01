@@ -32,12 +32,13 @@ export function Sparkline({
         return `${x},${y}`;
     });
 
-    const last = data[data.length - 1];
+    const last = data[data.length - 1]!;
+    const first = data[0]!;
     const lastX = padding + ((data.length - 1) / (data.length - 1)) * (width - padding * 2);
     const lastY = padding + (1 - (last - min) / range) * (height - padding * 2);
 
     // Auto-detect color: green if trending up, red if down
-    const autoColor = data[data.length - 1] >= data[0] ? '#22C55E' : '#EF4444';
+    const autoColor = last >= first ? '#22C55E' : '#EF4444';
     const lineColor = color === 'auto' ? autoColor : color;
 
     return (

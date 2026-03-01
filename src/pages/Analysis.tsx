@@ -57,8 +57,9 @@ export function Analysis() {
                     if (eventsData) {
                         const grouped: Record<string, any[]> = {};
                         for (const ev of eventsData) {
-                            if (!grouped[ev.ticker]) grouped[ev.ticker] = [];
-                            grouped[ev.ticker].push(ev);
+                            const t = ev.ticker;
+                            if (!grouped[t]) grouped[t] = [];
+                            grouped[t]!.push(ev);
                         }
                         setEvents(grouped);
                     }
