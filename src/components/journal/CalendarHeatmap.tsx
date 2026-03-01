@@ -32,7 +32,7 @@ function getColor(count: number, selected: boolean): string {
 }
 
 function toDateStr(d: Date): string {
-    return d.toISOString().split('T')[0];
+    return d.toISOString().split('T')[0] as string;
 }
 
 export function CalendarHeatmap({ entryCounts, onDayClick, selectedDate }: CalendarHeatmapProps) {
@@ -60,11 +60,11 @@ export function CalendarHeatmap({ entryCounts, onDayClick, selectedDate }: Calen
         const cursor = new Date(start);
         for (let week = 0; week < WEEKS; week++) {
             for (let day = 0; day < DAYS_IN_WEEK; day++) {
-                const dateStr = toDateStr(cursor);
+                const dateStr: string = toDateStr(cursor);
                 const month = cursor.getMonth();
 
                 if (month !== lastMonth && day === 0) {
-                    monthPos.push({ label: MONTH_LABELS[month], x: week * (CELL_SIZE + GAP) + 20 });
+                    monthPos.push({ label: MONTH_LABELS[month]!, x: week * (CELL_SIZE + GAP) + 20 });
                     lastMonth = month;
                 }
 
