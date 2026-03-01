@@ -75,8 +75,7 @@ export class PerformanceStats {
             else results[bias].losses++;
         }
 
-        for (const key of Object.keys(results)) {
-            const r = results[key];
+        for (const [, r] of Object.entries(results)) {
             r.winRate = r.total > 0 ? Math.round((r.wins / r.total) * 100) : 0;
         }
 
@@ -167,15 +166,17 @@ export class PerformanceStats {
 
             const bucketIdx = Math.min(9, Math.floor(signal.confidence_score / 10));
             const key = `${bucketIdx * 10}-${(bucketIdx + 1) * 10}`;
-            buckets[key].total++;
-            if (outcome === 'win') buckets[key].wins++;
+            const bucket = buckets[key];
+            if (!bucket) continue;
+            bucket.total++;
+            if (outcome === 'win') bucket.wins++;
         }
 
         return Object.entries(buckets)
             .filter(([, v]) => v.total > 0)
             .map(([range, v]) => ({
                 range,
-                predicted: parseInt(range.split('-')[0]) + 5,
+                predicted: parseInt(range.split('-')[0] ?? '0') + 5,
                 actual: Math.round((v.wins / v.total) * 100),
                 count: v.total,
             }));
@@ -227,7 +228,9 @@ export class PerformanceStats {
         return Object.entries(patterns)
             .filter(([, v]) => v.total >= 2)
             .map(([key, v]) => {
-                const [bias, sector] = key.split('|');
+                const parts = key.split('|');
+                const bias = parts[0] ?? 'unknown';
+                const sector = parts[1] ?? 'Unknown';
                 const avgReturn = v.returns.length > 0
                     ? v.returns.reduce((a, b) => a + b, 0) / v.returns.length
                     : 0;
