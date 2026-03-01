@@ -13,12 +13,14 @@ import {
     FlaskConical,
     Settings,
     BookOpen,
+    Newspaper,
     ChevronLeft,
     ChevronRight,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
     { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
+    { to: '/intelligence', icon: Newspaper, label: 'Intelligence' },
     { to: '/watchlist', icon: List, label: 'Watchlist' },
     { to: '/scanner', icon: Radar, label: 'Scanner' },
     { to: '/backtest', icon: FlaskConical, label: 'Backtest' },

@@ -16,6 +16,7 @@ import { Backtest } from '@/pages/Backtest';
 import { Scanner } from '@/pages/Scanner';
 import { Settings } from '@/pages/Settings';
 import { Journal } from '@/pages/Journal';
+import { Intelligence } from '@/pages/Intelligence';
 import { env } from '@/config/env';
 
 export default function App() {
@@ -38,6 +39,7 @@ export default function App() {
                     <Route path="/watchlist" element={<Watchlist />} />
                     <Route path="/backtest" element={<Backtest />} />
                     <Route path="/scanner" element={<Scanner />} />
+                    <Route path="/intelligence" element={<Intelligence />} />
                     <Route path="/settings" element={<Settings />} />
                     <Route path="/journal" element={<Journal />} />
                 </Route>
