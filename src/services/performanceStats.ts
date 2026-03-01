@@ -125,8 +125,7 @@ export class PerformanceStats {
             else results[sector].losses++;
         }
 
-        for (const key of Object.keys(results)) {
-            const r = results[key];
+        for (const [, r] of Object.entries(results)) {
             r.winRate = r.total > 0 ? Math.round((r.wins / r.total) * 100) : 0;
         }
 
@@ -324,18 +323,22 @@ export class PerformanceStats {
                 .sort((a, b) => (b.return_at_30d ?? 0) - (a.return_at_30d ?? 0));
 
             if (sorted.length > 0) {
-                const bestSig = signalMap.get(sorted[0].signal_id);
-                const worstSig = signalMap.get(sorted[sorted.length - 1].signal_id);
-                if (bestSig) bestSignal = { ticker: bestSig.ticker, returnPct: sorted[0].return_at_30d ?? 0 };
-                if (worstSig) worstSignal = { ticker: worstSig.ticker, returnPct: sorted[sorted.length - 1].return_at_30d ?? 0 };
+                const bestItem = sorted[0]!;
+                const worstItem = sorted[sorted.length - 1]!;
+                const bestSig = signalMap.get(bestItem.signal_id);
+                const worstSig = signalMap.get(worstItem.signal_id);
+                if (bestSig) bestSignal = { ticker: bestSig.ticker, returnPct: bestItem.return_at_30d ?? 0 };
+                if (worstSig) worstSignal = { ticker: worstSig.ticker, returnPct: worstItem.return_at_30d ?? 0 };
             }
         }
 
         const biasRates = await this.getWinRateByBias();
         const biasEntries = Object.entries(biasRates).filter(([, v]) => v.total >= 2);
         const sortedBias = [...biasEntries].sort((a, b) => b[1].winRate - a[1].winRate);
-        const topBias = sortedBias.length > 0 ? { bias: sortedBias[0][0], winRate: sortedBias[0][1].winRate } : null;
-        const worstBias = sortedBias.length > 0 ? { bias: sortedBias[sortedBias.length - 1][0], winRate: sortedBias[sortedBias.length - 1][1].winRate } : null;
+        const topEntry = sortedBias[0];
+        const worstEntry = sortedBias[sortedBias.length - 1];
+        const topBias = topEntry ? { bias: topEntry[0], winRate: topEntry[1].winRate } : null;
+        const worstBias = worstEntry ? { bias: worstEntry[0], winRate: worstEntry[1].winRate } : null;
 
         const suggestions: string[] = [];
         if (winRate < 50 && resolved.length >= 5) {

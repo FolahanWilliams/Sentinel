@@ -25,7 +25,7 @@ export function estimateCost(
     outputTokens: number,
     grounded: boolean,
 ): number {
-    const rates = PRICING[provider] || PRICING['gemini-3-flash'];
+    const rates = PRICING[provider] ?? PRICING['gemini-3-flash']!;
     const inputCost = (inputTokens / 1_000_000) * rates.inputPer1M;
     const outputCost = (outputTokens / 1_000_000) * (grounded ? rates.groundedPer1M : rates.outputPer1M);
     return inputCost + outputCost;
