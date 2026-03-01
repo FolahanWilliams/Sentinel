@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/config/supabase';
 import { formatPrice, formatPercent } from '@/utils/formatters';
 import { PortfolioOverview } from '@/components/dashboard/PortfolioOverview';
+import { WeeklyDigest } from '@/components/dashboard/WeeklyDigest';
 
 export function Dashboard() {
     const stats = useDashboardStats();
@@ -161,6 +162,9 @@ export function Dashboard() {
 
                     {/* PORTFOLIO OVERVIEW */}
                     <PortfolioOverview />
+
+                    {/* WEEKLY DIGEST */}
+                    <WeeklyDigest />
 
                     {/* QUICK WATCHLIST (Live) */}
                     <div className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 p-5 backdrop-blur-sm">

@@ -15,8 +15,84 @@ import { MarketDataService } from './marketData';
 import { AgentService } from './agents';
 import { NotificationService } from './notifications';
 import { RSSReaderService } from './rssReader';
+import { isBudgetExceeded } from '@/utils/costEstimator';
 
 export class ScannerService {
+
+    /**
+     * Smart Scan Prioritization — rank tickers by urgency.
+     * Higher priority = more recent events + higher win rate + more RSS mentions.
+     */
+    static async prioritizeTickers(tickers: { ticker: string; sector: string }[]): Promise<{ ticker: string; sector: string; priority: number }[]> {
+        const tickerNames = tickers.map(t => t.ticker);
+
+        // Count recent events per ticker (last 24h)
+        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const { data: recentEvents } = await supabase
+            .from('market_events')
+            .select('ticker')
+            .in('ticker', tickerNames)
+            .gte('created_at', oneDayAgo);
+
+        const eventCounts: Record<string, number> = {};
+        for (const ev of recentEvents || []) {
+            eventCounts[ev.ticker] = (eventCounts[ev.ticker] || 0) + 1;
+        }
+
+        // Win rate per ticker from outcomes
+        const { data: signals } = await supabase
+            .from('signals')
+            .select('id, ticker')
+            .in('ticker', tickerNames);
+
+        const signalIds = (signals || []).map(s => s.id);
+        const { data: outcomes } = signalIds.length > 0
+            ? await supabase
+                .from('signal_outcomes')
+                .select('signal_id, outcome')
+                .in('signal_id', signalIds)
+                .neq('outcome', 'pending')
+            : { data: [] };
+
+        const tickerWinRates: Record<string, { wins: number; total: number }> = {};
+        const outcomeMap = new Map((outcomes || []).map(o => [o.signal_id, o.outcome]));
+        for (const s of signals || []) {
+            const outcome = outcomeMap.get(s.id);
+            if (!outcome) continue;
+            if (!tickerWinRates[s.ticker]) tickerWinRates[s.ticker] = { wins: 0, total: 0 };
+            tickerWinRates[s.ticker].total++;
+            if (outcome === 'win') tickerWinRates[s.ticker].wins++;
+        }
+
+        // Count RSS mentions (articles in cache)
+        const { data: rssMentions } = await supabase
+            .from('rss_cache')
+            .select('title')
+            .gte('fetched_at', oneDayAgo)
+            .limit(200);
+
+        const rssCounts: Record<string, number> = {};
+        for (const article of rssMentions || []) {
+            const titleLower = (article.title || '').toLowerCase();
+            for (const t of tickerNames) {
+                if (titleLower.includes(t.toLowerCase())) {
+                    rssCounts[t] = (rssCounts[t] || 0) + 1;
+                }
+            }
+        }
+
+        // Score each ticker
+        return tickers.map(t => {
+            const events = eventCounts[t.ticker] || 0;
+            const rss = rssCounts[t.ticker] || 0;
+            const wr = tickerWinRates[t.ticker];
+            const winRateBonus = wr ? (wr.wins / wr.total) * 20 : 0;
+
+            const priority = (events * 30) + (rss * 10) + winRateBonus + 10; // base 10 so everyone gets scanned
+
+            return { ...t, priority: Math.round(priority) };
+        }).sort((a, b) => b.priority - a.priority);
+    }
 
     /**
      * Run the master scan.
@@ -57,7 +133,27 @@ export class ScannerService {
                 throw new Error('Watchlist is empty. Add tickers first.');
             }
 
-            const tickers = watchlist.map(w => w.ticker);
+            // Budget gate — skip scan if daily budget exhausted
+            const overBudget = await isBudgetExceeded();
+            if (overBudget) {
+                console.warn('[Scanner] Daily API budget exceeded. Skipping scan.');
+                if (scanLog) {
+                    await supabase.from('scan_logs').update({
+                        status: 'completed',
+                        error_message: 'Skipped: daily budget exceeded',
+                        duration_ms: Date.now() - startTime,
+                    } as any).eq('id', scanLog.id);
+                }
+                return { success: true, summary: 'Scan skipped: daily budget exceeded.' };
+            }
+
+            // Smart Scan Prioritization — rank tickers by urgency
+            const prioritized = await this.prioritizeTickers(watchlist);
+            const maxTickers = scanType === 'fast' ? Math.min(5, prioritized.length) : prioritized.length;
+            const tickersToScan = prioritized.slice(0, maxTickers);
+            const tickers = tickersToScan.map(w => w.ticker);
+
+            console.log(`[Scanner] Prioritized ${tickers.length} tickers:`, tickersToScan.map(t => `${t.ticker}(${t.priority})`).join(', '));
 
             // 3. Sync RSS Feeds (Feed the beast)
             await RSSReaderService.syncAllFeeds();
