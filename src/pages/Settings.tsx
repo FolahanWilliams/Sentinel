@@ -6,15 +6,18 @@ export function Settings() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [settings, setSettings] = useState<any>({
-        max_daily_loss: 0,
-        max_position_size_pct: 0,
-        base_capital: 0,
-        kelly_fraction: 0
+        total_capital: 10000,
+        max_position_pct: 10,
+        max_total_exposure_pct: 50,
+        max_sector_exposure_pct: 25,
+        max_concurrent_positions: 5,
+        risk_per_trade_pct: 2,
+        kelly_fraction: 0.25,
     });
 
     useEffect(() => {
         async function fetchConfig() {
-            const { data } = await supabase.from('portfolio_config').select('*').single();
+            const { data } = await supabase.from('portfolio_config').select('*').limit(1).single();
             if (data) setSettings(data);
             setLoading(false);
         }
@@ -24,14 +27,31 @@ export function Settings() {
     async function handleSave(e: React.FormEvent) {
         e.preventDefault();
         setSaving(true);
-        await supabase.from('portfolio_config').update({
-            max_daily_loss: settings.max_daily_loss,
-            max_position_size_pct: settings.max_position_size_pct,
-            base_capital: settings.base_capital,
-            kelly_fraction: settings.kelly_fraction,
-        }).eq('id', settings.id);
 
-        // Quick save simulation for UX
+        if (settings.id) {
+            // Update existing
+            await supabase.from('portfolio_config').update({
+                total_capital: settings.total_capital,
+                max_position_pct: settings.max_position_pct,
+                max_total_exposure_pct: settings.max_total_exposure_pct,
+                max_sector_exposure_pct: settings.max_sector_exposure_pct,
+                max_concurrent_positions: settings.max_concurrent_positions,
+                risk_per_trade_pct: settings.risk_per_trade_pct,
+                kelly_fraction: settings.kelly_fraction,
+            }).eq('id', settings.id);
+        } else {
+            // Insert first config row
+            await supabase.from('portfolio_config').insert({
+                total_capital: settings.total_capital,
+                max_position_pct: settings.max_position_pct,
+                max_total_exposure_pct: settings.max_total_exposure_pct,
+                max_sector_exposure_pct: settings.max_sector_exposure_pct,
+                max_concurrent_positions: settings.max_concurrent_positions,
+                risk_per_trade_pct: settings.risk_per_trade_pct,
+                kelly_fraction: settings.kelly_fraction,
+            });
+        }
+
         setTimeout(() => setSaving(false), 500);
     }
 
@@ -57,21 +77,34 @@ export function Settings() {
                             </h2>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
+                                    <label className="block text-xs text-sentinel-400 mb-1">Total Capital ($)</label>
+                                    <input type="number" step="100" value={settings.total_capital} onChange={e => setSettings({ ...settings, total_capital: parseFloat(e.target.value) })} className="w-full bg-sentinel-950 border border-sentinel-700 rounded-lg px-3 py-2 text-sentinel-100" />
+                                </div>
+                                <div>
                                     <label className="block text-xs text-sentinel-400 mb-1">Max Position Size (%)</label>
-                                    <input type="number" step="0.1" value={settings.max_position_size_pct} onChange={e => setSettings({ ...settings, max_position_size_pct: parseFloat(e.target.value) })} className="w-full bg-sentinel-950 border border-sentinel-700 rounded-lg px-3 py-2 text-sentinel-100" />
+                                    <input type="number" step="0.5" value={settings.max_position_pct} onChange={e => setSettings({ ...settings, max_position_pct: parseFloat(e.target.value) })} className="w-full bg-sentinel-950 border border-sentinel-700 rounded-lg px-3 py-2 text-sentinel-100" />
                                 </div>
                                 <div>
-                                    <label className="block text-xs text-sentinel-400 mb-1">Kelly Fraction Adjuster</label>
-                                    <input type="number" step="0.1" value={settings.kelly_fraction} onChange={e => setSettings({ ...settings, kelly_fraction: parseFloat(e.target.value) })} className="w-full bg-sentinel-950 border border-sentinel-700 rounded-lg px-3 py-2 text-sentinel-100" />
-                                    <p className="text-[10px] text-sentinel-500 mt-1">1.0 = Full Kelly, 0.5 = Half Kelly (Recommended)</p>
+                                    <label className="block text-xs text-sentinel-400 mb-1">Max Total Exposure (%)</label>
+                                    <input type="number" step="1" value={settings.max_total_exposure_pct} onChange={e => setSettings({ ...settings, max_total_exposure_pct: parseFloat(e.target.value) })} className="w-full bg-sentinel-950 border border-sentinel-700 rounded-lg px-3 py-2 text-sentinel-100" />
                                 </div>
                                 <div>
-                                    <label className="block text-xs text-sentinel-400 mb-1">Max Daily Loss Limit ($)</label>
-                                    <input type="number" value={settings.max_daily_loss} onChange={e => setSettings({ ...settings, max_daily_loss: parseFloat(e.target.value) })} className="w-full bg-sentinel-950 border border-sentinel-700 rounded-lg px-3 py-2 text-sentinel-100" />
+                                    <label className="block text-xs text-sentinel-400 mb-1">Max Sector Exposure (%)</label>
+                                    <input type="number" step="1" value={settings.max_sector_exposure_pct} onChange={e => setSettings({ ...settings, max_sector_exposure_pct: parseFloat(e.target.value) })} className="w-full bg-sentinel-950 border border-sentinel-700 rounded-lg px-3 py-2 text-sentinel-100" />
                                 </div>
                                 <div>
-                                    <label className="block text-xs text-sentinel-400 mb-1">Simulated Base Capital ($)</label>
-                                    <input type="number" value={settings.base_capital} onChange={e => setSettings({ ...settings, base_capital: parseFloat(e.target.value) })} className="w-full bg-sentinel-950 border border-sentinel-700 rounded-lg px-3 py-2 text-sentinel-100" />
+                                    <label className="block text-xs text-sentinel-400 mb-1">Max Concurrent Positions</label>
+                                    <input type="number" step="1" value={settings.max_concurrent_positions} onChange={e => setSettings({ ...settings, max_concurrent_positions: parseInt(e.target.value) })} className="w-full bg-sentinel-950 border border-sentinel-700 rounded-lg px-3 py-2 text-sentinel-100" />
+                                </div>
+                                <div>
+                                    <label className="block text-xs text-sentinel-400 mb-1">Risk Per Trade (%)</label>
+                                    <input type="number" step="0.1" value={settings.risk_per_trade_pct} onChange={e => setSettings({ ...settings, risk_per_trade_pct: parseFloat(e.target.value) })} className="w-full bg-sentinel-950 border border-sentinel-700 rounded-lg px-3 py-2 text-sentinel-100" />
+                                    <p className="text-[10px] text-sentinel-500 mt-1">% of capital risked per trade</p>
+                                </div>
+                                <div>
+                                    <label className="block text-xs text-sentinel-400 mb-1">Kelly Fraction</label>
+                                    <input type="number" step="0.05" value={settings.kelly_fraction} onChange={e => setSettings({ ...settings, kelly_fraction: parseFloat(e.target.value) })} className="w-full bg-sentinel-950 border border-sentinel-700 rounded-lg px-3 py-2 text-sentinel-100" />
+                                    <p className="text-[10px] text-sentinel-500 mt-1">1.0 = Full Kelly, 0.25 = Quarter Kelly (Recommended)</p>
                                 </div>
                             </div>
                         </div>
@@ -94,7 +127,7 @@ export function Settings() {
                         <div className="space-y-3">
                             <div className="flex justify-between text-sm">
                                 <span className="text-sentinel-400">Gemini Model</span>
-                                <span className="text-sentinel-100">gemini-3-flash</span>
+                                <span className="text-sentinel-100">gemini-2.0-flash</span>
                             </div>
                             <div className="flex justify-between text-sm">
                                 <span className="text-sentinel-400">Grounded Search</span>
@@ -114,7 +147,7 @@ export function Settings() {
                         <div className="space-y-3">
                             <div className="flex justify-between text-sm">
                                 <span className="text-sentinel-400">Market Data</span>
-                                <span className="text-sentinel-100">Alpha Vantage / Polygon</span>
+                                <span className="text-sentinel-100">Alpha Vantage</span>
                             </div>
                             <div className="flex justify-between text-sm">
                                 <span className="text-sentinel-400">Email Alerts</span>
