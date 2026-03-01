@@ -1,10 +1,27 @@
-import { useState, useEffect } from 'react';
+/**
+ * Journal — Enhanced trade journal with calendar heatmap, tag/mood filters,
+ * search, markdown export, and improved entry form.
+ */
+
+import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/config/supabase';
-import { BookOpen, Plus, Search, Calendar, MessageSquareQuote } from 'lucide-react';
+import { BookOpen, Plus, Search, Download, X, Tag } from 'lucide-react';
+import { CalendarHeatmap } from '@/components/journal/CalendarHeatmap';
+
+const MOODS = ['😡', '😐', '😊', '🔥'] as const;
+const MOOD_LABELS: Record<string, string> = { '😡': 'Frustrated', '😐': 'Neutral', '😊': 'Confident', '🔥': 'On Fire' };
+const ENTRY_TYPES = ['thesis', 'learning', 'mistake', 'general'] as const;
 
 export function Journal() {
     const [entries, setEntries] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+
+    // Filters
+    const [searchQuery, setSearchQuery] = useState('');
+    const [selectedType, setSelectedType] = useState<string | null>(null);
+    const [selectedMood, setSelectedMood] = useState<string | null>(null);
+    const [selectedTag, setSelectedTag] = useState<string | null>(null);
+    const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
     // Form State
     const [showForm, setShowForm] = useState(false);
@@ -13,6 +30,9 @@ export function Journal() {
     const [entryPrice, setEntryPrice] = useState('');
     const [exitPrice, setExitPrice] = useState('');
     const [notes, setNotes] = useState('');
+    const [mood, setMood] = useState('😐');
+    const [tagInput, setTagInput] = useState('');
+    const [tags, setTags] = useState<string[]>([]);
 
     useEffect(() => {
         fetchEntries();
@@ -22,14 +42,8 @@ export function Journal() {
         setLoading(true);
         const { data, error } = await supabase
             .from('journal_entries')
-            .select(`
-           *,
-           signals (
-              id,
-              signal_type
-           )
-        `)
-            .order('entry_date', { ascending: false });
+            .select('*')
+            .order('created_at', { ascending: false });
 
         if (!error && data) {
             setEntries(data);
@@ -37,45 +51,167 @@ export function Journal() {
         setLoading(false);
     }
 
+    // Calendar heatmap data
+    const entryCounts = useMemo(() => {
+        const counts: Record<string, number> = {};
+        entries.forEach(e => {
+            const date = (e.created_at || '').split('T')[0];
+            if (date) counts[date] = (counts[date] || 0) + 1;
+        });
+        return counts;
+    }, [entries]);
+
+    // All unique tags across entries
+    const allTags = useMemo(() => {
+        const tagSet = new Set<string>();
+        entries.forEach(e => {
+            (e.tags || []).forEach((t: string) => tagSet.add(t));
+        });
+        return Array.from(tagSet).sort();
+    }, [entries]);
+
+    // Filtered entries
+    const filteredEntries = useMemo(() => {
+        let result = [...entries];
+
+        // Date filter (from heatmap click)
+        if (selectedDate) {
+            result = result.filter(e => (e.created_at || '').startsWith(selectedDate));
+        }
+
+        // Type filter
+        if (selectedType) {
+            result = result.filter(e => e.entry_type === selectedType);
+        }
+
+        // Mood filter
+        if (selectedMood) {
+            result = result.filter(e => e.mood === selectedMood);
+        }
+
+        // Tag filter
+        if (selectedTag) {
+            result = result.filter(e => (e.tags || []).includes(selectedTag));
+        }
+
+        // Search
+        if (searchQuery.trim()) {
+            const q = searchQuery.toLowerCase();
+            result = result.filter(e =>
+                (e.content || '').toLowerCase().includes(q) ||
+                (e.ticker || '').toLowerCase().includes(q) ||
+                (e.tags || []).some((t: string) => t.toLowerCase().includes(q))
+            );
+        }
+
+        return result;
+    }, [entries, selectedDate, selectedType, selectedMood, selectedTag, searchQuery]);
+
+    function addTag() {
+        const t = tagInput.trim().toLowerCase();
+        if (t && !tags.includes(t)) {
+            setTags([...tags, t]);
+        }
+        setTagInput('');
+    }
+
+    function removeTag(t: string) {
+        setTags(tags.filter(tag => tag !== t));
+    }
+
     async function handleSave(e: React.FormEvent) {
         e.preventDefault();
 
+        const allTags = [direction, ...tags];
+
         const { error } = await supabase.from('journal_entries').insert({
-            ticker: ticker.toUpperCase(),
+            ticker: ticker.toUpperCase() || null,
             entry_type: direction,
             content: `Entry: $${entryPrice} | Exit: ${exitPrice ? '$' + exitPrice : 'OPEN'}\n\n${notes}`,
-            tags: [status, direction],
-            mood: 'neutral'
+            tags: allTags,
+            mood,
         } as any);
 
         if (!error) {
             setShowForm(false);
             setTicker(''); setEntryPrice(''); setExitPrice(''); setNotes('');
+            setMood('😐'); setTags([]); setTagInput('');
             fetchEntries();
         } else {
             alert("Failed to save entry: " + error.message);
         }
     }
 
+    function exportMarkdown() {
+        const lines = [
+            `# Trade Journal Export`,
+            `> Exported at ${new Date().toLocaleString()}`,
+            `> ${filteredEntries.length} entries`,
+            '',
+        ];
+
+        filteredEntries.forEach(entry => {
+            const date = new Date(entry.created_at).toLocaleDateString();
+            lines.push(`## ${entry.ticker || 'General'} — ${date}`);
+            lines.push(`**Type:** ${entry.entry_type || 'unknown'} | **Mood:** ${entry.mood || 'N/A'}`);
+            if (entry.tags?.length) lines.push(`**Tags:** ${entry.tags.join(', ')}`);
+            lines.push('');
+            lines.push(entry.content || '');
+            lines.push('');
+            lines.push('---');
+            lines.push('');
+        });
+
+        const blob = new Blob([lines.join('\n')], { type: 'text/markdown' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `journal-export-${new Date().toISOString().split('T')[0]}.md`;
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    const activeFilters = [selectedType, selectedMood, selectedTag, selectedDate].filter(Boolean).length;
+
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
+            {/* HEADER */}
             <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
                 <div>
                     <h1 className="text-3xl font-bold font-display tracking-tight text-sentinel-100 flex items-center gap-3">
                         <BookOpen className="w-8 h-8 text-blue-400" /> Trade Journal
                     </h1>
                     <p className="text-sentinel-400 mt-1">
-                        Log your actual executions against Sentinel's signals.
+                        Log your executions, review biases, and track growth.
                     </p>
                 </div>
-                <button
-                    onClick={() => setShowForm(!showForm)}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
-                >
-                    <Plus className="w-4 h-4" /> {showForm ? 'Cancel' : 'New Entry'}
-                </button>
+                <div className="flex gap-2">
+                    <button
+                        onClick={exportMarkdown}
+                        className="px-3 py-2 bg-sentinel-800 hover:bg-sentinel-700 text-sentinel-300 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ring-1 ring-sentinel-700"
+                    >
+                        <Download className="w-4 h-4" /> Export
+                    </button>
+                    <button
+                        onClick={() => setShowForm(!showForm)}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                    >
+                        <Plus className="w-4 h-4" /> {showForm ? 'Cancel' : 'New Entry'}
+                    </button>
+                </div>
             </div>
 
+            {/* CALENDAR HEATMAP */}
+            <div className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 p-4 backdrop-blur-sm">
+                <h3 className="text-xs font-semibold text-sentinel-400 uppercase tracking-wider mb-3">Activity — Last 12 Months</h3>
+                <CalendarHeatmap
+                    entryCounts={entryCounts}
+                    onDayClick={setSelectedDate}
+                    selectedDate={selectedDate}
+                />
+            </div>
+
+            {/* ENTRY FORM */}
             {showForm && (
                 <form onSubmit={handleSave} className="bg-sentinel-900/80 rounded-xl border border-sentinel-700 p-6 space-y-4">
                     <h2 className="text-lg font-semibold text-sentinel-200 border-b border-sentinel-800 pb-2">Log Execution</h2>
@@ -102,6 +238,48 @@ export function Journal() {
                         </div>
                     </div>
 
+                    {/* Mood Selector */}
+                    <div>
+                        <label className="block text-xs text-sentinel-400 mb-2">Mood</label>
+                        <div className="flex gap-2">
+                            {MOODS.map(m => (
+                                <button
+                                    key={m}
+                                    type="button"
+                                    onClick={() => setMood(m)}
+                                    className={`px-3 py-2 rounded-lg text-lg transition-all ${mood === m ? 'bg-blue-600/20 ring-2 ring-blue-500 scale-110' : 'bg-sentinel-800 hover:bg-sentinel-700'}`}
+                                    title={MOOD_LABELS[m]}
+                                >
+                                    {m}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Tags */}
+                    <div>
+                        <label className="block text-xs text-sentinel-400 mb-1">Tags</label>
+                        <div className="flex flex-wrap gap-1.5 mb-2">
+                            {tags.map(t => (
+                                <span key={t} className="inline-flex items-center gap-1 px-2 py-0.5 bg-sentinel-800 text-sentinel-300 text-xs rounded-full ring-1 ring-sentinel-700">
+                                    <Tag className="w-3 h-3" />{t}
+                                    <button type="button" onClick={() => removeTag(t)} className="text-sentinel-500 hover:text-red-400"><X className="w-3 h-3" /></button>
+                                </span>
+                            ))}
+                        </div>
+                        <div className="flex gap-2">
+                            <input
+                                value={tagInput}
+                                onChange={e => setTagInput(e.target.value)}
+                                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addTag(); } }}
+                                placeholder="Add tag..."
+                                className="flex-1 bg-sentinel-950 border border-sentinel-700 rounded-lg px-3 py-1.5 text-sm text-sentinel-200"
+                            />
+                            <button type="button" onClick={addTag} className="px-3 py-1.5 bg-sentinel-800 hover:bg-sentinel-700 text-sentinel-300 rounded-lg text-xs">Add</button>
+                        </div>
+                    </div>
+
+                    {/* Notes */}
                     <div>
                         <label className="block text-xs text-sentinel-400 mb-1">Execution Notes & Review</label>
                         <textarea required rows={3} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Why did you take this trade? Did you follow the Red Team advice?" className="w-full bg-sentinel-950 border border-sentinel-700 rounded-lg px-3 py-2 text-sentinel-100"></textarea>
@@ -115,43 +293,114 @@ export function Journal() {
                 </form>
             )}
 
+            {/* FILTER BAR */}
             <div className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 overflow-hidden backdrop-blur-sm">
-                <div className="p-4 border-b border-sentinel-800/50 flex items-center justify-between">
-                    <div className="relative">
-                        <Search className="w-4 h-4 text-sentinel-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                        <input
-                            type="text"
-                            placeholder="Search journal..."
-                            className="bg-sentinel-950 border border-sentinel-800 rounded-lg pl-9 pr-4 py-1.5 text-sm text-sentinel-200 focus:outline-none focus:ring-1 focus:ring-sentinel-600 w-64"
-                        />
+                <div className="p-4 border-b border-sentinel-800/50">
+                    <div className="flex flex-col sm:flex-row gap-3">
+                        {/* Search */}
+                        <div className="relative flex-1">
+                            <Search className="w-4 h-4 text-sentinel-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                            <input
+                                type="text"
+                                value={searchQuery}
+                                onChange={e => setSearchQuery(e.target.value)}
+                                placeholder="Search journal..."
+                                className="w-full bg-sentinel-950 border border-sentinel-800 rounded-lg pl-9 pr-4 py-1.5 text-sm text-sentinel-200 focus:outline-none focus:ring-1 focus:ring-sentinel-600"
+                            />
+                        </div>
+
+                        {/* Type pills */}
+                        <div className="flex gap-1.5 flex-wrap">
+                            {ENTRY_TYPES.map(t => (
+                                <button
+                                    key={t}
+                                    onClick={() => setSelectedType(selectedType === t ? null : t)}
+                                    className={`px-2.5 py-1 text-xs rounded-full capitalize transition-colors ${selectedType === t ? 'bg-blue-600/20 text-blue-400 ring-1 ring-blue-500/50' : 'bg-sentinel-800 text-sentinel-400 hover:text-sentinel-200'}`}
+                                >
+                                    {t}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Mood pills */}
+                        <div className="flex gap-1">
+                            {MOODS.map(m => (
+                                <button
+                                    key={m}
+                                    onClick={() => setSelectedMood(selectedMood === m ? null : m)}
+                                    className={`w-8 h-8 rounded-lg text-sm transition-all ${selectedMood === m ? 'bg-blue-600/20 ring-1 ring-blue-500' : 'bg-sentinel-800 hover:bg-sentinel-700'}`}
+                                    title={MOOD_LABELS[m]}
+                                >
+                                    {m}
+                                </button>
+                            ))}
+                        </div>
                     </div>
+
+                    {/* Tag filter pills */}
+                    {allTags.length > 0 && (
+                        <div className="flex gap-1.5 flex-wrap mt-3">
+                            {allTags.slice(0, 12).map(t => (
+                                <button
+                                    key={t}
+                                    onClick={() => setSelectedTag(selectedTag === t ? null : t)}
+                                    className={`inline-flex items-center gap-1 px-2 py-0.5 text-[11px] rounded-full transition-colors ${selectedTag === t ? 'bg-purple-600/20 text-purple-400 ring-1 ring-purple-500/50' : 'bg-sentinel-800/60 text-sentinel-500 hover:text-sentinel-300'}`}
+                                >
+                                    <Tag className="w-2.5 h-2.5" />{t}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Active filter count */}
+                    {activeFilters > 0 && (
+                        <div className="flex items-center justify-between mt-3 text-xs">
+                            <span className="text-sentinel-500">
+                                {filteredEntries.length} of {entries.length} entries shown
+                            </span>
+                            <button
+                                onClick={() => { setSelectedType(null); setSelectedMood(null); setSelectedTag(null); setSelectedDate(null); setSearchQuery(''); }}
+                                className="text-blue-400 hover:text-blue-300"
+                            >
+                                Clear all filters
+                            </button>
+                        </div>
+                    )}
                 </div>
 
+                {/* ENTRIES LIST */}
                 {loading ? (
                     <div className="p-12 flex justify-center"><div className="w-8 h-8 border-2 border-sentinel-600 border-t-sentinel-300 rounded-full animate-spin"></div></div>
-                ) : entries.length === 0 ? (
-                    <div className="p-12 text-center text-sentinel-500">No trades logged yet.</div>
+                ) : filteredEntries.length === 0 ? (
+                    <div className="p-12 text-center text-sentinel-500">
+                        {entries.length === 0 ? 'No trades logged yet.' : 'No entries match your filters.'}
+                    </div>
                 ) : (
                     <div className="divide-y divide-sentinel-800/50">
-                        {entries.map(entry => {
-                            const pnl = entry.exit_price ? ((entry.exit_price - entry.entry_price) / entry.entry_price) * 100 : null;
-                            if (entry.direction === 'short' && pnl) pnl * -1; // rough short pnl
+                        {filteredEntries.map(entry => {
+                            // Parse PnL from content
+                            const entryMatch = (entry.content || '').match(/Entry:\s*\$?([\d.]+)/);
+                            const exitMatch = (entry.content || '').match(/Exit:\s*\$?([\d.]+)/);
+                            const ep = entryMatch ? parseFloat(entryMatch[1]) : null;
+                            const xp = exitMatch ? parseFloat(exitMatch[1]) : null;
+
+                            let pnl: number | null = null;
+                            if (ep && xp) {
+                                pnl = ((xp - ep) / ep) * 100;
+                                if (entry.entry_type === 'short') pnl = -pnl;
+                            }
 
                             return (
                                 <div key={entry.id} className="p-5 hover:bg-sentinel-800/30 transition-colors">
                                     <div className="flex justify-between items-start mb-3">
                                         <div className="flex items-center gap-3">
-                                            <span className="text-lg font-bold text-sentinel-100">{entry.ticker}</span>
-                                            <span className={`px-2 py-0.5 text-xs font-bold rounded ${entry.entry_type === 'long' ? 'bg-blue-500/10 text-blue-400 ring-1 ring-blue-500/20' : 'bg-rose-500/10 text-rose-400 ring-1 ring-rose-500/20'}`}>
-                                                {entry.entry_type ? entry.entry_type.toUpperCase() : 'UNKNOWN'}
+                                            {entry.mood && <span className="text-lg" title={MOOD_LABELS[entry.mood]}>{entry.mood}</span>}
+                                            <span className="text-lg font-bold text-sentinel-100">{entry.ticker || 'General'}</span>
+                                            <span className={`px-2 py-0.5 text-xs font-bold rounded ${entry.entry_type === 'long' ? 'bg-blue-500/10 text-blue-400 ring-1 ring-blue-500/20' : entry.entry_type === 'short' ? 'bg-rose-500/10 text-rose-400 ring-1 ring-rose-500/20' : 'bg-sentinel-700/30 text-sentinel-400 ring-1 ring-sentinel-600/30'}`}>
+                                                {(entry.entry_type || 'unknown').toUpperCase()}
                                             </span>
-                                            {entry.signals && (
-                                                <span className="text-xs text-sentinel-500 border border-sentinel-700 px-2 py-0.5 rounded flex items-center gap-1">
-                                                    <MessageSquareQuote className="w-3 h-3" /> Linked to Signal
-                                                </span>
-                                            )}
                                         </div>
-                                        <div className="flex gap-4 text-right">
+                                        <div className="flex gap-4 text-right items-center">
                                             {pnl !== null ? (
                                                 <div className="flex flex-col items-end">
                                                     <span className="text-xs text-sentinel-500 font-mono">Realized PnL</span>
@@ -168,18 +417,26 @@ export function Journal() {
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4 text-sm bg-sentinel-950/50 p-3 rounded-lg border border-sentinel-800/50">
-                                        <div>
-                                            <div className="text-sentinel-500 text-xs font-mono mb-1 flex items-center gap-1"><Calendar className="w-3 h-3" /> Entry Date</div>
-                                            <div className="text-sentinel-200">{new Date(entry.created_at || entry.entry_date).toLocaleDateString()}</div>
+                                    {/* Tags */}
+                                    {entry.tags?.length > 0 && (
+                                        <div className="flex gap-1.5 flex-wrap mb-2">
+                                            {entry.tags.map((t: string) => (
+                                                <span key={t} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-sentinel-800/50 text-sentinel-500 text-[10px] rounded-full">
+                                                    <Tag className="w-2.5 h-2.5" />{t}
+                                                </span>
+                                            ))}
                                         </div>
-                                    </div>
+                                    )}
 
+                                    {/* Date + Content */}
+                                    <div className="text-xs text-sentinel-500 mb-2">
+                                        {new Date(entry.created_at).toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
+                                    </div>
                                     <p className="text-sm text-sentinel-300 leading-relaxed bg-sentinel-900/50 p-3 rounded-lg border-l-2 border-l-sentinel-600 whitespace-pre-wrap">
                                         {entry.content || entry.notes}
                                     </p>
                                 </div>
-                            )
+                            );
                         })}
                     </div>
                 )}

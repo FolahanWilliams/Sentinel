@@ -3,11 +3,13 @@ import { useDashboardStats } from '@/hooks/useDashboardStats';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/config/supabase';
 import { formatPrice, formatPercent } from '@/utils/formatters';
+import { PortfolioOverview } from '@/components/dashboard/PortfolioOverview';
 
 export function Dashboard() {
     const stats = useDashboardStats();
     const [recentSignals, setRecentSignals] = useState<any[]>([]);
     const [loadingSignals, setLoadingSignals] = useState(true);
+    const [watchlistTickers, setWatchlistTickers] = useState<{ ticker: string; is_active: boolean }[]>([]);
 
     useEffect(() => {
         async function fetchRecent() {
@@ -25,6 +27,18 @@ export function Dashboard() {
 
         fetchRecent();
 
+        // Fetch real watchlist tickers
+        async function fetchWatchlist() {
+            const { data } = await supabase
+                .from('watchlist')
+                .select('ticker, is_active')
+                .eq('is_active', true)
+                .order('added_at', { ascending: false })
+                .limit(8);
+            if (data) setWatchlistTickers(data);
+        }
+        fetchWatchlist();
+
         const channel = supabase.channel('recent_signals')
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'signals' }, (payload) => {
                 // Auto-prepend new signals hitting the DB from the scanner
@@ -33,7 +47,7 @@ export function Dashboard() {
             .subscribe();
 
         return () => { supabase.removeChannel(channel); };
-    }, []);
+    }, [])
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
@@ -145,6 +159,32 @@ export function Dashboard() {
                 {/* SIDEBAR WIDGETS */}
                 <div className="space-y-6">
 
+                    {/* PORTFOLIO OVERVIEW */}
+                    <PortfolioOverview />
+
+                    {/* QUICK WATCHLIST (Live) */}
+                    <div className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 p-5 backdrop-blur-sm">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-sm font-semibold text-sentinel-300 uppercase tracking-wider">Active Watchlist</h3>
+                            <a href="/watchlist" className="text-xs text-blue-400 hover:text-blue-300">Edit</a>
+                        </div>
+                        <div className="space-y-2">
+                            {watchlistTickers.length === 0 ? (
+                                <p className="text-sm text-sentinel-500 text-center py-2">No tickers in watchlist</p>
+                            ) : (
+                                watchlistTickers.map(t => (
+                                    <div key={t.ticker} className="flex justify-between items-center text-sm p-2 rounded hover:bg-sentinel-800/30 transition-colors">
+                                        <span className="font-medium text-sentinel-200">{t.ticker}</span>
+                                        <span className="text-emerald-400/70 text-xs flex items-center gap-1">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400/70"></span>
+                                            Active
+                                        </span>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+
                     {/* SCANNER STATUS */}
                     <div className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 p-5 backdrop-blur-sm">
                         <h3 className="text-sm font-semibold text-sentinel-300 uppercase tracking-wider mb-4">Scanner Status</h3>
@@ -164,23 +204,6 @@ export function Dashboard() {
                                 <span className="text-sentinel-400">Agent Quota</span>
                                 <span className="text-sentinel-200">Healthy</span>
                             </div>
-                        </div>
-                    </div>
-
-                    {/* QUICK WATCHLIST (Stub) */}
-                    <div className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 p-5 backdrop-blur-sm">
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-sm font-semibold text-sentinel-300 uppercase tracking-wider">Active Watchlist</h3>
-                            <a href="/watchlist" className="text-xs text-blue-400 hover:text-blue-300">Edit</a>
-                        </div>
-                        <div className="space-y-2">
-                            {/* Using static stubs for UI aesthetics before wiring Watchlist real DB */}
-                            {['NVDA', 'TSLA', 'PLTR', 'SMCI', 'COIN'].map(t => (
-                                <div key={t} className="flex justify-between items-center text-sm p-2 rounded hover:bg-sentinel-800/30 transition-colors">
-                                    <span className="font-medium text-sentinel-200">{t}</span>
-                                    <span className="text-sentinel-500">Watching</span>
-                                </div>
-                            ))}
                         </div>
                     </div>
 
