@@ -6,6 +6,7 @@
 
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
+import { supabase } from '@/config/supabase';
 import {
     LayoutDashboard,
     List,
@@ -16,6 +17,7 @@ import {
     Newspaper,
     ChevronLeft,
     ChevronRight,
+    LogOut,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -30,6 +32,10 @@ const NAV_ITEMS = [
 
 export function Sidebar() {
     const [collapsed, setCollapsed] = useState(false);
+
+    const handleSignOut = async () => {
+        await supabase.auth.signOut();
+    };
 
     return (
         <aside
@@ -74,6 +80,24 @@ export function Sidebar() {
                     </NavLink>
                 ))}
             </nav>
+
+            {/* Sign Out */}
+            <div className="px-2 pb-2">
+                <button
+                    onClick={handleSignOut}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer w-full"
+                    style={{
+                        backgroundColor: 'transparent',
+                        border: 'none',
+                        color: 'var(--color-text-muted)',
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-bearish)')}
+                    onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-muted)')}
+                >
+                    <LogOut size={18} style={{ flexShrink: 0 }} />
+                    {!collapsed && <span>Sign Out</span>}
+                </button>
+            </div>
 
             {/* Scanner Status (bottom) */}
             <div className="px-4 py-3" style={{ borderTop: '1px solid var(--color-border-subtle)' }}>

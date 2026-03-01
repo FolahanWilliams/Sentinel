@@ -14,8 +14,8 @@ export const supabase = createClient<Database>(
     env.supabaseAnonKey,
     {
         auth: {
-            persistSession: false,     // We use our own password gate, not Supabase Auth
-            autoRefreshToken: false,
+            persistSession: true,       // Persist Supabase Auth session
+            autoRefreshToken: true,      // Auto-refresh JWT tokens
         },
         realtime: {
             params: {
