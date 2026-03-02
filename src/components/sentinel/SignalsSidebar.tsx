@@ -30,7 +30,7 @@ export function SignalsSidebar({ articles }: SignalsSidebarProps) {
 
         // Group by Ticker to show consensus
         const grouped = allSignals.reduce((acc, curr) => {
-            const t = curr.ticker!.toUpperCase();
+            const t = (curr.ticker || 'UNKNOWN').toUpperCase();
             if (!acc[t]) acc[t] = [];
             acc[t].push(curr);
             return acc;
