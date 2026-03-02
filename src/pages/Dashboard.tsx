@@ -2,6 +2,7 @@ import { Activity, ArrowRight, Clock, Loader2 } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
+import { ScannerService } from '@/services/scanner';
 import { formatPrice } from '@/utils/formatters';
 import { MarketSnapshot } from '@/components/dashboard/MarketSnapshot';
 import { MarketTrends, PotentialSignals } from '@/components/dashboard/MarketTrends';
@@ -16,6 +17,7 @@ export function Dashboard() {
     const [recentSignals, setRecentSignals] = useState<any[]>([]);
     const [loadingSignals, setLoadingSignals] = useState(true);
     const [scanning, setScanning] = useState(false);
+    const [scanStatus, setScanStatus] = useState<string | null>(null);
     const { logs } = useScannerLogs(1);
 
     // Compute dynamic "last scan" text
@@ -61,18 +63,28 @@ export function Dashboard() {
     const handleForceGlobalScan = useCallback(async () => {
         if (scanning) return;
         setScanning(true);
+        setScanStatus('Discovering trending tickers via AI...');
+
         try {
-            console.log('[Dashboard] Triggering force global scan...');
-            await supabase.functions.invoke('proxy-gemini', {
-                body: {
-                    systemInstruction: 'You are a market scanner. List 3 trending stock tickers worth analyzing today based on current market conditions.',
-                    prompt: 'What are the top 3 most interesting tickers to scan right now? Return JSON array of ticker symbols only.',
-                    requireGroundedSearch: true,
-                }
+            console.log('[Dashboard] Triggering AI Discovery Scan...');
+            const result = await ScannerService.runDiscoveryScan(5, (status) => {
+                setScanStatus(status);
             });
-            // The scanner's real-time subscription in useEffect will pick up new signals automatically
-        } catch (err) {
-            console.error('[Dashboard] Force scan failed:', err);
+
+            if (result.discovered === 0) {
+                setScanStatus('No trending tickers found right now. Try again later.');
+            } else {
+                setScanStatus(
+                    `✅ Scanned ${result.scanned} AI-discovered tickers → ${result.signalsGenerated} signals generated (${result.tickers.join(', ')})`
+                );
+            }
+
+            // Clear the status message after 8 seconds
+            setTimeout(() => setScanStatus(null), 8000);
+        } catch (err: any) {
+            console.error('[Dashboard] Discovery scan failed:', err);
+            setScanStatus(`❌ Scan failed: ${err.message}`);
+            setTimeout(() => setScanStatus(null), 5000);
         } finally {
             setScanning(false);
         }
@@ -101,9 +113,26 @@ export function Dashboard() {
                     ) : (
                         <Activity className="w-4 h-4 text-emerald-400" />
                     )}
-                    {scanning ? 'Scanning...' : 'Force Global Scan'}
+                    {scanning ? 'Discovering...' : 'AI Discovery Scan'}
                 </button>
             </div>
+
+            {/* Discovery Scan Status Banner */}
+            <AnimatePresence>
+                {scanStatus && (
+                    <motion.div
+                        initial={{ opacity: 0, y: -10, height: 0 }}
+                        animate={{ opacity: 1, y: 0, height: 'auto' }}
+                        exit={{ opacity: 0, y: -10, height: 0 }}
+                        className="bg-sentinel-900/70 border border-sentinel-700/50 rounded-xl px-5 py-3.5 backdrop-blur-sm"
+                    >
+                        <div className="flex items-center gap-3">
+                            {scanning && <Loader2 className="w-4 h-4 text-blue-400 animate-spin flex-shrink-0" />}
+                            <p className="text-sm text-sentinel-200 flex-1">{scanStatus}</p>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             {/* MAIN CONTENT GRID */}
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">

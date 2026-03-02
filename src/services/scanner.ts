@@ -652,4 +652,157 @@ export class ScannerService {
             return { success: false, error: e.message };
         }
     }
+
+    /**
+     * AI Ticker Discovery — Ask Gemini to identify trending tickers worth scanning
+     * based on current market events, news catalysts, and unusual market action.
+     * Returns up to `count` tickers with context on why each was flagged.
+     */
+    static async discoverTrendingTickers(count: number = 5): Promise<{ ticker: string; reason: string; catalyst: string }[]> {
+        console.log(`[Scanner] Discovering ${count} trending tickers via AI...`);
+
+        try {
+            const { data: geminiRes, error: geminiErr } = await supabase.functions.invoke('proxy-gemini', {
+                body: {
+                    systemInstruction: `You are an elite market analyst for a quantitative trading desk. Today is ${new Date().toISOString().split('T')[0]}. Your job is to identify US equities experiencing significant catalytic events RIGHT NOW that could create short-term trading opportunities. Focus on: earnings surprises, FDA decisions, analyst upgrades/downgrades, unusual volume spikes, sector rotation, insider activity, and geopolitical events affecting specific companies. Only suggest liquid US equities (no penny stocks, no OTC).`,
+                    prompt: `Identify the top ${count} most actionable US stock tickers to analyze right now based on today's market conditions. For each, explain the specific catalyst driving the opportunity. Return JSON matching the schema exactly.`,
+                    requireGroundedSearch: true,
+                    responseSchema: {
+                        type: 'object',
+                        properties: {
+                            tickers: {
+                                type: 'array',
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        ticker: { type: 'string', description: 'US equity ticker symbol (e.g. NVDA, AAPL)' },
+                                        reason: { type: 'string', description: 'Why this ticker is interesting right now (1-2 sentences)' },
+                                        catalyst: { type: 'string', description: 'The specific catalyst type: earnings, fda_decision, analyst_action, unusual_volume, sector_rotation, insider_activity, geopolitical, other' },
+                                    },
+                                    required: ['ticker', 'reason', 'catalyst']
+                                }
+                            }
+                        },
+                        required: ['tickers']
+                    }
+                }
+            });
+
+            if (geminiErr) throw new Error(geminiErr.message);
+
+            if (geminiRes?.text) {
+                const parsed = JSON.parse(geminiRes.text);
+                const discovered = (parsed.tickers || []).slice(0, count).map((t: any) => ({
+                    ticker: (t.ticker || '').toUpperCase().replace(/[^A-Z]/g, ''),
+                    reason: t.reason || 'Trending',
+                    catalyst: t.catalyst || 'other',
+                })).filter((t: any) => t.ticker.length >= 1 && t.ticker.length <= 5);
+
+                console.log(`[Scanner] Discovered ${discovered.length} trending tickers:`, discovered.map((d: any) => `${d.ticker} (${d.catalyst})`).join(', '));
+                return discovered;
+            }
+
+            return [];
+        } catch (e: any) {
+            console.error('[Scanner] Ticker discovery failed:', e.message);
+            return [];
+        }
+    }
+
+    /**
+     * Discovery Scan — Full auto-suggest pipeline:
+     * 1. Ask AI to discover trending tickers
+     * 2. Run the full single-ticker agent pipeline on each
+     * 3. Returns summary of all discovered signals
+     *
+     * This is the method that should be called from the Dashboard's
+     * "Force Global Scan" button or from any automated trigger.
+     */
+    static async runDiscoveryScan(
+        count: number = 5,
+        onProgress?: (status: string) => void
+    ): Promise<{ discovered: number; scanned: number; signalsGenerated: number; tickers: string[] }> {
+        const startTime = Date.now();
+
+        // 1. Discover trending tickers via AI
+        onProgress?.('Discovering trending tickers via AI...');
+        const discovered = await this.discoverTrendingTickers(count);
+
+        if (discovered.length === 0) {
+            onProgress?.('No trending tickers found. Market may be quiet.');
+            return { discovered: 0, scanned: 0, signalsGenerated: 0, tickers: [] };
+        }
+
+        // 2. Log the discovery scan
+        const { data: scanLog } = await supabase
+            .from('scan_logs')
+            .insert({
+                scan_type: 'discovery',
+                status: 'running',
+                duration_ms: 0,
+                tickers_scanned: discovered.length,
+                events_detected: 0,
+                signals_generated: 0,
+                estimated_cost_usd: 0
+            } as any)
+            .select('id')
+            .single();
+
+        let totalSignals = 0;
+        const scannedTickers: string[] = [];
+
+        // 3. Run agent pipeline on each discovered ticker
+        for (let i = 0; i < discovered.length; i++) {
+            const item = discovered[i]!;
+            const { ticker, reason, catalyst } = item;
+            onProgress?.(`Scanning ${ticker} (${i + 1}/${discovered.length}): ${reason}`);
+
+            try {
+                // Save the discovery event so it shows up in event history
+                await supabase.from('market_events').insert({
+                    ticker,
+                    event_type: `discovery_${catalyst}`,
+                    headline: reason,
+                    severity: 7,
+                    is_overreaction_candidate: true,
+                    source_urls: [],
+                    source_type: 'ai_discovery'
+                } as any);
+
+                // Run full single-ticker scan
+                const result = await this.runSingleTickerScan(ticker);
+                scannedTickers.push(ticker);
+
+                if (result.success && result.signalsGenerated && result.signalsGenerated > 0) {
+                    totalSignals += result.signalsGenerated;
+                }
+            } catch (e: any) {
+                console.warn(`[Scanner] Discovery scan failed for ${ticker}:`, e.message);
+            }
+        }
+
+        // 4. Update scan log
+        const duration = Date.now() - startTime;
+        if (scanLog?.id) {
+            await supabase.from('scan_logs')
+                .update({
+                    status: 'completed',
+                    duration_ms: duration,
+                    signals_generated: totalSignals,
+                    events_detected: discovered.length,
+                } as any)
+                .eq('id', scanLog.id);
+        }
+
+        const summary = `Discovery scan complete: ${discovered.length} tickers found, ${totalSignals} signals generated in ${(duration / 1000).toFixed(1)}s`;
+        console.log(`[Scanner] ${summary}`);
+        onProgress?.(summary);
+
+        return {
+            discovered: discovered.length,
+            scanned: scannedTickers.length,
+            signalsGenerated: totalSignals,
+            tickers: scannedTickers,
+        };
+    }
 }
