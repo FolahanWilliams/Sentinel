@@ -26,14 +26,20 @@ export class AgentService {
     /**
      * 1. Overreaction Agent
      * Analyzes an event to determine if a price drop is an irrational overreaction.
+     * Receives historical performance context so the agent can calibrate confidence
+     * based on past signal accuracy for this bias type and sector.
      */
-    static async evaluateOverreaction(ticker: string, eventHeadline: string, eventDesc: string, currentPrice: number, priceDropPct: number): Promise<AgentResult<any>> {
+    static async evaluateOverreaction(ticker: string, eventHeadline: string, eventDesc: string, currentPrice: number, priceDropPct: number, performanceContext?: string): Promise<AgentResult<any>> {
+        const perfBlock = performanceContext
+            ? `\n\n${performanceContext}\n\nUse the performance data above to calibrate your confidence. If this bias type or sector historically underperforms, lower your confidence. If it outperforms, you may raise it slightly.`
+            : '';
+
         const prompt = `
     TICKER: ${ticker}
     CURRENT PRICE: $${currentPrice.toFixed(2)} (Down ${priceDropPct.toFixed(2)}%)
     EVENT HEADLINE: ${eventHeadline}
     EVENT DESCRIPTION: ${eventDesc}
-    
+    ${perfBlock}
     Evaluate if this drop is an irrational overreaction presenting a mean-reversion buying opportunity.
     Return JSON perfectly matching the expected schema.
     `;
@@ -41,7 +47,7 @@ export class AgentService {
         return GeminiService.generate({
             prompt,
             systemInstruction: OVERREACTION_AGENT_PROMPT,
-            requireGroundedSearch: true, // Needs real-time web context on the news
+            requireGroundedSearch: true,
             responseSchema: OVERREACTION_SCHEMA
         });
     }
@@ -49,15 +55,20 @@ export class AgentService {
     /**
      * 2. Sector Contagion Agent
      * Evaluates if a satellite ticker is dropping unfairly due to an epicenter ticker's news.
+     * Receives historical performance context for confidence calibration.
      */
-    static async evaluateContagion(epicenterTicker: string, satelliteTicker: string, epicenterNews: string, satelliteDropPct: number): Promise<AgentResult<any>> {
+    static async evaluateContagion(epicenterTicker: string, satelliteTicker: string, epicenterNews: string, satelliteDropPct: number, performanceContext?: string): Promise<AgentResult<any>> {
+        const perfBlock = performanceContext
+            ? `\n\n${performanceContext}\n\nUse the performance data above to calibrate your confidence. If sector contagion signals historically underperform, be more skeptical. If they outperform, you may be slightly more confident.`
+            : '';
+
         const prompt = `
     EPICENTER TICKER: ${epicenterTicker}
     EPICENTER NEWS: ${epicenterNews}
-    
+
     SATELLITE TICKER: ${satelliteTicker}
     SATELLITE DROP: ${satelliteDropPct.toFixed(2)}%
-    
+    ${perfBlock}
     Evaluate if ${satelliteTicker} is dropping purely in sympathy and lacks real exposure to the Epicenter's core issue.
     Return JSON perfectly matching the expected schema.
     `;

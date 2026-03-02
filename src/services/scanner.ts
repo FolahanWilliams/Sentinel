@@ -17,6 +17,7 @@ import { NotificationService } from './notifications';
 import { RSSReaderService } from './rssReader';
 import { OutcomeTracker } from './outcomeTracker';
 import { PositionSizer } from './positionSizer';
+import { performanceStats } from './performanceStats';
 import { isBudgetExceeded } from '@/utils/costEstimator';
 import { responseValidator } from '@/utils/responseValidator';
 
@@ -162,6 +163,14 @@ export class ScannerService {
             // 3. Sync RSS Feeds (Feed the beast)
             await RSSReaderService.syncAllFeeds();
 
+            // 3b. Build performance context from past signal outcomes
+            // This gets injected into agent prompts so they learn from accuracy history
+            let perfContext = '';
+            try {
+                perfContext = await performanceStats.buildPerformanceContext();
+                console.log('[Scanner] Performance context loaded for agent feedback loop.');
+            } catch { /* non-fatal — agents run without historical context */ }
+
             // 4. Find fresh unparsed articles from the cache
             // In a real flow, we'd only grab articles from the last hour
             const { data: freshArticles } = await supabase
@@ -225,7 +234,8 @@ export class ScannerService {
                                     ev.headline,
                                     eventContext,
                                     quote?.price || 100,
-                                    priceDrop
+                                    priceDrop,
+                                    perfContext
                                 );
 
                                 // Validate agent response before acting on it
@@ -249,7 +259,8 @@ export class ScannerService {
                                         // 8. WINNER! WE HAVE A SIGNAL.
                                         signalsGenerated++;
 
-                                        await supabase.from('signals').insert({
+                                        const entryPrice = quote?.price || 100;
+                                        const { data: savedSignal } = await supabase.from('signals').insert({
                                             ticker: ev.ticker,
                                             signal_type: 'long_overreaction',
                                             confidence_score: analysis.data.confidence_score,
@@ -269,7 +280,19 @@ export class ScannerService {
                                             secondary_biases: [],
                                             sources: [],
                                             is_paper: false
-                                        } as any);
+                                        } as any).select('id').single();
+
+                                        // 8b. Seed outcome tracking row so OutcomeTracker can follow this signal
+                                        if (savedSignal) {
+                                            await supabase.from('signal_outcomes').insert({
+                                                signal_id: savedSignal.id,
+                                                ticker: ev.ticker,
+                                                entry_price: entryPrice,
+                                                outcome: 'pending',
+                                                hit_stop_loss: false,
+                                                hit_target: false,
+                                            } as any);
+                                        }
 
                                         // 9. Position sizing recommendation
                                         try {
@@ -323,7 +346,8 @@ export class ScannerService {
                                                         ev.ticker,
                                                         sat.ticker,
                                                         ev.headline,
-                                                        satDrop
+                                                        satDrop,
+                                                        perfContext
                                                     );
 
                                                     if (contagion.success && contagion.data?.is_contagion && contagion.data.confidence_score > 70) {
@@ -339,7 +363,7 @@ export class ScannerService {
                                                         if (contagionSanity.success && contagionSanity.data?.passes_sanity_check) {
                                                             signalsGenerated++;
 
-                                                            await supabase.from('signals').insert({
+                                                            const { data: savedContagionSignal } = await supabase.from('signals').insert({
                                                                 ticker: sat.ticker,
                                                                 signal_type: 'sector_contagion',
                                                                 confidence_score: contagion.data.confidence_score,
@@ -360,7 +384,19 @@ export class ScannerService {
                                                                 secondary_biases: ['herding'],
                                                                 sources: [],
                                                                 is_paper: false
-                                                            } as any);
+                                                            } as any).select('id').single();
+
+                                                            // Seed outcome tracking
+                                                            if (savedContagionSignal) {
+                                                                await supabase.from('signal_outcomes').insert({
+                                                                    signal_id: savedContagionSignal.id,
+                                                                    ticker: sat.ticker,
+                                                                    entry_price: satQuote.price,
+                                                                    outcome: 'pending',
+                                                                    hit_stop_loss: false,
+                                                                    hit_target: false,
+                                                                } as any);
+                                                            }
 
                                                             await NotificationService.sendSignalAlert(sat.ticker, 'contagion');
                                                             console.log(`[Scanner] Contagion signal: ${sat.ticker} (sympathy drop from ${ev.ticker})`);
