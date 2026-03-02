@@ -439,7 +439,10 @@ export class ScannerService {
 
             return {
                 success: true,
-                summary: `Scan complete: ${eventsFound} events, ${signalsGenerated} signals.`
+                summary: `Scan complete: ${eventsFound} events, ${signalsGenerated} signals.`,
+                tickersScanned: tickers.length,
+                eventsDetected: eventsFound,
+                signalsGenerated: signalsGenerated
             };
 
         } catch (e: any) {
@@ -450,6 +453,151 @@ export class ScannerService {
             await supabase.from('scan_logs')
                 .update({ status: 'failed', error_message: e.message } as any)
                 .eq('status', 'running'); // Best effort fallback
+
+            return { success: false, error: e.message };
+        }
+    }
+
+    /**
+     * Run a manual, single-ticker scan.
+     * Bypasses the active watchlist and runs the full pipeline on a specific ticker immediately.
+     */
+    static async runSingleTickerScan(ticker: string, isPaper: boolean = true) {
+        const startTime = Date.now();
+        console.log(`[Scanner] Initiating manual scan for ${ticker}...`);
+
+        try {
+            // 1. Log the start of the scan
+            const { data: scanLog, error: logErr } = await supabase
+                .from('scan_logs')
+                .insert({
+                    scan_type: 'manual',
+                    status: 'running',
+                    duration_ms: 0,
+                    tickers_scanned: 1,
+                    events_detected: 0,
+                    signals_generated: 0,
+                    estimated_cost_usd: 0
+                } as any)
+                .select('id')
+                .single();
+
+            if (logErr) throw logErr;
+
+            // 2. Fetch live quote for context to see if it's moving
+            let quote;
+            try {
+                quote = await MarketDataService.getQuote(ticker);
+            } catch (e) {
+                console.warn(`[Scanner] Could not get live quote for ${ticker}`, e);
+            }
+
+            const currentPrice = quote?.price || 100;
+            const priceDropPct = quote?.changePercent || 0;
+
+            // 3. Instead of waiting for RSS, we use Gemini's grounded search to find the latest "event" for this ticker
+            const eventPrompt = `Find the most recent, significant news event for ${ticker} from the last 48 hours. Focus on earnings, regulatory news, product launches, or major macroeconomic impacts specific to this company. If there is no major news, summarize the current market sentiment.`;
+
+            const eventExtraction = await AgentService.extractEventsFromText(eventPrompt);
+
+            // Generate an event context
+            let mockHeadline = `Recent market activity for ${ticker}`;
+            let mockDesc = `Evaluating recent price action and news sentiment for ${ticker} across the market.`;
+
+            if (eventExtraction.success && eventExtraction.data?.events?.length > 0) {
+                const e = eventExtraction.data.events[0];
+                mockHeadline = e.headline;
+                mockDesc = `Event Type: ${e.event_type} | Severity: ${e.severity}`;
+            }
+
+            // 4. Save the event
+            await supabase.from('market_events').insert({
+                ticker: ticker,
+                event_type: 'manual_scan',
+                headline: mockHeadline,
+                severity: 8, // Force trigger analysis
+                is_overreaction_candidate: true,
+                source_urls: [],
+                source_type: 'manual'
+            } as any);
+
+            // 5. Run Overreaction Analysis
+            const analysis = await AgentService.evaluateOverreaction(
+                ticker,
+                mockHeadline,
+                mockDesc,
+                currentPrice,
+                priceDropPct
+            );
+
+            let signalsGenerated = 0;
+
+            if (analysis.success && analysis.data?.is_overreaction && analysis.data.confidence_score > 50) {
+                // 6. Run Sanity Check
+                const sanity = await AgentService.runSanityCheck(
+                    ticker,
+                    analysis.data.thesis,
+                    analysis.data.target_price,
+                    analysis.data.stop_loss,
+                    'OVERREACTION_AGENT'
+                );
+
+                if (sanity.success && sanity.data?.passes_sanity_check) {
+                    // 7. Save Signal
+                    signalsGenerated = 1;
+                    await supabase.from('signals').insert({
+                        ticker: ticker,
+                        signal_type: 'long_overreaction',
+                        confidence_score: analysis.data.confidence_score,
+                        risk_level: sanity.data.risk_score > 80 ? 'low' : 'medium',
+                        bias_type: 'recency_bias',
+                        thesis: analysis.data.thesis,
+                        counter_argument: sanity.data.counter_thesis,
+                        suggested_entry_low: analysis.data.suggested_entry_low,
+                        suggested_entry_high: analysis.data.suggested_entry_high,
+                        stop_loss: analysis.data.stop_loss,
+                        target_price: analysis.data.target_price,
+                        agent_outputs: {
+                            overreaction: analysis.data,
+                            red_team: sanity.data
+                        },
+                        status: 'open',
+                        secondary_biases: [],
+                        sources: [],
+                        is_paper: isPaper
+                    } as any);
+
+                    if (!isPaper) {
+                        await NotificationService.sendSignalAlert(ticker, 'manual_scan');
+                    }
+                }
+            }
+
+            // 8. Update Scan Log
+            const durationMs = Date.now() - startTime;
+            if (scanLog) {
+                await supabase.from('scan_logs').update({
+                    status: 'completed',
+                    tickers_scanned: 1,
+                    events_detected: 1,
+                    signals_generated: signalsGenerated,
+                    duration_ms: durationMs,
+                } as any).eq('id', scanLog.id);
+            }
+
+            return {
+                success: true,
+                summary: `Manual scan complete for ${ticker}: ${signalsGenerated} signals generated.`,
+                signalsGenerated
+            };
+
+        } catch (e: any) {
+            console.error(`[Scanner] Fatal error during single scan for ${ticker}:`, e);
+
+            // Attempt to update log as failed
+            await supabase.from('scan_logs')
+                .update({ status: 'failed', error_message: e.message } as any)
+                .eq('status', 'running');
 
             return { success: false, error: e.message };
         }

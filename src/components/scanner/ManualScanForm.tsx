@@ -1,0 +1,86 @@
+import React, { useState } from 'react';
+import { Search, Loader2, AlertCircle } from 'lucide-react';
+import { ScannerService } from '@/services/scanner';
+
+export const ManualScanForm: React.FC = () => {
+    const [ticker, setTicker] = useState('');
+    const [isScanning, setIsScanning] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [success, setSuccess] = useState<string | null>(null);
+
+    const handleManualScan = async (e: React.FormEvent) => {
+        e.preventDefault();
+
+        const cleanTicker = ticker.trim().toUpperCase();
+        if (!cleanTicker) return;
+
+        setIsScanning(true);
+        setError(null);
+        setSuccess(null);
+
+        try {
+            // Note: ScannerService takes `isPaper` boolean. For Manual Scan, default to true.
+            const result = await ScannerService.runSingleTickerScan(cleanTicker, true);
+            if (result.success) {
+                setSuccess(result.summary || `Scan complete for ${cleanTicker}`);
+                setTicker('');
+            } else {
+                setError(`Scan failed: ${result.error}`);
+            }
+        } catch (err: any) {
+            setError(`Error: ${err.message}`);
+        } finally {
+            setIsScanning(false);
+        }
+    };
+
+    return (
+        <div className="bg-[#111] border border-gray-800 rounded-xl p-6 h-full flex flex-col justify-center">
+            <h2 className="text-xl font-bold text-white mb-2">Manual Ticker Scan</h2>
+            <p className="text-sm text-gray-400 mb-6">
+                Directly run the analysis pipeline on a specific ticker, bypassing watchlist filters.
+            </p>
+
+            <form onSubmit={handleManualScan} className="flex space-x-3">
+                <div className="relative flex-1">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Search className="h-5 w-5 text-gray-400" />
+                    </div>
+                    <input
+                        type="text"
+                        value={ticker}
+                        onChange={(e) => setTicker(e.target.value)}
+                        className="block w-full pl-10 pr-3 py-3 border border-gray-700 rounded-lg bg-[#1a1a1a] text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 uppercase font-medium"
+                        placeholder="e.g. AAPL"
+                        maxLength={5}
+                        disabled={isScanning}
+                    />
+                </div>
+                <button
+                    type="submit"
+                    disabled={isScanning || !ticker.trim()}
+                    className="flex items-center justify-center px-6 py-3 border border-transparent text-sm font-medium rounded-lg text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                >
+                    {isScanning ? (
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                        'Scan Now'
+                    )}
+                </button>
+            </form>
+
+            {error && (
+                <div className="mt-4 p-3 bg-red-900/40 border border-red-800 rounded flex items-start text-red-300 text-sm">
+                    <AlertCircle className="w-4 h-4 mr-2 mt-0.5 flex-shrink-0" />
+                    <span>{error}</span>
+                </div>
+            )}
+
+            {success && (
+                <div className="mt-4 p-3 bg-green-900/40 border border-green-800 rounded text-green-300 text-sm">
+                    {success}
+                </div>
+            )}
+        </div>
+    );
+};
