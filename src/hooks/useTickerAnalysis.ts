@@ -49,21 +49,36 @@ export interface TickerAnalysis {
     fundamentals: FundamentalMetrics | null;
 }
 
+interface CacheEntry {
+    timestamp: number;
+    data: TickerAnalysis;
+}
+
 // Per-session cache
 const CACHE_KEY = 'sentinel_analysis_cache';
+const MAX_AGE_MS = 15 * 60 * 1000; // 15 minutes
 
 // Initialize cache from sessionStorage if available
-const loadInitialCache = (): Map<string, TickerAnalysis> => {
+const loadInitialCache = (): Map<string, CacheEntry> => {
     try {
         const stored = sessionStorage.getItem(CACHE_KEY);
         if (stored) {
             const parsed = JSON.parse(stored);
-            return new Map(Object.entries(parsed));
+            const now = Date.now();
+            const validEntries = new Map<string, CacheEntry>();
+
+            // Filter out expired items during initial load
+            for (const [key, value] of Object.entries(parsed) as [string, CacheEntry][]) {
+                if (now - value.timestamp < MAX_AGE_MS) {
+                    validEntries.set(key, value);
+                }
+            }
+            return validEntries;
         }
     } catch (e) {
         console.warn('Failed to parse analysis cache from sessionStorage', e);
     }
-    return new Map<string, TickerAnalysis>();
+    return new Map<string, CacheEntry>();
 };
 
 const analysisCache = loadInitialCache();
@@ -73,7 +88,7 @@ export function useTickerAnalysis() {
     const [data, setData] = useState<Record<string, TickerAnalysis>>(() => {
         const initialData: Record<string, TickerAnalysis> = {};
         analysisCache.forEach((value, key) => {
-            initialData[key] = value;
+            initialData[key] = value.data;
         });
         return initialData;
     });
@@ -94,10 +109,10 @@ export function useTickerAnalysis() {
     const fetchAnalysis = useCallback(async (ticker: string) => {
         if (!ticker) return;
 
-        // Return cached
+        // Return cached if not expired
         const cached = analysisCache.get(ticker);
-        if (cached) {
-            setData(prev => ({ ...prev, [ticker]: cached }));
+        if (cached && (Date.now() - cached.timestamp < MAX_AGE_MS)) {
+            setData(prev => ({ ...prev, [ticker]: cached.data }));
             return;
         }
 
@@ -121,7 +136,7 @@ export function useTickerAnalysis() {
                 fundamentals: fundRes.status === 'fulfilled' ? fundRes.value : null,
             };
 
-            analysisCache.set(ticker, result);
+            analysisCache.set(ticker, { timestamp: Date.now(), data: result });
             persistCache(); // Persist to sessionStorage
             setData(prev => ({ ...prev, [ticker]: result }));
         } catch (err) {

@@ -16,12 +16,49 @@ export function Journal() {
     const [entries, setEntries] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
 
-    // Filters
-    const [searchQuery, setSearchQuery] = useState('');
-    const [selectedType, setSelectedType] = useState<string | null>(null);
-    const [selectedMood, setSelectedMood] = useState<string | null>(null);
-    const [selectedTag, setSelectedTag] = useState<string | null>(null);
-    const [selectedDate, setSelectedDate] = useState<string | null>(null);
+    // Storage keys for filters
+    const STORAGE_KEYS = {
+        SEARCH: 'sentinel_journal_search',
+        TYPE: 'sentinel_journal_type',
+        MOOD: 'sentinel_journal_mood',
+        TAG: 'sentinel_journal_tag',
+        DATE: 'sentinel_journal_date',
+    };
+
+    // Helper to init state from sessionStorage
+    const getStoredState = (key: string, defaultValue: string | null = null): any => {
+        try {
+            const stored = sessionStorage.getItem(key);
+            if (stored) return JSON.parse(stored);
+        } catch { }
+        return defaultValue;
+    };
+
+    // Filters (Initialized from storage)
+    const [searchQuery, setSearchQuery] = useState(() => getStoredState(STORAGE_KEYS.SEARCH, ''));
+    const [selectedType, setSelectedType] = useState<string | null>(() => getStoredState(STORAGE_KEYS.TYPE));
+    const [selectedMood, setSelectedMood] = useState<string | null>(() => getStoredState(STORAGE_KEYS.MOOD));
+    const [selectedTag, setSelectedTag] = useState<string | null>(() => getStoredState(STORAGE_KEYS.TAG));
+    const [selectedDate, setSelectedDate] = useState<string | null>(() => getStoredState(STORAGE_KEYS.DATE));
+
+    // Sync filters to sessionStorage
+    useEffect(() => sessionStorage.setItem(STORAGE_KEYS.SEARCH, JSON.stringify(searchQuery)), [searchQuery]);
+    useEffect(() => {
+        if (selectedType) sessionStorage.setItem(STORAGE_KEYS.TYPE, JSON.stringify(selectedType));
+        else sessionStorage.removeItem(STORAGE_KEYS.TYPE);
+    }, [selectedType]);
+    useEffect(() => {
+        if (selectedMood) sessionStorage.setItem(STORAGE_KEYS.MOOD, JSON.stringify(selectedMood));
+        else sessionStorage.removeItem(STORAGE_KEYS.MOOD);
+    }, [selectedMood]);
+    useEffect(() => {
+        if (selectedTag) sessionStorage.setItem(STORAGE_KEYS.TAG, JSON.stringify(selectedTag));
+        else sessionStorage.removeItem(STORAGE_KEYS.TAG);
+    }, [selectedTag]);
+    useEffect(() => {
+        if (selectedDate) sessionStorage.setItem(STORAGE_KEYS.DATE, JSON.stringify(selectedDate));
+        else sessionStorage.removeItem(STORAGE_KEYS.DATE);
+    }, [selectedDate]);
 
     // Form State
     const [showForm, setShowForm] = useState(false);

@@ -25,11 +25,29 @@ const STORAGE_KEYS = {
     RECENT: 'sentinel_recent_tickers',
 };
 
-// Helper to init state from sessionStorage
+const MAX_AGE_MS = 15 * 60 * 1000; // 15 mins
+
+// Helper to init standard state from sessionStorage
 function getStoredState<T>(key: string, defaultValue: T): T {
     try {
         const stored = sessionStorage.getItem(key);
         if (stored) return JSON.parse(stored);
+    } catch {
+        // ignore parse errors
+    }
+    return defaultValue;
+}
+
+// Helper to init TTL cached state
+function getStoredStateWithTTL<T>(key: string, defaultValue: T): T {
+    try {
+        const stored = sessionStorage.getItem(key);
+        if (stored) {
+            const parsed = JSON.parse(stored);
+            if (Date.now() - parsed.timestamp < MAX_AGE_MS) {
+                return parsed.data;
+            }
+        }
     } catch {
         // ignore parse errors
     }
@@ -42,7 +60,7 @@ export function StockAnalysis() {
     // Initialize state from sessionStorage
     const [activeTicker, setActiveTicker] = useState<string | null>(() => getStoredState(STORAGE_KEYS.TICKER, null));
     const [tickerInput, setTickerInput] = useState(() => getStoredState(STORAGE_KEYS.TICKER, '') || '');
-    const [quote, setQuote] = useState<Quote | null>(() => getStoredState(STORAGE_KEYS.QUOTE, null));
+    const [quote, setQuote] = useState<Quote | null>(() => getStoredStateWithTTL(STORAGE_KEYS.QUOTE, null));
     const [recentTickers, setRecentTickers] = useState<string[]>(() => getStoredState(STORAGE_KEYS.RECENT, []));
 
     const [quoteLoading, setQuoteLoading] = useState(false);
@@ -57,8 +75,14 @@ export function StockAnalysis() {
     }, [activeTicker]);
 
     useEffect(() => {
-        if (quote) sessionStorage.setItem(STORAGE_KEYS.QUOTE, JSON.stringify(quote));
-        else sessionStorage.removeItem(STORAGE_KEYS.QUOTE);
+        if (quote) {
+            sessionStorage.setItem(STORAGE_KEYS.QUOTE, JSON.stringify({
+                timestamp: Date.now(),
+                data: quote
+            }));
+        } else {
+            sessionStorage.removeItem(STORAGE_KEYS.QUOTE);
+        }
     }, [quote]);
 
     useEffect(() => {
