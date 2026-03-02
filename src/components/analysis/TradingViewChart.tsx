@@ -58,12 +58,21 @@ const TradingViewChartInner: React.FC<TradingViewChartProps> = ({ ticker, height
     if (!ticker) return null;
 
     return (
-        <div className="glass-panel rounded-xl overflow-hidden border border-sentinel-800/50 relative">
+        <div className="glass-panel rounded-xl overflow-hidden border border-sentinel-800/50 relative w-full" style={{ height: `${height}px` }}>
+            {/* 
+              TradingView injects an iframe. We must force it to fill the container.
+              We use a style block to target the deeply injected iframe.
+            */}
+            <style dangerouslySetInnerHTML={{
+                __html: `
+                .tradingview-widget-container { height: 100% !important; width: 100% !important; }
+                .tradingview-widget-container iframe { height: 100% !important; width: 100% !important; }
+            `}} />
+
             <div className="absolute inset-0 bg-radial-glow opacity-10 pointer-events-none" />
             <div
                 ref={containerRef}
                 className="tradingview-widget-container relative z-10"
-                style={{ height: `${height}px`, width: '100%' }}
             />
         </div>
     );
