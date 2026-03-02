@@ -6,9 +6,23 @@
  */
 
 import { ExternalLink } from 'lucide-react';
-import type { ProcessedArticle } from '@/types/sentinel';
+import type { ProcessedArticle, TickerRelationship } from '@/types/sentinel';
 import { ARTICLE_CATEGORY_COLORS, ARTICLE_CATEGORY_LABELS, SENTIMENT_COLORS, timeAgo } from '@/utils/sentinelHelpers';
 import type { ArticleCategory } from '@/types/sentinel';
+
+const RELATIONSHIP_LABELS: Record<TickerRelationship, string> = {
+    direct: 'Direct',
+    sector_contagion: 'Contagion',
+    supply_chain: 'Supply Chain',
+    competitor: 'Competitor',
+};
+
+const RELATIONSHIP_COLORS: Record<TickerRelationship, string> = {
+    direct: '#3B82F6',
+    sector_contagion: '#F59E0B',
+    supply_chain: '#8B5CF6',
+    competitor: '#EC4899',
+};
 
 interface ArticleCardProps {
     article: ProcessedArticle;
@@ -112,6 +126,45 @@ export function ArticleCard({ article }: ArticleCardProps) {
                             </span>
                         </div>
                     ))}
+                </div>
+            )}
+
+            {/* Affected Tickers */}
+            {article.affectedTickers && article.affectedTickers.length > 0 && (
+                <div className="mb-3" style={{
+                    padding: '8px 12px',
+                    borderRadius: 'var(--radius-md)',
+                    backgroundColor: 'var(--color-bg-elevated)',
+                    border: '1px solid var(--color-border-subtle)',
+                }}>
+                    <p className="text-xs font-semibold mb-1" style={{ color: 'var(--color-text-muted)', margin: '0 0 6px' }}>
+                        Affected Stocks
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                        {article.affectedTickers.map((at, i) => {
+                            const relColor = RELATIONSHIP_COLORS[at.relationship] || '#6B7280';
+                            const dirColor = at.direction === 'up' ? '#22C55E' : at.direction === 'down' ? '#EF4444' : '#F59E0B';
+                            return (
+                                <div
+                                    key={i}
+                                    className="flex items-center gap-1 text-xs"
+                                    style={{
+                                        padding: '2px 8px',
+                                        borderRadius: 'var(--radius-sm)',
+                                        backgroundColor: `${relColor}15`,
+                                        border: `1px solid ${relColor}40`,
+                                    }}
+                                >
+                                    <span className="font-mono font-bold" style={{ color: dirColor }}>
+                                        {DIRECTION_ARROWS[at.direction] || '↕'} {at.ticker}
+                                    </span>
+                                    <span style={{ color: relColor, fontSize: '0.65rem', fontWeight: 600 }}>
+                                        {RELATIONSHIP_LABELS[at.relationship]}
+                                    </span>
+                                </div>
+                            );
+                        })}
+                    </div>
                 </div>
             )}
 

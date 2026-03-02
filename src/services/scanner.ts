@@ -248,6 +248,99 @@ export class ScannerService {
                                         // 9. Dispatch Email Notification
                                         await NotificationService.sendSignalAlert(ev.ticker, 'overreaction');
                                     }
+
+                                    // ─── 10. CONTAGION PIPELINE ───
+                                    // After overreaction analysis, check if sector peers are
+                                    // dropping in sympathy with no real exposure
+                                    try {
+                                        const epicenterSector = tickersToScan.find(t => t.ticker === ev.ticker)?.sector;
+                                        if (epicenterSector) {
+                                            // Find same-sector peers (excluding epicenter)
+                                            const sectorPeers = tickers.filter(
+                                                t => t !== ev.ticker &&
+                                                tickersToScan.find(w => w.ticker === t)?.sector === epicenterSector
+                                            );
+
+                                            if (sectorPeers.length > 0) {
+                                                // Ask Gemini which peers are likely contagion candidates
+                                                const discovery = await AgentService.discoverSatellites(
+                                                    ev.ticker,
+                                                    ev.headline,
+                                                    epicenterSector,
+                                                    sectorPeers
+                                                );
+
+                                                const satellites = discovery.success
+                                                    ? (discovery.data?.satellites || []).filter(s => s.expected_exposure === 'none' || s.expected_exposure === 'low')
+                                                    : [];
+
+                                                console.log(`[Scanner] Contagion: ${satellites.length} satellite candidates for ${ev.ticker} event`);
+
+                                                // Evaluate each satellite
+                                                for (const sat of satellites.slice(0, 3)) { // Cap at 3 to control API cost
+                                                    let satQuote;
+                                                    try {
+                                                        satQuote = await MarketDataService.getQuote(sat.ticker);
+                                                    } catch { continue; } // skip if no quote
+
+                                                    const satDrop = satQuote.changePercent;
+                                                    // Only evaluate if satellite is actually dropping
+                                                    if (satDrop >= -1) continue;
+
+                                                    const contagion = await AgentService.evaluateContagion(
+                                                        ev.ticker,
+                                                        sat.ticker,
+                                                        ev.headline,
+                                                        satDrop
+                                                    );
+
+                                                    if (contagion.success && contagion.data?.is_contagion && contagion.data.confidence_score > 70) {
+                                                        // Sanity check the contagion trade
+                                                        const contagionSanity = await AgentService.runSanityCheck(
+                                                            sat.ticker,
+                                                            contagion.data.thesis,
+                                                            contagion.data.target_price,
+                                                            contagion.data.stop_loss,
+                                                            'CONTAGION_AGENT'
+                                                        );
+
+                                                        if (contagionSanity.success && contagionSanity.data?.passes_sanity_check) {
+                                                            signalsGenerated++;
+
+                                                            await supabase.from('signals').insert({
+                                                                ticker: sat.ticker,
+                                                                signal_type: 'sector_contagion',
+                                                                confidence_score: contagion.data.confidence_score,
+                                                                risk_level: contagionSanity.data.risk_score > 80 ? 'low' : 'medium',
+                                                                bias_type: 'representativeness_heuristic',
+                                                                thesis: contagion.data.thesis,
+                                                                counter_argument: contagionSanity.data.counter_thesis,
+                                                                suggested_entry_low: contagion.data.suggested_entry_low,
+                                                                suggested_entry_high: contagion.data.suggested_entry_high,
+                                                                stop_loss: contagion.data.stop_loss,
+                                                                target_price: contagion.data.target_price,
+                                                                agent_outputs: {
+                                                                    contagion: contagion.data,
+                                                                    red_team: contagionSanity.data,
+                                                                    epicenter: { ticker: ev.ticker, headline: ev.headline }
+                                                                },
+                                                                status: 'open',
+                                                                secondary_biases: ['herding'],
+                                                                sources: [],
+                                                                is_paper: false
+                                                            } as any);
+
+                                                            await NotificationService.sendSignalAlert(sat.ticker, 'contagion');
+                                                            console.log(`[Scanner] Contagion signal: ${sat.ticker} (sympathy drop from ${ev.ticker})`);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } catch (contagionErr: any) {
+                                        console.error(`[Scanner] Contagion pipeline error for ${ev.ticker}:`, contagionErr.message);
+                                        // Non-fatal — don't kill the scan
+                                    }
                                 }
                             }
                         }
