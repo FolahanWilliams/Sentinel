@@ -25,9 +25,10 @@ export class ScannerService {
 
     /**
      * Smart Scan Prioritization — rank tickers by urgency.
-     * Higher priority = more recent events + higher win rate + more RSS mentions.
+     * Higher priority = more recent events + higher win rate + more RSS mentions
+     * + News Intelligence (sentinel_articles) high-impact article mentions.
      */
-    static async prioritizeTickers(tickers: { ticker: string; sector: string }[]): Promise<{ ticker: string; sector: string; priority: number }[]> {
+    static async prioritizeTickers(tickers: { ticker: string; sector: string }[]): Promise<{ ticker: string; sector: string; priority: number; prioritySources: string[] }[]> {
         const tickerNames = tickers.map(t => t.ticker);
 
         // Count recent events per ticker (last 24h)
@@ -86,16 +87,60 @@ export class ScannerService {
             }
         }
 
+        // ── NEWS INTELLIGENCE BOOST ──
+        // Query sentinel_articles from last 24h (processed by the Intelligence subsystem)
+        // High-impact articles mentioning a watchlist ticker get a massive priority boost
+        const sentinelCounts: Record<string, { total: number; highImpact: number }> = {};
+        try {
+            const { data: sentinelArticles } = await (supabase
+                .from('sentinel_articles' as any)
+                .select('title, summary, impact, signals, affected_tickers') as any)
+                .gte('processed_at', oneDayAgo)
+                .limit(100);
+
+            for (const article of (sentinelArticles || []) as any[]) {
+                // Check affected_tickers array first (most reliable)
+                const affectedTickers: string[] = article.affected_tickers || [];
+                // Also scan title + summary for ticker mentions
+                const textToScan = `${article.title || ''} ${article.summary || ''}`.toUpperCase();
+                // Also extract tickers from signals JSONB [{ ticker, direction, confidence }]
+                const articleSignals: Array<{ ticker?: string }> = Array.isArray(article.signals) ? article.signals : [];
+
+                for (const t of tickerNames) {
+                    const mentioned = affectedTickers.includes(t)
+                        || textToScan.includes(t)
+                        || articleSignals.some(s => s.ticker?.toUpperCase() === t);
+
+                    if (mentioned) {
+                        if (!sentinelCounts[t]) sentinelCounts[t] = { total: 0, highImpact: 0 };
+                        sentinelCounts[t].total++;
+                        if (article.impact === 'high') sentinelCounts[t].highImpact++;
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('[Scanner] sentinel_articles boost lookup failed (non-fatal):', e);
+        }
+
         // Score each ticker
         return tickers.map(t => {
             const events = eventCounts[t.ticker] || 0;
             const rss = rssCounts[t.ticker] || 0;
             const wr = tickerWinRates[t.ticker];
             const winRateBonus = wr ? (wr.wins / wr.total) * 20 : 0;
+            const sentinel = sentinelCounts[t.ticker];
+            const sentinelBoost = sentinel ? (sentinel.highImpact * 50) + (sentinel.total * 15) : 0;
 
-            const priority = (events * 30) + (rss * 10) + winRateBonus + 10; // base 10 so everyone gets scanned
+            const priority = (events * 30) + (rss * 10) + winRateBonus + sentinelBoost + 10; // base 10
 
-            return { ...t, priority: Math.round(priority) };
+            // Track sources for transparency in logs
+            const sources: string[] = [];
+            if (events > 0) sources.push(`${events} events`);
+            if (rss > 0) sources.push(`${rss} RSS`);
+            if (sentinel && sentinel.total > 0) sources.push(`${sentinel.total} intel (${sentinel.highImpact} high)`);
+            if (wr) sources.push(`${Math.round((wr.wins / wr.total) * 100)}% WR`);
+
+            return { ...t, priority: Math.round(priority), prioritySources: sources };
         }).sort((a, b) => b.priority - a.priority);
     }
 
@@ -158,7 +203,10 @@ export class ScannerService {
             const tickersToScan = prioritized.slice(0, maxTickers);
             const tickers = tickersToScan.map(w => w.ticker);
 
-            console.log(`[Scanner] Prioritized ${tickers.length} tickers:`, tickersToScan.map(t => `${t.ticker}(${t.priority})`).join(', '));
+            console.log(`[Scanner] Prioritized ${tickers.length} tickers:`, tickersToScan.map(t => {
+                const src = t.prioritySources.length > 0 ? ` [${t.prioritySources.join(', ')}]` : '';
+                return `${t.ticker}(${t.priority}${src})`;
+            }).join(', '));
 
             // 3. Sync RSS Feeds (Feed the beast)
             await RSSReaderService.syncAllFeeds();
@@ -252,7 +300,8 @@ export class ScannerService {
                                         analysis.data.thesis,
                                         analysis.data.target_price,
                                         analysis.data.stop_loss,
-                                        'OVERREACTION_AGENT'
+                                        'OVERREACTION_AGENT',
+                                        perfContext
                                     );
 
                                     if (sanity.success && sanity.data?.passes_sanity_check) {
@@ -313,7 +362,7 @@ export class ScannerService {
                                             // Find same-sector peers (excluding epicenter)
                                             const sectorPeers = tickers.filter(
                                                 t => t !== ev.ticker &&
-                                                tickersToScan.find(w => w.ticker === t)?.sector === epicenterSector
+                                                    tickersToScan.find(w => w.ticker === t)?.sector === epicenterSector
                                             );
 
                                             if (sectorPeers.length > 0) {
@@ -357,7 +406,8 @@ export class ScannerService {
                                                             contagion.data.thesis,
                                                             contagion.data.target_price,
                                                             contagion.data.stop_loss,
-                                                            'CONTAGION_AGENT'
+                                                            'CONTAGION_AGENT',
+                                                            perfContext
                                                         );
 
                                                         if (contagionSanity.success && contagionSanity.data?.passes_sanity_check) {

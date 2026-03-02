@@ -247,43 +247,90 @@ export class PerformanceStats {
 
     /**
      * Build a performance context string for injection into agent prompts.
+     * Includes explicit calibration directives so agents can adjust confidence
+     * based on historical accuracy for each bias type, sector, and confidence bucket.
      */
     async buildPerformanceContext(): Promise<string> {
-        const [biasRates, sectorRates, topPatterns] = await Promise.all([
+        const [biasRates, sectorRates, topPatterns, calibration] = await Promise.all([
             this.getWinRateByBias(),
             this.getWinRateBySector(),
-            this.getTopPerformingPatterns(3),
+            this.getTopPerformingPatterns(5),
+            this.getConfidenceCalibration(),
         ]);
 
-        const lines: string[] = ['INTERNAL PERFORMANCE DATA (from past signals):'];
+        const lines: string[] = ['=== SENTINEL HISTORICAL PERFORMANCE DATA ==='];
+        lines.push('Use this data to CALIBRATE your confidence scores. This is not optional.');
 
-        const biasEntries = Object.entries(biasRates).filter(([, v]) => v.total >= 3);
+        // ── Bias-type stats with explicit directives ──
+        const biasEntries = Object.entries(biasRates).filter(([, v]) => v.total >= 2);
         if (biasEntries.length > 0) {
-            lines.push('\nWin rate by bias type:');
+            lines.push('\n## Win Rate by Bias Type:');
             for (const [bias, stats] of biasEntries) {
-                lines.push(`  - ${bias}: ${stats.winRate}% (${stats.total} signals)`);
+                lines.push(`  - ${bias}: ${stats.winRate}% (${stats.wins}W/${stats.losses}L, n=${stats.total})`);
+                // Actionable directives
+                if (stats.total >= 3 && stats.winRate < 40) {
+                    lines.push(`    ⚠ DIRECTIVE: LOWER your confidence by 10-20 points for "${bias}" signals. Historical accuracy is poor.`);
+                } else if (stats.total >= 3 && stats.winRate >= 70) {
+                    lines.push(`    ✓ DIRECTIVE: This bias type outperforms. You may raise confidence by 5-10 points if fundamentals align.`);
+                }
             }
         }
 
-        const sectorEntries = Object.entries(sectorRates).filter(([, v]) => v.total >= 3);
+        // ── Sector stats with directives ──
+        const sectorEntries = Object.entries(sectorRates).filter(([, v]) => v.total >= 2);
         if (sectorEntries.length > 0) {
-            lines.push('\nWin rate by sector:');
+            lines.push('\n## Win Rate by Sector:');
             for (const [sector, stats] of sectorEntries) {
-                lines.push(`  - ${sector}: ${stats.winRate}% (${stats.total} signals)`);
+                lines.push(`  - ${sector}: ${stats.winRate}% (${stats.wins}W/${stats.losses}L, n=${stats.total})`);
+                if (stats.total >= 3 && stats.winRate < 40) {
+                    lines.push(`    ⚠ DIRECTIVE: Signals in "${sector}" sector historically underperform. Require HIGHER confirmation (severity >= 8, multiple sources).`);
+                }
             }
         }
 
+        // ── Confidence calibration — are we over/under-confident? ──
+        if (calibration.length > 0) {
+            lines.push('\n## Confidence Calibration (Predicted vs Actual Win %):');
+            for (const bucket of calibration) {
+                const delta = bucket.actual - bucket.predicted;
+                const arrow = delta >= 0 ? '↑' : '↓';
+                lines.push(`  - Confidence ${bucket.range}: Predicted ~${bucket.predicted}%, Actual ${bucket.actual}% ${arrow} (n=${bucket.count})`);
+            }
+            // Global calibration directive
+            const overConfident = calibration.filter(b => b.predicted - b.actual > 15 && b.count >= 3);
+            if (overConfident.length > 0) {
+                lines.push(`    ⚠ SYSTEMATIC OVERCONFIDENCE DETECTED in buckets: ${overConfident.map(b => b.range).join(', ')}. Reduce all confidence scores by 10.`);
+            }
+            const underConfident = calibration.filter(b => b.actual - b.predicted > 15 && b.count >= 3);
+            if (underConfident.length > 0) {
+                lines.push(`    ✓ UNDERCONFIDENCE detected in buckets: ${underConfident.map(b => b.range).join(', ')}. You may be too conservative.`);
+            }
+        }
+
+        // ── Best/Worst performing patterns ──
         if (topPatterns.length > 0) {
-            lines.push('\nBest-performing patterns:');
-            for (const p of topPatterns) {
-                lines.push(`  - ${p.bias} + ${p.sector}: ${p.winRate}% win rate, avg ${p.avgReturn}% return (n=${p.sampleSize})`);
+            const best = topPatterns.filter(p => p.winRate >= 60);
+            const worst = topPatterns.filter(p => p.winRate < 40);
+
+            if (best.length > 0) {
+                lines.push('\n## Best-Performing Patterns (prioritize these):');
+                for (const p of best) {
+                    lines.push(`  ✓ ${p.bias} + ${p.sector}: ${p.winRate}% WR, avg ${p.avgReturn}% return (n=${p.sampleSize})`);
+                }
+            }
+            if (worst.length > 0) {
+                lines.push('\n## Worst-Performing Patterns (be skeptical):');
+                for (const p of worst) {
+                    lines.push(`  ✗ ${p.bias} + ${p.sector}: ${p.winRate}% WR, avg ${p.avgReturn}% return (n=${p.sampleSize})`);
+                }
             }
         }
 
-        if (lines.length === 1) {
-            return 'INTERNAL PERFORMANCE DATA: Not enough historical signals to generate statistics yet.';
+        if (lines.length <= 2) {
+            return '=== SENTINEL HISTORICAL PERFORMANCE DATA ===\nNot enough historical signals to generate statistics yet. Use your default calibration.';
         }
 
+        lines.push('\n=== END PERFORMANCE DATA ===');
         return lines.join('\n');
     }
 

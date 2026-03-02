@@ -133,11 +133,11 @@ serve(async (req) => {
             if (data.candidates && data.candidates.length > 0) {
                 text = data.candidates[0].content.parts[0].text;
 
-                // Strip markdown backticks if Gemini wraps the JSON
-                if (text.startsWith('```json')) {
-                    text = text.replace(/^```json/, '').replace(/```$/, '').trim();
-                } else if (text.startsWith('```')) {
-                    text = text.replace(/^```/, '').replace(/```$/, '').trim();
+                // Better JSON extraction to avoid markdown wrapping issues
+                const jsonStart = text.indexOf('{');
+                const jsonEnd = text.lastIndexOf('}');
+                if (jsonStart !== -1 && jsonEnd !== -1) {
+                    text = text.substring(jsonStart, jsonEnd + 1);
                 }
             }
 

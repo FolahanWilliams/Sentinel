@@ -14,6 +14,7 @@ import { MarketDataService } from '@/services/marketData';
 import { BiasBreakdown } from '@/components/analysis/BiasBreakdown';
 import { EventTimeline } from '@/components/analysis/EventTimeline';
 import { FundamentalSnapshot } from '@/components/analysis/FundamentalSnapshot';
+import { TradingViewChart } from '@/components/analysis/TradingViewChart';
 import { formatPrice } from '@/utils/formatters';
 import type { Quote } from '@/types/market';
 
@@ -207,6 +208,9 @@ export function StockAnalysis() {
                             </div>
                         </div>
                     </div>
+
+                    {/* TradingView Interactive Chart */}
+                    <TradingViewChart ticker={activeTicker} height={480} />
 
                     {/* Analysis Grid */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

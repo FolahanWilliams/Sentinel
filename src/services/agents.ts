@@ -84,8 +84,13 @@ export class AgentService {
     /**
      * 3. Earnings Overreaction Agent
      * Parses earnings misses against forward guidance.
+     * Receives historical performance context for confidence calibration.
      */
-    static async evaluateEarnings(ticker: string, epsEstimate: number, epsActual: number, revenueEstimate: number, revenueActual: number, guidanceDetails: string, priceDropPct: number): Promise<AgentResult<any>> {
+    static async evaluateEarnings(ticker: string, epsEstimate: number, epsActual: number, revenueEstimate: number, revenueActual: number, guidanceDetails: string, priceDropPct: number, performanceContext?: string): Promise<AgentResult<any>> {
+        const perfBlock = performanceContext
+            ? `\n\n${performanceContext}\n\nUse the performance data above to calibrate your confidence. If earnings overreaction signals historically underperform in this sector, lower your confidence. If they outperform, you may raise it slightly.`
+            : '';
+
         const prompt = `
     TICKER: ${ticker}
     PRICE DROP: ${priceDropPct.toFixed(2)}%
@@ -93,7 +98,7 @@ export class AgentService {
     EPS EXPECTED: ${epsEstimate} | EPS ACTUAL: ${epsActual}
     REV EXPECTED: ${revenueEstimate} | REV ACTUAL: ${revenueActual}
     FORWARD GUIDANCE CONTEXT: ${guidanceDetails}
-    
+    ${perfBlock}
     Evaluate if this post-earnings drop is a mispricing because forward guidance outweighs the backward-looking miss.
     Return JSON perfectly matching the expected schema.
     `;
@@ -109,15 +114,21 @@ export class AgentService {
     /**
      * 4. Sanity Check / Red Team Agent
      * Attacks a proposed trade thesis.
+     * Receives historical performance context so it knows which bias types and
+     * sectors have been underperforming and should be scrutinized harder.
      */
-    static async runSanityCheck(ticker: string, originalThesis: string, targetPrice: number, stopLoss: number, agentType: string): Promise<AgentResult<any>> {
+    static async runSanityCheck(ticker: string, originalThesis: string, targetPrice: number, stopLoss: number, agentType: string, performanceContext?: string): Promise<AgentResult<any>> {
+        const perfBlock = performanceContext
+            ? `\n\n${performanceContext}\n\nAs the Red Team, use this performance history to identify systemic weaknesses. If the originating agent type or sector has a poor track record, be EXTRA skeptical and demand stronger evidence.`
+            : '';
+
         const prompt = `
     PROPOSED TRADE FOR TICKER: ${ticker}
     ORIGINATING AGENT: ${agentType}
     
     THESIS: "${originalThesis}"
     TARGET: $${targetPrice} | STOP LOSS: $${stopLoss}
-    
+    ${perfBlock}
     You are the RED TEAM. Tear this thesis apart. Find the fatal flaw.
     Research macro conditions, pending lawsuits, or sector rot.
     If it's a terrible trade, fail it. Return JSON.
