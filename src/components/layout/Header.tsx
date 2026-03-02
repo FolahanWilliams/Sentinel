@@ -7,6 +7,7 @@
 import { useLocation } from 'react-router-dom';
 import { Bell, Lock, Play, Pause, RefreshCw } from 'lucide-react';
 import { destroySession } from '@/utils/auth';
+import { useNotifications } from '@/hooks/useNotifications';
 
 const PAGE_TITLES: Record<string, string> = {
     '/': 'Dashboard',
@@ -19,6 +20,7 @@ const PAGE_TITLES: Record<string, string> = {
 
 export function Header() {
     const location = useLocation();
+    const { unreadCount, markAllRead } = useNotifications();
 
     // Match analysis routes
     const pageTitle = location.pathname.startsWith('/analysis/')
@@ -77,9 +79,25 @@ export function Header() {
                 {/* Notification Bell */}
                 <button className="p-2 rounded-lg transition-colors cursor-pointer relative"
                     style={{ backgroundColor: 'transparent', border: 'none', color: 'var(--color-text-secondary)' }}
-                    title="Notifications">
+                    title="Notifications"
+                    onClick={markAllRead}>
                     <Bell size={18} />
-                    {/* TODO: Badge with unread count from useNotifications hook */}
+                    {unreadCount > 0 && (
+                        <span
+                            className="absolute top-0.5 right-0.5 flex items-center justify-center text-white font-bold"
+                            style={{
+                                fontSize: '0.55rem',
+                                minWidth: 16,
+                                height: 16,
+                                borderRadius: '9999px',
+                                backgroundColor: '#EF4444',
+                                padding: '0 4px',
+                                lineHeight: 1,
+                            }}
+                        >
+                            {unreadCount > 9 ? '9+' : unreadCount}
+                        </span>
+                    )}
                 </button>
 
                 {/* Lock Button */}
