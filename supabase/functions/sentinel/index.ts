@@ -250,8 +250,16 @@ serve(async (req) => {
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 
-    if (!GEMINI_API_KEY) {
-        return new Response(JSON.stringify({ error: 'GEMINI_API_KEY not set' }), {
+    // Validate all required secrets upfront with clear diagnostics
+    const missing: string[] = [];
+    if (!GEMINI_API_KEY) missing.push('GEMINI_API_KEY');
+    if (!SUPABASE_URL) missing.push('SUPABASE_URL');
+    if (!SUPABASE_SERVICE_ROLE_KEY) missing.push('SUPABASE_SERVICE_ROLE_KEY');
+
+    if (missing.length > 0) {
+        const msg = `Missing required Edge Function secrets: ${missing.join(', ')}. Set them in Supabase Dashboard → Edge Functions → Secrets.`;
+        console.error(`[sentinel] ${msg}`);
+        return new Response(JSON.stringify({ error: msg }), {
             status: 500,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -564,8 +572,11 @@ serve(async (req) => {
             }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             });
-        } catch {
-            return new Response(JSON.stringify({ error: err.message }), {
+        } catch (cacheErr: any) {
+            console.error('[sentinel] Cache fallback also failed:', cacheErr);
+            return new Response(JSON.stringify({
+                error: `Sentinel error: ${err.message}. Cache fallback also failed: ${cacheErr.message}`,
+            }), {
                 status: 500,
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             });
