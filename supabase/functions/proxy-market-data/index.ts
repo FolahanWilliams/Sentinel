@@ -60,38 +60,50 @@ serve(async (req) => {
         if (endpoint === 'quote') {
             const tickerUpper = ticker.toUpperCase()
             let html = '';
-            let url = '';
-            let source = '';
-
-            if (['BTC', 'ETH', 'SOL'].includes(tickerUpper)) {
-                // Crypto
-                url = `https://www.cnbc.com/quotes/${tickerUpper}=`;
-                source = 'CNBC';
-            } else if (tickerUpper === 'VIX' || tickerUpper === '^VIX') {
-                // VIX
-                url = `https://www.cnbc.com/quotes/.VIX`;
-                source = 'CNBC';
-            } else {
-                // Equities / ETFs
-                url = `https://finviz.com/quote.ashx?t=${tickerUpper}`;
-                source = 'Finviz';
-            }
+            let url = `https://finance.yahoo.com/quote/${tickerUpper}/`;
+            let source = 'Yahoo Finance';
 
             console.log(`[proxy-market-data] Fetching HTML from ${url}`);
-            const res = await fetch(url, {
+            let res = await fetch(url, {
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
                     'Accept-Language': 'en-US,en;q=0.9',
+                    'Cookie': 'consent=true; auth=true'
                 }
             });
 
-            if (!res.ok) {
-                console.warn(`[proxy-market-data] Target ${source} returned ${res.status}.`);
-                throw new Error(`${source} returned ${res.status}`);
-            }
-
             html = await res.text();
+
+            // Detect if Yahoo returned a GDPR Consent Wall or Rate Limit (or 404/429)
+            if (!res.ok || html.includes('consent.yahoo.com') || html.includes('guce.yahoo.com')) {
+                console.warn(`[proxy-market-data] Yahoo Finance blocked request (GDPR/429). Triggering fallback...`);
+
+                if (['BTC', 'ETH', 'SOL'].includes(tickerUpper)) {
+                    url = `https://www.cnbc.com/quotes/${tickerUpper}=`;
+                    source = 'CNBC (Fallback)';
+                } else if (tickerUpper === 'VIX' || tickerUpper === '^VIX') {
+                    url = `https://www.cnbc.com/quotes/.VIX`;
+                    source = 'CNBC (Fallback)';
+                } else {
+                    url = `https://finviz.com/quote.ashx?t=${tickerUpper}`;
+                    source = 'Finviz (Fallback)';
+                }
+
+                console.log(`[proxy-market-data] Fetching HTML from ${url}`);
+                res = await fetch(url, {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept': 'text/html',
+                    }
+                });
+
+                if (!res.ok) {
+                    throw new Error(`All scraping sources failed for ${tickerUpper}. Primary and Fallback blocked.`);
+                }
+
+                html = await res.text();
+            }
 
             // Call Gemini REST API to parse the HTML
             console.log(`[proxy-market-data] Parsing ${source} HTML with Gemini`);
