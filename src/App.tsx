@@ -17,6 +17,7 @@ import { Scanner } from '@/pages/Scanner';
 import { Settings } from '@/pages/Settings';
 import { Journal } from '@/pages/Journal';
 import { Intelligence } from '@/pages/Intelligence';
+import { StockAnalysis } from '@/pages/StockAnalysis';
 import type { Session } from '@supabase/supabase-js';
 
 export default function App() {
@@ -64,6 +65,8 @@ export default function App() {
                     <Route path="/watchlist" element={<Watchlist />} />
                     <Route path="/backtest" element={<Backtest />} />
                     <Route path="/scanner" element={<Scanner />} />
+                    <Route path="/research" element={<StockAnalysis />} />
+                    <Route path="/research/:ticker" element={<StockAnalysis />} />
                     <Route path="/intelligence" element={<Intelligence />} />
                     <Route path="/settings" element={<Settings />} />
                     <Route path="/journal" element={<Journal />} />
