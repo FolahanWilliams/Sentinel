@@ -16,7 +16,8 @@ import {
     OVERREACTION_SCHEMA,
     CONTAGION_SCHEMA,
     EARNINGS_SCHEMA,
-    SANITY_CHECK_SCHEMA
+    SANITY_CHECK_SCHEMA,
+    SATELLITE_DISCOVERY_SCHEMA
 } from './schemas';
 import type { AgentResult } from '@/types/agents';
 
@@ -120,7 +121,41 @@ export class AgentService {
     }
 
     /**
-     * 5. Extraction Agent (Helper)
+     * 5. Satellite Discovery Agent
+     * Given an epicenter event, identifies sector peers / supply chain tickers
+     * that may be dropping in sympathy and are contagion candidates.
+     */
+    static async discoverSatellites(
+        epicenterTicker: string,
+        eventHeadline: string,
+        sector: string,
+        watchlistTickers: string[]
+    ): Promise<AgentResult<{ satellites: Array<{ ticker: string; reason: string; expected_exposure: string }> }>> {
+        const prompt = `
+    EPICENTER TICKER: ${epicenterTicker}
+    EPICENTER SECTOR: ${sector}
+    EVENT: ${eventHeadline}
+
+    WATCHLIST TICKERS (candidates): ${watchlistTickers.join(', ')}
+
+    From the watchlist above, identify tickers that are likely to drop in sympathy with ${epicenterTicker}'s event but may NOT have real exposure to the issue.
+    For each satellite candidate, explain:
+    1. Why the market might sell it (the fear)
+    2. Whether the exposure is real or imagined
+
+    Only include tickers from the provided watchlist. Return JSON.
+    `;
+
+        return GeminiService.generate({
+            prompt,
+            systemInstruction: CONTAGION_AGENT_PROMPT,
+            requireGroundedSearch: true,
+            responseSchema: SATELLITE_DISCOVERY_SCHEMA
+        });
+    }
+
+    /**
+     * 6. Extraction Agent (Helper)
      * Converts unstructured RSS text into structured Market Events.
      */
     static async extractEventsFromText(text: string): Promise<AgentResult<any>> {

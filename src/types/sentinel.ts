@@ -52,6 +52,15 @@ export interface ArticleTradingSignal {
     note: string;
 }
 
+export type TickerRelationship = 'direct' | 'sector_contagion' | 'supply_chain' | 'competitor';
+
+export interface AffectedTicker {
+    ticker: string;
+    relationship: TickerRelationship;
+    direction: 'up' | 'down' | 'volatile';
+    confidence: number;
+}
+
 export interface ProcessedArticle {
     id: string;
     title: string;
@@ -66,6 +75,7 @@ export interface ProcessedArticle {
     impact: 'high' | 'medium' | 'low';
     signals: ArticleTradingSignal[];
     entities: string[];
+    affectedTickers: AffectedTicker[];
 
     processedAt: string;
 }

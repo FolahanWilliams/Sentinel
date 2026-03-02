@@ -59,6 +59,26 @@ export const EARNINGS_SCHEMA = {
     required: ["is_mispriced", "confidence_score", "thesis", "forward_guidance_analysis", "stop_loss", "target_price"]
 };
 
+export const SATELLITE_DISCOVERY_SCHEMA = {
+    type: "object",
+    properties: {
+        satellites: {
+            type: "array",
+            items: {
+                type: "object",
+                properties: {
+                    ticker: { type: "string", description: "Watchlist ticker that may be dropping in sympathy." },
+                    reason: { type: "string", description: "Why the market is selling this ticker in sympathy." },
+                    expected_exposure: { type: "string", description: "'none', 'low', 'moderate', or 'high' — actual fundamental exposure to the epicenter's problem." }
+                },
+                required: ["ticker", "reason", "expected_exposure"]
+            },
+            description: "Tickers from the watchlist that are likely contagion candidates."
+        }
+    },
+    required: ["satellites"]
+};
+
 export const SANITY_CHECK_SCHEMA = {
     type: "object",
     properties: {

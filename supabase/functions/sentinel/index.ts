@@ -216,6 +216,17 @@ For EACH article, return a JSON object with these fields:
   - note: 1-line explanation
   If no trading signal, use empty array [].
 - entities: array of mentioned tickers, company names, or key people.
+- affected_tickers: array of stock tickers that could be materially impacted by this news. For EACH ticker include:
+  - ticker: the stock symbol (e.g. "NVDA", "TSLA"). Only include real, traded tickers — never guess.
+  - relationship: one of "direct" (company is the subject), "sector_contagion" (same-sector peer likely to move in sympathy), "supply_chain" (supplier/customer), "competitor" (direct competitor affected inversely or in sympathy)
+  - direction: "up", "down", or "volatile" — expected price impact on THIS ticker
+  - confidence: 0.0 to 1.0 — how confident you are this ticker is affected
+  Example: If TSMC reports bad earnings, affected_tickers might include:
+  [{"ticker":"TSM","relationship":"direct","direction":"down","confidence":0.95},
+   {"ticker":"NVDA","relationship":"supply_chain","direction":"down","confidence":0.7},
+   {"ticker":"AMD","relationship":"sector_contagion","direction":"down","confidence":0.6},
+   {"ticker":"INTC","relationship":"competitor","direction":"up","confidence":0.4}]
+  If no tickers are identifiable, return empty array [].
 
 Also return a "briefing" object:
 - topStories: array of 5 strings — the most important headlines rephrased as sharp one-liners
@@ -233,7 +244,7 @@ IMPORTANT RULES:
 
 Return valid JSON in this exact structure:
 {
-  "articles": [ { "index": 0, "summary": "...", "category": "...", "sentiment": "...", "sentimentScore": 0, "impact": "...", "signals": [], "entities": [] }, ... ],
+  "articles": [ { "index": 0, "summary": "...", "category": "...", "sentiment": "...", "sentimentScore": 0, "impact": "...", "signals": [], "entities": [], "affected_tickers": [] }, ... ],
   "briefing": { "topStories": [], "marketMood": "mixed", "trendingTopics": [], "signalCount": { "bullish": 0, "bearish": 0, "neutral": 0 } }
 }`;
 }
@@ -414,6 +425,7 @@ serve(async (req) => {
                                 impact: art.impact || 'low',
                                 signals: art.signals || [],
                                 entities: art.entities || [],
+                                affected_tickers: art.affected_tickers || [],
                             });
                         }
                     }
@@ -499,6 +511,7 @@ serve(async (req) => {
                 impact: a.impact,
                 signals: a.signals || [],
                 entities: a.entities || [],
+                affectedTickers: a.affected_tickers || [],
                 processedAt: a.processed_at,
             })),
             briefing: latestBriefing
@@ -555,6 +568,7 @@ serve(async (req) => {
                     source: a.source, summary: a.summary || a.title, category: a.category,
                     sentiment: a.sentiment, sentimentScore: a.sentiment_score,
                     impact: a.impact, signals: a.signals || [], entities: a.entities || [],
+                    affectedTickers: a.affected_tickers || [],
                     processedAt: a.processed_at,
                 })),
                 briefing: cachedBriefing ? {
