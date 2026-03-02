@@ -50,12 +50,46 @@ export interface TickerAnalysis {
 }
 
 // Per-session cache
-const analysisCache = new Map<string, TickerAnalysis>();
+const CACHE_KEY = 'sentinel_analysis_cache';
+
+// Initialize cache from sessionStorage if available
+const loadInitialCache = (): Map<string, TickerAnalysis> => {
+    try {
+        const stored = sessionStorage.getItem(CACHE_KEY);
+        if (stored) {
+            const parsed = JSON.parse(stored);
+            return new Map(Object.entries(parsed));
+        }
+    } catch (e) {
+        console.warn('Failed to parse analysis cache from sessionStorage', e);
+    }
+    return new Map<string, TickerAnalysis>();
+};
+
+const analysisCache = loadInitialCache();
 
 export function useTickerAnalysis() {
-    const [data, setData] = useState<Record<string, TickerAnalysis>>({});
+    // Initialize component state with what's already in the cache
+    const [data, setData] = useState<Record<string, TickerAnalysis>>(() => {
+        const initialData: Record<string, TickerAnalysis> = {};
+        analysisCache.forEach((value, key) => {
+            initialData[key] = value;
+        });
+        return initialData;
+    });
+
     const [loading, setLoading] = useState<Record<string, boolean>>({});
     const inflight = useRef<Set<string>>(new Set());
+
+    // Helper to sync Map to sessionStorage
+    const persistCache = () => {
+        try {
+            const obj = Object.fromEntries(analysisCache);
+            sessionStorage.setItem(CACHE_KEY, JSON.stringify(obj));
+        } catch (e) {
+            console.warn('Failed to persist analysis cache', e);
+        }
+    };
 
     const fetchAnalysis = useCallback(async (ticker: string) => {
         if (!ticker) return;
@@ -88,6 +122,7 @@ export function useTickerAnalysis() {
             };
 
             analysisCache.set(ticker, result);
+            persistCache(); // Persist to sessionStorage
             setData(prev => ({ ...prev, [ticker]: result }));
         } catch (err) {
             console.error(`[useTickerAnalysis] Failed for ${ticker}:`, err);

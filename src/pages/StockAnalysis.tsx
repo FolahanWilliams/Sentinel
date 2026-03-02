@@ -18,20 +18,57 @@ import { TradingViewChart } from '@/components/analysis/TradingViewChart';
 import { formatPrice } from '@/utils/formatters';
 import type { Quote } from '@/types/market';
 
+// Storage keys
+const STORAGE_KEYS = {
+    TICKER: 'sentinel_active_ticker',
+    QUOTE: 'sentinel_active_quote',
+    RECENT: 'sentinel_recent_tickers',
+};
+
+// Helper to init state from sessionStorage
+function getStoredState<T>(key: string, defaultValue: T): T {
+    try {
+        const stored = sessionStorage.getItem(key);
+        if (stored) return JSON.parse(stored);
+    } catch {
+        // ignore parse errors
+    }
+    return defaultValue;
+}
+
 export function StockAnalysis() {
     const { ticker: urlTicker } = useParams<{ ticker?: string }>();
-    const [tickerInput, setTickerInput] = useState('');
-    const [activeTicker, setActiveTicker] = useState<string | null>(null);
-    const [quote, setQuote] = useState<Quote | null>(null);
+
+    // Initialize state from sessionStorage
+    const [activeTicker, setActiveTicker] = useState<string | null>(() => getStoredState(STORAGE_KEYS.TICKER, null));
+    const [tickerInput, setTickerInput] = useState(() => getStoredState(STORAGE_KEYS.TICKER, '') || '');
+    const [quote, setQuote] = useState<Quote | null>(() => getStoredState(STORAGE_KEYS.QUOTE, null));
+    const [recentTickers, setRecentTickers] = useState<string[]>(() => getStoredState(STORAGE_KEYS.RECENT, []));
+
     const [quoteLoading, setQuoteLoading] = useState(false);
     const [quoteError, setQuoteError] = useState<string | null>(null);
-    const [recentTickers, setRecentTickers] = useState<string[]>([]);
 
     const { data: analysisData, loading: analysisLoading, fetchAnalysis } = useTickerAnalysis();
 
-    // Auto-run analysis if a ticker is in the URL (e.g. /research/NVDA)
+    // Sync state to sessionStorage when it changes
     useEffect(() => {
-        if (urlTicker) {
+        if (activeTicker) sessionStorage.setItem(STORAGE_KEYS.TICKER, JSON.stringify(activeTicker));
+        else sessionStorage.removeItem(STORAGE_KEYS.TICKER);
+    }, [activeTicker]);
+
+    useEffect(() => {
+        if (quote) sessionStorage.setItem(STORAGE_KEYS.QUOTE, JSON.stringify(quote));
+        else sessionStorage.removeItem(STORAGE_KEYS.QUOTE);
+    }, [quote]);
+
+    useEffect(() => {
+        sessionStorage.setItem(STORAGE_KEYS.RECENT, JSON.stringify(recentTickers));
+    }, [recentTickers]);
+
+    // Auto-run analysis if a ticker is in the URL (e.g. /research/NVDA)
+    // ONLY if it doesn't match the currently active one (prevents redundant fetch on reload)
+    useEffect(() => {
+        if (urlTicker && urlTicker.toUpperCase() !== activeTicker) {
             runAnalysis(urlTicker);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
