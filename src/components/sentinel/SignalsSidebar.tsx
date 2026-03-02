@@ -40,7 +40,9 @@ export function SignalsSidebar({ articles }: SignalsSidebarProps) {
         return Object.entries(grouped)
             .sort((a, b) => {
                 if (b[1].length !== a[1].length) return b[1].length - a[1].length;
-                return b[1][0].pubDate.getTime() - a[1][0].pubDate.getTime();
+                const bTime = b[1][0]?.pubDate?.getTime() || 0;
+                const aTime = a[1][0]?.pubDate?.getTime() || 0;
+                return bTime - aTime;
             });
 
     }, [articles]);
@@ -79,16 +81,13 @@ export function SignalsSidebar({ articles }: SignalsSidebarProps) {
 
                     let ConsensusIcon = Activity;
                     let consensusColor = 'text-amber-400 bg-amber-500/10 border-amber-500/20';
-                    let sentimentBar = 'bg-amber-500';
 
                     if (ups > downs) {
                         ConsensusIcon = TrendingUp;
                         consensusColor = 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20';
-                        sentimentBar = 'bg-emerald-500';
                     } else if (downs > ups) {
                         ConsensusIcon = TrendingDown;
                         consensusColor = 'text-red-400 bg-red-500/10 border-red-500/20';
-                        sentimentBar = 'bg-red-500';
                     }
 
                     // Average confidence
@@ -118,7 +117,7 @@ export function SignalsSidebar({ articles }: SignalsSidebarProps) {
                                                 {signal.type.replace('_', ' ')}
                                             </span>
                                             <span className={`h-1.5 w-1.5 rounded-full ${signal.direction === 'up' ? 'bg-emerald-500' :
-                                                    signal.direction === 'down' ? 'bg-red-500' : 'bg-amber-500'
+                                                signal.direction === 'down' ? 'bg-red-500' : 'bg-amber-500'
                                                 }`} />
                                         </div>
                                         <p className="text-xs text-sentinel-300 leading-tight">

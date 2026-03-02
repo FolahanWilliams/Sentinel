@@ -1,4 +1,4 @@
-import { ArticleCategory, FeedCategory } from '@/types/sentinel';
+import { ArticleCategory } from '@/types/sentinel';
 
 // Map specific to the AI-assigned broader categories
 export const CATEGORY_COLORS: Record<ArticleCategory, string> = {

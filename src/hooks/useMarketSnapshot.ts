@@ -78,9 +78,12 @@ export function useMarketSnapshot() {
                 if (result.status === 'fulfilled') {
                     const q = result.value;
                     const entry = { price: q.price, changePercent: q.changePercent };
-                    if (tickerMap[i].key === 'vix') vix = entry;
-                    if (tickerMap[i].key === 'sp500') sp500 = entry;
-                    if (tickerMap[i].key === 'btc') btc = entry;
+                    const t = tickerMap[i];
+                    if (t) {
+                        if (t.key === 'vix') vix = entry;
+                        if (t.key === 'sp500') sp500 = entry;
+                        if (t.key === 'btc') btc = entry;
+                    }
                 }
             });
 

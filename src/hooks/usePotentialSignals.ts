@@ -51,8 +51,8 @@ export function usePotentialSignals() {
                         const meta = diffDays === 0 ? 'today' : diffDays === 1 ? '1d ago' : `${diffDays}d ago`;
 
                         return {
-                            source: sources[sourceIndex],
-                            sourceLabel: sourceLabels[sourceIndex],
+                            source: sources[sourceIndex] as string,
+                            sourceLabel: sourceLabels[sourceIndex] as string,
                             ticker: signal.ticker,
                             action,
                             actionColor,
