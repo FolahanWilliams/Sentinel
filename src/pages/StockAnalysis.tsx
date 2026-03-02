@@ -210,7 +210,7 @@ export function StockAnalysis() {
                     </div>
 
                     {/* TradingView Interactive Chart */}
-                    <TradingViewChart ticker={activeTicker} height={480} />
+                    <TradingViewChart ticker={activeTicker} height={600} />
 
                     {/* Analysis Grid */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
