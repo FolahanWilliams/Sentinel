@@ -32,7 +32,7 @@ export class ScannerService {
             .from('market_events')
             .select('ticker')
             .in('ticker', tickerNames)
-            .gte('created_at', oneDayAgo);
+            .gte('detected_at', oneDayAgo);
 
         const eventCounts: Record<string, number> = {};
         for (const ev of recentEvents || []) {
