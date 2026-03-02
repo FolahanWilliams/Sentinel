@@ -15,7 +15,10 @@ import { MarketDataService } from './marketData';
 import { AgentService } from './agents';
 import { NotificationService } from './notifications';
 import { RSSReaderService } from './rssReader';
+import { OutcomeTracker } from './outcomeTracker';
+import { PositionSizer } from './positionSizer';
 import { isBudgetExceeded } from '@/utils/costEstimator';
+import { responseValidator } from '@/utils/responseValidator';
 
 export class ScannerService {
 
@@ -172,6 +175,19 @@ export class ScannerService {
                 const combinedText = freshArticles.map(a => `${a.title}. ${a.description}`).join(' | ');
                 const extraction = await AgentService.extractEventsFromText(combinedText);
 
+                // Build a lookup of article descriptions by ticker for full context
+                const articleContextByTicker: Record<string, string> = {};
+                for (const article of freshArticles) {
+                    const text = `${article.title || ''}. ${article.description || ''}`;
+                    for (const t of tickers) {
+                        if (text.toLowerCase().includes(t.toLowerCase())) {
+                            articleContextByTicker[t] = articleContextByTicker[t]
+                                ? `${articleContextByTicker[t]} | ${text}`
+                                : text;
+                        }
+                    }
+                }
+
                 if (extraction.success && extraction.data?.events) {
                     for (const ev of extraction.data.events) {
                         // Only care about events concerning our watchlist
@@ -199,16 +215,26 @@ export class ScannerService {
 
                                 const priceDrop = quote ? quote.changePercent : -10; // Mocked if api fails
 
+                                // Gather real article context for this ticker
+                                const eventContext = articleContextByTicker[ev.ticker]
+                                    || `Event: ${ev.event_type} — ${ev.headline}`;
+
                                 // Pipeline A: Overreaction Analysis
                                 const analysis = await AgentService.evaluateOverreaction(
                                     ev.ticker,
                                     ev.headline,
-                                    "Detailed context missing in demo", // Normally we'd pass the full article body
+                                    eventContext,
                                     quote?.price || 100,
                                     priceDrop
                                 );
 
-                                if (analysis.success && analysis.data?.is_overreaction && analysis.data.confidence_score > 75) {
+                                // Validate agent response before acting on it
+                                const validation = responseValidator.validate(analysis.data);
+                                if (!validation.valid) {
+                                    console.warn(`[Scanner] Overreaction response failed validation for ${ev.ticker}:`, validation.warnings);
+                                }
+
+                                if (analysis.success && validation.valid && analysis.data?.is_overreaction && analysis.data.confidence_score > 75) {
 
                                     // 7. SANITY CHECK (Red Team)
                                     const sanity = await AgentService.runSanityCheck(
@@ -245,7 +271,13 @@ export class ScannerService {
                                             is_paper: false
                                         } as any);
 
-                                        // 9. Dispatch Email Notification
+                                        // 9. Position sizing recommendation
+                                        try {
+                                            const sizing = await PositionSizer.calculateSize(0.6, 0.10, 0.05);
+                                            console.log(`[Scanner] Position size for ${ev.ticker}: ${sizing.recommendedPct}% ($${sizing.usdValue})`);
+                                        } catch { /* non-fatal */ }
+
+                                        // 10. Dispatch Email Notification
                                         await NotificationService.sendSignalAlert(ev.ticker, 'overreaction');
                                     }
 
@@ -348,7 +380,14 @@ export class ScannerService {
                 }
             }
 
-            // 10. Update Scan Log
+            // 11. Update pending outcomes (check stops/targets/intervals)
+            try {
+                await OutcomeTracker.updatePendingOutcomes();
+            } catch (outcomeErr: any) {
+                console.warn('[Scanner] Outcome tracker error:', outcomeErr.message);
+            }
+
+            // 12. Update Scan Log
             const durationMs = Date.now() - startTime;
             if (scanLog) {
                 await supabase.from('scan_logs').update({
