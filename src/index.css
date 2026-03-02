@@ -36,7 +36,7 @@
   --color-bias-dim: #8b5cf622;
 
   /* Typography */
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-sans: 'Outfit', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 
   /* Sentinel dark palette — maps to bg-sentinel-*, text-sentinel-* etc. */
@@ -320,4 +320,32 @@ body {
 
 .confidence-ultra {
   color: var(--color-info);
+}
+
+/* ===========================
+   ATMOSPHERIC UTILITIES
+   =========================== */
+
+/* Frosted glass effect for premium cards */
+.glass-panel {
+  background: rgba(20, 22, 32, 0.4);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: 0 4px 24px -1px rgba(0, 0, 0, 0.2);
+}
+
+/* Ambient glows */
+.bg-radial-glow {
+  background: radial-gradient(circle at center, rgba(59, 130, 246, 0.15) 0%, transparent 70%);
+}
+
+.bg-radial-glow-green {
+  background: radial-gradient(circle at center, rgba(16, 185, 129, 0.1) 0%, transparent 60%);
+}
+
+/* Subtle dot grid pattern */
+.bg-grid-pattern {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 24px 24px;
 }

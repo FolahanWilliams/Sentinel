@@ -2,12 +2,14 @@
  * Sentinel — Sidebar Navigation
  *
  * Collapsible sidebar with nav items, scanner status indicator, and last scan time.
+ * Upgraded with framer-motion for fluid active-state gliding.
  */
 
 import { useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
 import { useScannerLogs } from '@/hooks/useScannerLogs';
+import { motion } from 'framer-motion';
 import {
     LayoutDashboard,
     List,
@@ -36,6 +38,7 @@ const NAV_ITEMS = [
 export function Sidebar() {
     const [collapsed, setCollapsed] = useState(false);
     const { logs } = useScannerLogs(1);
+    const location = useLocation();
 
     const latestLog = logs[0];
     const isScanning = latestLog?.status === 'running';
@@ -46,94 +49,82 @@ export function Sidebar() {
 
     return (
         <aside
-            className="flex flex-col h-screen sticky top-0 transition-all duration-300"
-            style={{
-                width: collapsed ? '64px' : '220px',
-                backgroundColor: 'var(--color-bg-surface)',
-                borderRight: '1px solid var(--color-border-default)',
-            }}
+            className={`flex flex-col h-screen sticky top-0 transition-all duration-300 z-50 bg-sentinel-950/80 backdrop-blur-xl border-r border-sentinel-800/50 ${collapsed ? 'w-[72px]' : 'w-[240px]'
+                }`}
         >
-            {/* Logo */}
-            <div className="flex items-center gap-3 px-4 py-5"
-                style={{ borderBottom: '1px solid var(--color-border-subtle)' }}>
-                <Radar size={24} style={{ color: 'var(--color-info)', flexShrink: 0 }} />
+            {/* Logo area */}
+            <div className="flex items-center gap-3 px-5 py-6 h-20 border-b border-sentinel-800/30">
+                <div className="relative flex items-center justify-center w-8 h-8 rounded-lg bg-blue-500/10 ring-1 ring-blue-500/20 shrink-0">
+                    <Radar className="w-5 h-5 text-blue-400" />
+                    {isScanning && (
+                        <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-blue-500 rounded-full animate-pulse ring-2 ring-sentinel-950" />
+                    )}
+                </div>
                 {!collapsed && (
-                    <span className="text-lg font-bold tracking-tight"
-                        style={{ color: 'var(--color-text-primary)' }}>
+                    <motion.span
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        className="text-xl font-bold font-display tracking-tight text-sentinel-50"
+                    >
                         Sentinel
-                    </span>
+                    </motion.span>
                 )}
             </div>
 
             {/* Navigation */}
-            <nav className="flex-1 py-4 px-2 space-y-1">
-                {NAV_ITEMS.map(({ to, icon: Icon, label }) => (
-                    <NavLink
-                        key={to}
-                        to={to}
-                        end={to === '/'}
-                        className={({ isActive }) =>
-                            `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 no-underline ${isActive ? '' : ''
-                            }`
-                        }
-                        style={({ isActive }) => ({
-                            backgroundColor: isActive ? 'var(--color-bg-elevated)' : 'transparent',
-                            color: isActive ? 'var(--color-info)' : 'var(--color-text-secondary)',
-                            borderLeft: isActive ? '2px solid var(--color-info)' : '2px solid transparent',
-                        })}
-                    >
-                        <Icon size={18} style={{ flexShrink: 0 }} />
-                        {!collapsed && <span>{label}</span>}
-                    </NavLink>
-                ))}
+            <nav className="flex-1 py-6 px-3 space-y-1.5 overflow-y-auto overflow-x-hidden">
+                {NAV_ITEMS.map(({ to, icon: Icon, label }) => {
+                    const isActive = location.pathname === to || (to !== '/' && location.pathname.startsWith(to));
+
+                    return (
+                        <NavLink
+                            key={to}
+                            to={to}
+                            className="relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors no-underline group outline-none"
+                            title={collapsed ? label : undefined}
+                        >
+                            {/* Animated Active Background */}
+                            {isActive && (
+                                <motion.div
+                                    layoutId="sidebar-active-pill"
+                                    className="absolute inset-0 bg-blue-500/10 border border-blue-500/20 rounded-xl"
+                                    transition={{ type: 'spring', stiffness: 350, damping: 30 }}
+                                />
+                            )}
+
+                            {/* Content */}
+                            <div className={`relative flex items-center justify-center shrink-0 transition-colors ${isActive ? 'text-blue-400' : 'text-sentinel-400 group-hover:text-sentinel-200'}`}>
+                                <Icon className="w-5 h-5" strokeWidth={isActive ? 2.5 : 2} />
+                            </div>
+
+                            {!collapsed && (
+                                <span className={`relative whitespace-nowrap transition-colors ${isActive ? 'text-sentinel-100 font-semibold' : 'text-sentinel-400 group-hover:text-sentinel-200'}`}>
+                                    {label}
+                                </span>
+                            )}
+                        </NavLink>
+                    );
+                })}
             </nav>
 
-            {/* Sign Out */}
-            <div className="px-2 pb-2">
+            {/* Bottom Actions */}
+            <div className="p-3 border-t border-sentinel-800/30 bg-sentinel-950/50 space-y-2">
                 <button
                     onClick={handleSignOut}
-                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 cursor-pointer w-full"
-                    style={{
-                        backgroundColor: 'transparent',
-                        border: 'none',
-                        color: 'var(--color-text-muted)',
-                    }}
-                    onMouseEnter={e => (e.currentTarget.style.color = 'var(--color-bearish)')}
-                    onMouseLeave={e => (e.currentTarget.style.color = 'var(--color-text-muted)')}
+                    className="flex flex-row items-center gap-3 px-3 py-2.5 w-full rounded-xl text-sm font-medium text-sentinel-400 hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer border-none outline-none group"
+                    title={collapsed ? 'Sign Out' : undefined}
                 >
-                    <LogOut size={18} style={{ flexShrink: 0 }} />
+                    <LogOut className="w-5 h-5 shrink-0 transition-transform group-hover:-translate-x-1" strokeWidth={2} />
                     {!collapsed && <span>Sign Out</span>}
                 </button>
-            </div>
 
-            {/* Scanner Status (bottom) */}
-            <div className="px-4 py-3" style={{ borderTop: '1px solid var(--color-border-subtle)' }}>
-                <div className="flex items-center gap-2">
-                    <span
-                        className={`w-2 h-2 rounded-full ${isScanning ? 'bg-blue-500 animate-pulse' : 'bg-red-500'}`}
-                        title={isScanning ? 'Scanning Active' : 'Scanner Idle'}
-                    />
-                    {!collapsed && (
-                        <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                            {isScanning ? 'Scanning Active' : 'Scanner Idle'}
-                        </span>
-                    )}
-                </div>
+                <button
+                    onClick={() => setCollapsed(!collapsed)}
+                    className="flex items-center justify-center w-full py-2.5 rounded-xl text-sentinel-500 hover:text-sentinel-200 hover:bg-sentinel-800/50 transition-colors cursor-pointer border-none outline-none"
+                >
+                    {collapsed ? <ChevronRight className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
+                </button>
             </div>
-
-            {/* Collapse Toggle */}
-            <button
-                onClick={() => setCollapsed(!collapsed)}
-                className="flex items-center justify-center py-3 cursor-pointer"
-                style={{
-                    backgroundColor: 'transparent',
-                    border: 'none',
-                    borderTop: '1px solid var(--color-border-subtle)',
-                    color: 'var(--color-text-muted)',
-                }}
-            >
-                {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-            </button>
         </aside>
     );
 }

@@ -9,6 +9,7 @@ import { UpcomingEvents } from '@/components/dashboard/UpcomingEvents';
 import { WeeklyDigest } from '@/components/dashboard/WeeklyDigest';
 import { PortfolioOverview } from '@/components/dashboard/PortfolioOverview';
 import { useScannerLogs } from '@/hooks/useScannerLogs';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export function Dashboard() {
     const navigate = useNavigate();
@@ -131,54 +132,63 @@ export function Dashboard() {
                         )}
                     </div>
 
-                    <div className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 backdrop-blur-sm overflow-hidden h-[800px] overflow-y-auto">
-                        {loadingSignals ? (
-                            <div className="p-8 justify-center flex">
-                                <div className="w-6 h-6 border-2 border-sentinel-600 border-t-sentinel-300 rounded-full animate-spin"></div>
-                            </div>
-                        ) : recentSignals.length === 0 ? (
-                            <div className="p-8 text-center text-sentinel-400">
-                                No signals generated yet. The agents are watching.
-                            </div>
-                        ) : (
-                            <div className="divide-y divide-sentinel-800/50">
-                                {recentSignals.map(signal => (
-                                    <div
-                                        key={signal.id}
-                                        className="p-4 hover:bg-sentinel-800/30 transition-colors group cursor-pointer"
-                                        onClick={() => navigate(`/analysis/${signal.ticker}`)}
-                                    >
-                                        <div className="flex justify-between items-start mb-2">
-                                            <div className="flex items-center gap-3">
-                                                <span className="px-2 py-1 bg-sentinel-800 text-sentinel-100 text-xs font-bold rounded ring-1 ring-sentinel-700">
-                                                    {signal.ticker}
-                                                </span>
-                                                <span className="text-sm font-medium text-sentinel-300 capitalize">
-                                                    {signal.signal_type.replace('_', ' ')}
-                                                </span>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-xs text-sentinel-500 flex items-center gap-1">
-                                                    <Clock className="w-3 h-3" />
-                                                    {new Date(signal.created_at).toLocaleDateString()}
-                                                </span>
-                                                <div className="px-2 py-1 bg-emerald-500/10 text-emerald-400 text-xs font-bold rounded ring-1 ring-emerald-500/20">
-                                                    {signal.confidence_score}% CONF
+                    <div className="glass-panel rounded-xl overflow-hidden h-[800px] flex flex-col relative w-full">
+                        <div className="absolute inset-0 bg-radial-glow opacity-20 pointer-events-none" />
+
+                        <div className="relative z-10 flex-1 overflow-y-auto w-full">
+                            {loadingSignals ? (
+                                <div className="p-8 justify-center flex">
+                                    <div className="w-6 h-6 border-2 border-sentinel-600 border-t-sentinel-300 rounded-full animate-spin"></div>
+                                </div>
+                            ) : recentSignals.length === 0 ? (
+                                <div className="p-8 text-center text-sentinel-400">
+                                    No signals generated yet. The agents are watching.
+                                </div>
+                            ) : (
+                                <div className="divide-y divide-sentinel-800/30">
+                                    <AnimatePresence initial={false}>
+                                        {recentSignals.map((signal, idx) => (
+                                            <motion.div
+                                                key={signal.id}
+                                                initial={{ opacity: 0, y: -20, backgroundColor: 'rgba(59, 130, 246, 0.1)' }}
+                                                animate={{ opacity: 1, y: 0, backgroundColor: 'rgba(59, 130, 246, 0)' }}
+                                                transition={{ duration: 0.5, delay: idx * 0.05 }}
+                                                className="p-5 hover:bg-sentinel-800/40 transition-colors group cursor-pointer"
+                                                onClick={() => navigate(`/analysis/${signal.ticker}`)}
+                                            >
+                                                <div className="flex justify-between items-start mb-3">
+                                                    <div className="flex items-center gap-3">
+                                                        <span className="px-2.5 py-1 bg-sentinel-800 text-sentinel-100 text-xs font-bold font-mono rounded ring-1 ring-sentinel-700 shadow-sm">
+                                                            {signal.ticker}
+                                                        </span>
+                                                        <span className="text-sm font-medium text-sentinel-300 capitalize">
+                                                            {signal.signal_type.replace('_', ' ')}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-center gap-3">
+                                                        <span className="text-xs text-sentinel-500 flex items-center gap-1 font-mono">
+                                                            <Clock className="w-3 h-3" />
+                                                            {new Date(signal.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                        </span>
+                                                        <div className="px-2 py-1 bg-emerald-500/10 text-emerald-400 text-xs font-bold font-mono rounded ring-1 ring-emerald-500/20">
+                                                            {signal.confidence_score}% CONF
+                                                        </div>
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        </div>
-                                        <p className="text-sm text-sentinel-400 line-clamp-2">
-                                            {signal.thesis}
-                                        </p>
-                                        <div className="mt-4 flex items-center gap-6 text-[10px] text-sentinel-500 font-mono">
-                                            <div>ENT: <span className="text-sentinel-300">{formatPrice(signal.suggested_entry_low)} - {formatPrice(signal.suggested_entry_high)}</span></div>
-                                            <div>TGT: <span className="text-emerald-400">{formatPrice(signal.target_price)}</span></div>
-                                            <div>STP: <span className="text-red-400">{formatPrice(signal.stop_loss)}</span></div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
+                                                <p className="text-sm text-sentinel-400 leading-relaxed line-clamp-2">
+                                                    {signal.thesis}
+                                                </p>
+                                                <div className="mt-4 flex items-center gap-6 text-[11px] text-sentinel-500 font-mono bg-sentinel-950/30 p-2.5 rounded-lg border border-sentinel-800/30 w-fit">
+                                                    <div>ENT: <span className="text-sentinel-300">{formatPrice(signal.suggested_entry_low)} - {formatPrice(signal.suggested_entry_high)}</span></div>
+                                                    <div>TGT: <span className="text-emerald-400">{formatPrice(signal.target_price)}</span></div>
+                                                    <div>STP: <span className="text-red-400">{formatPrice(signal.stop_loss)}</span></div>
+                                                </div>
+                                            </motion.div>
+                                        ))}
+                                    </AnimatePresence>
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
 

@@ -5,9 +5,10 @@
 
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { formatPrice, formatPercent } from '@/utils/formatters';
-import { Briefcase, TrendingUp, TrendingDown, PieChart, ShieldAlert } from 'lucide-react';
+import { ShieldAlert, TrendingUp, TrendingDown, Briefcase, PieChart } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/config/supabase';
+import { motion } from 'framer-motion';
 
 // Sector colours for the visual breakdown
 const SECTOR_COLORS: Record<string, string> = {
@@ -45,7 +46,7 @@ export function PortfolioOverview() {
 
     if (loading) {
         return (
-            <div className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 p-5 backdrop-blur-sm">
+            <div className="glass-panel rounded-xl p-5">
                 <div className="flex items-center gap-2 mb-4">
                     <div className="w-5 h-5 rounded bg-sentinel-700 animate-pulse" />
                     <div className="w-32 h-4 rounded bg-sentinel-700 animate-pulse" />
@@ -82,55 +83,63 @@ export function PortfolioOverview() {
     return (
         <div className="space-y-4">
             {/* SUMMARY CARD */}
-            <div className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 p-5 backdrop-blur-sm">
-                <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-sm font-semibold text-sentinel-300 uppercase tracking-wider flex items-center gap-2">
-                        <Briefcase className="w-4 h-4 text-blue-400" /> Portfolio
-                    </h3>
-                    <span className="text-xs text-sentinel-500">{formatPrice(totalCapital)} capital</span>
-                </div>
+            <div className="glass-panel p-6 rounded-xl relative overflow-hidden">
+                {/* Ambient glow behind metrics */}
+                <div className="absolute top-0 right-0 w-64 h-64 bg-radial-glow opacity-50 pointer-events-none" />
 
-                <div className="grid grid-cols-2 gap-3 mb-4">
-                    <div className="bg-sentinel-950/50 p-3 rounded-lg border border-sentinel-800/30">
-                        <div className="text-xs text-sentinel-500 mb-1">Open Positions</div>
-                        <div className="text-xl font-bold text-sentinel-100">{openPositions.length}</div>
-                        <div className="text-xs text-sentinel-500">of {config?.max_concurrent_positions || 5} max</div>
+                <div className="relative z-10">
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-sm font-semibold text-sentinel-300 uppercase tracking-wider flex items-center gap-2">
+                            <Briefcase className="w-4 h-4 text-blue-400" /> Portfolio
+                        </h3>
+                        <span className="text-xs text-sentinel-500">{formatPrice(totalCapital)} capital</span>
                     </div>
-                    <div className="bg-sentinel-950/50 p-3 rounded-lg border border-sentinel-800/30">
-                        <div className="text-xs text-sentinel-500 mb-1">Realized PnL</div>
-                        <div className={`text-xl font-bold ${totalRealizedPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                            {totalRealizedPnl >= 0 ? '+' : ''}{formatPrice(totalRealizedPnl)}
-                        </div>
-                        <div className="text-xs text-sentinel-500">
-                            {closedPositions.length > 0 ? `${winCount}W / ${lossCount}L` : 'No closed trades'}
-                        </div>
-                    </div>
-                </div>
 
-                {/* EXPOSURE BAR */}
-                <div className="mb-1">
-                    <div className="flex justify-between text-xs mb-1">
-                        <span className="text-sentinel-400">Exposure</span>
-                        <span className={`font-mono ${exposurePct > maxExposure ? 'text-red-400' : 'text-sentinel-300'}`}>
-                            {exposurePct.toFixed(1)}% / {maxExposure}%
-                        </span>
+                    <div className="grid grid-cols-2 gap-3 mb-4">
+                        <div className="bg-sentinel-950/50 p-3 rounded-lg border border-sentinel-800/30">
+                            <div className="text-xs text-sentinel-500 mb-1">Open Positions</div>
+                            <div className="text-xl font-bold text-sentinel-100">{openPositions.length}</div>
+                            <div className="text-xs text-sentinel-500">of {config?.max_concurrent_positions || 5} max</div>
+                        </div>
+                        <div className="bg-sentinel-950/50 p-3 rounded-lg border border-sentinel-800/30">
+                            <div className="text-xs text-sentinel-500 mb-1">Realized PnL</div>
+                            <div className={`text-2xl font-bold font-mono tracking-tight ${totalRealizedPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                {totalRealizedPnl >= 0 ? '+' : ''}{formatPrice(totalRealizedPnl)}
+                            </div>
+                            <div className="text-xs text-sentinel-500 mt-1 flex items-center gap-2">
+                                {closedPositions.length > 0 ? `${winCount}W / ${lossCount}L` : 'No closed trades'}
+                            </div>
+                        </div>
                     </div>
-                    <div className="h-2 bg-sentinel-800 rounded-full overflow-hidden">
-                        <div
-                            className="h-full rounded-full transition-all duration-500"
-                            style={{
-                                width: `${Math.min(exposurePct, 100)}%`,
-                                backgroundColor: exposurePct > maxExposure ? '#EF4444' : exposurePct > maxExposure * 0.8 ? '#F59E0B' : '#3B82F6',
-                            }}
-                        />
+
+                    {/* EXPOSURE BAR */}
+                    <div className="mb-1">
+                        <div className="flex justify-between text-xs mb-1">
+                            <span className="text-sentinel-400">Exposure</span>
+                            <span className={`font-mono ${exposurePct > maxExposure ? 'text-red-400' : 'text-sentinel-300'}`}>
+                                {exposurePct.toFixed(1)}% / {maxExposure}%
+                            </span>
+                        </div>
+                        <div className="h-2 bg-sentinel-950/80 rounded-full overflow-hidden shadow-inner ring-1 ring-white/5">
+                            <motion.div
+                                initial={{ width: 0 }}
+                                animate={{ width: `${Math.min(exposurePct, 100)}%` }}
+                                transition={{ duration: 1, ease: 'easeOut' }}
+                                className="h-full rounded-full"
+                                style={{
+                                    backgroundColor: exposurePct > maxExposure ? '#EF4444' : exposurePct > maxExposure * 0.8 ? '#F59E0B' : '#3B82F6',
+                                    boxShadow: exposurePct > maxExposure ? 'var(--shadow-glow-red)' : exposurePct > maxExposure * 0.8 ? '0 0 10px rgba(245,158,11,0.5)' : 'var(--shadow-glow-blue)'
+                                }}
+                            />
+                        </div>
                     </div>
                 </div>
             </div>
 
             {/* OPEN POSITIONS */}
             {openPositions.length > 0 && (
-                <div className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 backdrop-blur-sm overflow-hidden">
-                    <div className="p-4 border-b border-sentinel-800/50">
+                <div className="glass-panel rounded-xl overflow-hidden">
+                    <div className="p-4 border-b border-sentinel-800/50 bg-sentinel-950/30">
                         <h3 className="text-sm font-semibold text-sentinel-300 uppercase tracking-wider">Active Positions</h3>
                     </div>
                     <div className="divide-y divide-sentinel-800/30">
@@ -169,33 +178,39 @@ export function PortfolioOverview() {
 
             {/* SECTOR BREAKDOWN */}
             {Object.keys(sectorExposure).length > 0 && (
-                <div className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 p-5 backdrop-blur-sm">
-                    <h3 className="text-sm font-semibold text-sentinel-300 uppercase tracking-wider flex items-center gap-2 mb-3">
+                <div className="glass-panel p-5 rounded-xl">
+                    <h3 className="text-sm font-semibold text-sentinel-300 uppercase tracking-wider flex items-center gap-2 mb-4">
                         <PieChart className="w-4 h-4 text-purple-400" /> Sector Exposure
                     </h3>
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                         {Object.entries(sectorExposure)
                             .sort(([, a], [, b]) => b - a)
-                            .map(([sector, amount]) => {
+                            .map(([sector, amount], idx) => {
                                 const pct = totalCapital > 0 ? (amount / totalCapital) * 100 : 0;
                                 const maxSector = config?.max_sector_exposure_pct || 25;
                                 const color = SECTOR_COLORS[sector] || SECTOR_COLORS.Other;
 
                                 return (
                                     <div key={sector}>
-                                        <div className="flex justify-between text-xs mb-1">
-                                            <span className="text-sentinel-300">{sector}</span>
+                                        <div className="flex justify-between text-xs mb-1.5">
+                                            <span className="text-sentinel-300 font-medium">{sector}</span>
                                             <span className="font-mono text-sentinel-400">
                                                 {pct.toFixed(1)}%
                                                 {pct > maxSector && (
-                                                    <ShieldAlert className="w-3 h-3 text-red-400 inline ml-1" />
+                                                    <ShieldAlert className="w-3 h-3 text-red-500 inline ml-1 drop-shadow-md" />
                                                 )}
                                             </span>
                                         </div>
-                                        <div className="h-1.5 bg-sentinel-800 rounded-full overflow-hidden">
-                                            <div
-                                                className="h-full rounded-full transition-all"
-                                                style={{ width: `${Math.min(pct * 2, 100)}%`, backgroundColor: color }}
+                                        <div className="h-2 bg-sentinel-950/80 rounded-full overflow-hidden shadow-inner ring-1 ring-white/5">
+                                            <motion.div
+                                                initial={{ width: 0 }}
+                                                animate={{ width: `${Math.min(pct * 2, 100)}%` }}
+                                                transition={{ duration: 0.8, delay: idx * 0.1, ease: 'easeOut' }}
+                                                className="h-full rounded-full"
+                                                style={{
+                                                    backgroundColor: color,
+                                                    boxShadow: `0 0 10px ${color}40`
+                                                }}
                                             />
                                         </div>
                                     </div>
@@ -207,7 +222,7 @@ export function PortfolioOverview() {
 
             {/* EMPTY STATE */}
             {openPositions.length === 0 && closedPositions.length === 0 && (
-                <div className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 p-5 text-center backdrop-blur-sm">
+                <div className="glass-panel p-8 text-center rounded-xl">
                     <Briefcase className="w-8 h-8 text-sentinel-600 mx-auto mb-2" />
                     <p className="text-sm text-sentinel-400">No positions tracked yet.</p>
                     <p className="text-xs text-sentinel-500 mt-1">Positions will appear here when you log trades.</p>
