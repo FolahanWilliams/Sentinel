@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - 'supabase/migrations/**'
+      - 'supabase/functions/**'
+  workflow_dispatch:
 
 jobs:
   migrate:
@@ -24,6 +26,28 @@ jobs:
         run: supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Repair orphaned remote migrations
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          # Attempt a dry-run push to detect version drift.
+          # If remote has migrations not present locally, repair them
+          # (mark as reverted) so db push can proceed cleanly.
+          OUTPUT=$(supabase db push --dry-run 2>&1) || true
+
+          ORPHANS=$(echo "$OUTPUT" \
+            | grep -oP 'supabase migration repair --status reverted \K[0-9]+' || true)
+
+          if [ -n "$ORPHANS" ]; then
+            echo "Found orphaned remote migrations — repairing:"
+            for VERSION in $ORPHANS; do
+              echo "  Reverting $VERSION"
+              supabase migration repair --status reverted "$VERSION"
+            done
+          else
+            echo "No orphaned migrations detected."
+          fi
 
       - name: Push database migrations
         run: supabase db push
