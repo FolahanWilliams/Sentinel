@@ -1,4 +1,4 @@
-name: Deploy Supabase Migrations
+name: Supabase Deploy
 
 on:
   push:
@@ -9,8 +9,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  migrate:
-    name: Run Supabase Migrations
+  deploy:
+    name: Deploy Migrations & Edge Functions
     runs-on: ubuntu-latest
 
     steps:
@@ -31,9 +31,6 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
-          # Attempt a dry-run push to detect version drift.
-          # If remote has migrations not present locally, repair them
-          # (mark as reverted) so db push can proceed cleanly.
           OUTPUT=$(supabase db push --dry-run 2>&1) || true
 
           ORPHANS=$(echo "$OUTPUT" \
@@ -55,6 +52,35 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
 
       - name: Deploy Edge Functions
-        run: supabase functions deploy --no-verify-jwt
+        run: |
+          FUNCTIONS_DIR="supabase/functions"
+          DEPLOYED=""
+          FAILED=""
+
+          for DIR in "$FUNCTIONS_DIR"/*/; do
+            FUNC_NAME=$(basename "$DIR")
+            # Skip directories without an index.ts (e.g. _shared helpers)
+            if [ ! -f "$DIR/index.ts" ]; then
+              echo "Skipping $FUNC_NAME (no index.ts)"
+              continue
+            fi
+            echo "Deploying $FUNC_NAME..."
+            if supabase functions deploy "$FUNC_NAME" --no-verify-jwt; then
+              DEPLOYED="$DEPLOYED $FUNC_NAME"
+            else
+              echo "::warning::Failed to deploy $FUNC_NAME"
+              FAILED="$FAILED $FUNC_NAME"
+            fi
+          done
+
+          echo ""
+          echo "--- Deploy Summary ---"
+          echo "Deployed:$DEPLOYED"
+          if [ -n "$FAILED" ]; then
+            echo "Failed:$FAILED"
+            echo "::error::Edge function deploy failures:$FAILED"
+            exit 1
+          fi
+          echo "All functions deployed successfully."
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
