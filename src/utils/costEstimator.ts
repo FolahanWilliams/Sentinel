@@ -12,8 +12,7 @@ import { DEFAULT_DAILY_BUDGET, DEFAULT_MONTHLY_BUDGET } from '@/config/constants
 const PRICING: Record<string, { inputPer1M: number; outputPer1M: number; groundedPer1M: number }> = {
     'gemini-3-flash': { inputPer1M: 0.075, outputPer1M: 0.30, groundedPer1M: 0.50 },
     'gemini-2.0-flash': { inputPer1M: 0.075, outputPer1M: 0.30, groundedPer1M: 0.50 },
-    polygon: { inputPer1M: 0, outputPer1M: 0, groundedPer1M: 0 },
-    alphavantage: { inputPer1M: 0, outputPer1M: 0, groundedPer1M: 0 },
+    'ai-scraper': { inputPer1M: 0.075, outputPer1M: 0.30, groundedPer1M: 0.50 },
 };
 
 /**

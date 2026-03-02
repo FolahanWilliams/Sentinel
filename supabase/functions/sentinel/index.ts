@@ -1,93 +1,16 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import Parser from 'npm:rss-parser'
 
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// ─── Feed Definitions (Spec §2) ─────────────────────────────
-
 interface Feed {
     name: string;
     url: string;
     category: string;
-    tier: number;
-}
-
-const gnews = (query: string) =>
-    `https://news.google.com/rss/search?q=${query}&hl=en-US&gl=US&ceid=US:en`;
-
-const ALL_FEEDS: Feed[] = [
-    // Tier 1 — Core
-    { name: 'CNBC Tech', url: 'https://www.cnbc.com/id/19854910/device/rss/rss.html', category: 'markets', tier: 1 },
-    { name: 'Yahoo Finance', url: 'https://finance.yahoo.com/rss/topstories', category: 'markets', tier: 1 },
-    { name: 'Seeking Alpha', url: 'https://seekingalpha.com/market_currents.xml', category: 'markets', tier: 1 },
-    { name: 'Federal Reserve', url: 'https://www.federalreserve.gov/feeds/press_all.xml', category: 'macro', tier: 1 },
-    { name: 'SEC Releases', url: 'https://www.sec.gov/news/pressreleases.rss', category: 'regulation', tier: 1 },
-    { name: 'TechCrunch', url: 'https://techcrunch.com/feed/', category: 'tech', tier: 1 },
-    { name: 'Hacker News', url: 'https://hnrss.org/frontpage', category: 'tech', tier: 1 },
-    { name: 'TechMeme', url: 'https://www.techmeme.com/feed.xml', category: 'tech', tier: 1 },
-    { name: 'VentureBeat AI', url: 'https://venturebeat.com/category/ai/feed/', category: 'ai', tier: 1 },
-    { name: 'ArXiv AI', url: 'https://export.arxiv.org/rss/cs.AI', category: 'ai', tier: 1 },
-    { name: 'Crunchbase News', url: 'https://news.crunchbase.com/feed/', category: 'startups', tier: 1 },
-    { name: 'TechCrunch Venture', url: 'https://techcrunch.com/category/venture/feed/', category: 'startups', tier: 1 },
-    { name: 'CoinDesk', url: 'https://www.coindesk.com/arc/outboundfeeds/rss/', category: 'crypto', tier: 1 },
-    { name: 'Krebs Security', url: 'https://krebsonsecurity.com/feed/', category: 'security', tier: 1 },
-    { name: 'The Hacker News', url: 'https://feeds.feedburner.com/TheHackersNews', category: 'security', tier: 1 },
-    // Tier 2 — High Value
-    { name: 'The Verge', url: 'https://www.theverge.com/rss/index.xml', category: 'tech', tier: 2 },
-    { name: 'Ars Technica', url: 'https://feeds.arstechnica.com/arstechnica/technology-lab', category: 'tech', tier: 2 },
-    { name: 'MIT Tech Review', url: 'https://www.technologyreview.com/feed/', category: 'tech', tier: 2 },
-    { name: 'Engadget', url: 'https://www.engadget.com/rss.xml', category: 'tech', tier: 2 },
-    { name: 'Fast Company', url: 'https://feeds.feedburner.com/fastcompany/headlines', category: 'tech', tier: 2 },
-    { name: 'VentureBeat', url: 'https://venturebeat.com/feed/', category: 'startups', tier: 2 },
-    { name: 'a16z Blog', url: 'https://a16z.com/feed/', category: 'vc', tier: 2 },
-    { name: 'Y Combinator', url: 'https://www.ycombinator.com/blog/rss/', category: 'vc', tier: 2 },
-    { name: 'Stratechery', url: 'https://stratechery.com/feed/', category: 'tech', tier: 2 },
-    { name: 'SemiAnalysis', url: 'https://www.semianalysis.com/feed', category: 'hardware', tier: 2 },
-    { name: 'InfoQ', url: 'https://feed.infoq.com/', category: 'dev', tier: 2 },
-    { name: 'Cointelegraph', url: 'https://cointelegraph.com/rss', category: 'crypto', tier: 2 },
-    { name: 'Politico Tech', url: 'https://rss.politico.com/technology.xml', category: 'policy', tier: 2 },
-    { name: 'CB Insights', url: 'https://www.cbinsights.com/research/feed/', category: 'startups', tier: 2 },
-    { name: 'Dark Reading', url: 'https://www.darkreading.com/rss.xml', category: 'security', tier: 2 },
-    // Tier 3 — Google News
-    { name: 'AI News', url: gnews('(OpenAI+OR+Anthropic+OR+Google+AI+OR+"large+language+model")+when:2d'), category: 'ai', tier: 3 },
-    { name: 'Bloomberg Markets', url: gnews('site:bloomberg.com+markets+when:1d'), category: 'markets', tier: 3 },
-    { name: 'Reuters Markets', url: gnews('site:reuters.com+markets+stocks+when:1d'), category: 'markets', tier: 3 },
-    { name: 'Semiconductor', url: gnews('semiconductor+OR+chip+OR+TSMC+OR+NVIDIA+when:3d'), category: 'hardware', tier: 3 },
-    { name: 'Tech Layoffs', url: gnews('tech+layoffs+when:7d'), category: 'labor', tier: 3 },
-    { name: 'Unicorns', url: gnews('("unicorn+startup"+OR+"unicorn+valuation")+when:7d'), category: 'startups', tier: 3 },
-    { name: 'Crypto Market', url: gnews('(bitcoin+OR+ethereum+OR+crypto+OR+"digital+asset")+when:1d'), category: 'crypto', tier: 3 },
-    { name: 'Fed & Rates', url: gnews('("interest+rate"+OR+"rate+decision"+OR+"monetary+policy")+when:2d'), category: 'macro', tier: 3 },
-    { name: 'IPO News', url: gnews('(IPO+OR+"initial+public+offering"+OR+SPAC)+when:3d'), category: 'markets', tier: 3 },
-    { name: 'Cyber Incidents', url: gnews('cyber+attack+OR+data+breach+OR+ransomware+when:3d'), category: 'security', tier: 3 },
-    { name: 'AI Regulation', url: gnews('AI+regulation+OR+"artificial+intelligence"+law+when:7d'), category: 'policy', tier: 3 },
-    { name: 'M&A Deals', url: gnews('("merger"+OR+"acquisition"+OR+"takeover+bid")+tech+when:3d'), category: 'markets', tier: 3 },
-];
-
-// ─── Utility Functions ──────────────────────────────────────
-
-function normalizeUrl(url: string): string {
-    try {
-        const u = new URL(url);
-        ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content',
-            'utm_term', 'ref', 'source', 'ncid', 'sr_share'].forEach(p =>
-                u.searchParams.delete(p)
-            );
-        u.pathname = u.pathname.replace(/\/+$/, '') || '/';
-        return u.toString();
-    } catch {
-        return url;
-    }
-}
-
-function titleSimilarity(a: string, b: string): number {
-    const wordsA = new Set(a.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/));
-    const wordsB = new Set(b.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/));
-    const intersection = new Set([...wordsA].filter(w => wordsB.has(w)));
-    const union = new Set([...wordsA, ...wordsB]);
-    return union.size === 0 ? 0 : intersection.size / union.size;
 }
 
 interface RawArticle {
@@ -96,100 +19,92 @@ interface RawArticle {
     pubDate: string;
     source: string;
     feedCategory: string;
-    snippet: string;
-    tier: number;
+    snippet?: string;
 }
 
-function parseRSSXml(xml: string, feed: Feed): RawArticle[] {
-    const items: RawArticle[] = [];
-    const itemRegex = /<item>([\s\S]*?)<\/item>/g;
-    let match;
-    let count = 0;
+const TIER_1_FEEDS: Feed[] = [
+    // Markets & Finance
+    { name: 'CNBC Tech', url: 'https://www.cnbc.com/id/19854910/device/rss/rss.html', category: 'markets' },
+    { name: 'Yahoo Finance', url: 'https://finance.yahoo.com/rss/topstories', category: 'markets' },
+    { name: 'Seeking Alpha', url: 'https://seekingalpha.com/market_currents.xml', category: 'markets' },
+    { name: 'Federal Reserve', url: 'https://www.federalreserve.gov/feeds/press_all.xml', category: 'macro' },
+    { name: 'SEC Releases', url: 'https://www.sec.gov/news/pressreleases.rss', category: 'regulation' },
 
-    while ((match = itemRegex.exec(xml)) !== null && count < 15) {
-        const itemXml = match[1];
+    // Tech & AI
+    { name: 'TechCrunch', url: 'https://techcrunch.com/feed/', category: 'tech' },
+    { name: 'Hacker News', url: 'https://hnrss.org/frontpage', category: 'tech' },
+    { name: 'TechMeme', url: 'https://www.techmeme.com/feed.xml', category: 'tech' },
+    { name: 'VentureBeat AI', url: 'https://venturebeat.com/category/ai/feed/', category: 'ai' },
+    { name: 'ArXiv AI', url: 'https://export.arxiv.org/rss/cs.AI', category: 'ai' },
 
-        const titleMatch = /<title(?:[^>]*)><!\[CDATA\[([\s\S]*?)\]\]><\/title>|<title(?:[^>]*)>([\s\S]*?)<\/title>/.exec(itemXml || '');
-        const title = titleMatch ? (titleMatch[1] || titleMatch[2])?.trim() || '' : '';
+    // Startups & VC
+    { name: 'Crunchbase News', url: 'https://news.crunchbase.com/feed/', category: 'startups' },
+    { name: 'TechCrunch Venture', url: 'https://techcrunch.com/category/venture/feed/', category: 'startups' },
 
-        const linkMatch = /<link(?:[^>]*)>([\s\S]*?)<\/link>/.exec(itemXml || '');
-        const link = linkMatch && linkMatch[1] ? normalizeUrl(linkMatch[1].trim()) : '';
+    // Crypto
+    { name: 'CoinDesk', url: 'https://www.coindesk.com/arc/outboundfeeds/rss/', category: 'crypto' },
 
-        const descMatch = /<description(?:[^>]*)><!\[CDATA\[([\s\S]*?)\]\]><\/description>|<description(?:[^>]*)>([\s\S]*?)<\/description>/.exec(itemXml || '');
-        const rawDesc = descMatch ? (descMatch[1] || descMatch[2])?.trim() || '' : '';
-        const snippet = rawDesc.replace(/<[^>]*>?/gm, '').slice(0, 200);
+    // Security
+    { name: 'Krebs Security', url: 'https://krebsonsecurity.com/feed/', category: 'security' },
+    { name: 'The Hacker News', url: 'https://feeds.feedburner.com/TheHackersNews', category: 'security' },
+];
 
-        const dateMatch = /<pubDate(?:[^>]*)>([\s\S]*?)<\/pubDate>|<dc:date(?:[^>]*)>([\s\S]*?)<\/dc:date>/.exec(itemXml || '');
-        const pubDate = dateMatch ? new Date(((dateMatch[1] || dateMatch[2]) ?? '').trim()).toISOString() : new Date().toISOString();
+const TIER_2_FEEDS: Feed[] = [
+    { name: 'The Verge', url: 'https://www.theverge.com/rss/index.xml', category: 'tech' },
+    { name: 'Ars Technica', url: 'https://feeds.arstechnica.com/arstechnica/technology-lab', category: 'tech' },
+    { name: 'MIT Tech Review', url: 'https://www.technologyreview.com/feed/', category: 'tech' },
+    { name: 'Engadget', url: 'https://www.engadget.com/rss.xml', category: 'tech' },
+    { name: 'Fast Company', url: 'https://feeds.feedburner.com/fastcompany/headlines', category: 'tech' },
+    { name: 'VentureBeat', url: 'https://venturebeat.com/feed/', category: 'startups' },
+    { name: 'a16z Blog', url: 'https://a16z.com/feed/', category: 'vc' },
+    { name: 'Y Combinator', url: 'https://www.ycombinator.com/blog/rss/', category: 'vc' },
+    { name: 'Stratechery', url: 'https://stratechery.com/feed/', category: 'tech' },
+    { name: 'SemiAnalysis', url: 'https://www.semianalysis.com/feed', category: 'hardware' },
+    { name: 'InfoQ', url: 'https://feed.infoq.com/', category: 'dev' },
+    { name: 'Cointelegraph', url: 'https://cointelegraph.com/rss', category: 'crypto' },
+    { name: 'Politico Tech', url: 'https://rss.politico.com/technology.xml', category: 'policy' },
+    { name: 'CB Insights', url: 'https://www.cbinsights.com/research/feed/', category: 'startups' },
+    { name: 'Dark Reading', url: 'https://www.darkreading.com/rss.xml', category: 'security' },
+];
 
-        if (title && link) {
-            items.push({ title, link, pubDate, source: feed.name, feedCategory: feed.category, snippet, tier: feed.tier });
-            count++;
-        }
-    }
+const gnews = (query: string) => `https://news.google.com/rss/search?q=${query}&hl=en-US&gl=US&ceid=US:en`;
 
-    return items;
-}
+const TIER_3_FEEDS: Feed[] = [
+    { name: 'AI News', url: gnews('(OpenAI+OR+Anthropic+OR+Google+AI+OR+"large+language+model")+when:2d'), category: 'ai' },
+    { name: 'Bloomberg Markets', url: gnews('site:bloomberg.com+markets+when:1d'), category: 'markets' },
+    { name: 'Reuters Markets', url: gnews('site:reuters.com+markets+stocks+when:1d'), category: 'markets' },
+    { name: 'Semiconductor', url: gnews('semiconductor+OR+chip+OR+TSMC+OR+NVIDIA+when:3d'), category: 'hardware' },
+    { name: 'Tech Layoffs', url: gnews('tech+layoffs+when:7d'), category: 'labor' },
+    { name: 'Unicorns', url: gnews('("unicorn+startup"+OR+"unicorn+valuation")+when:7d'), category: 'startups' },
+    { name: 'Crypto Market', url: gnews('(bitcoin+OR+ethereum+OR+crypto+OR+"digital+asset")+when:1d'), category: 'crypto' },
+    { name: 'Fed & Rates', url: gnews('("interest+rate"+OR+"rate+decision"+OR+"monetary+policy")+when:2d'), category: 'macro' },
+    { name: 'IPO News', url: gnews('(IPO+OR+"initial+public+offering"+OR+SPAC)+when:3d'), category: 'markets' },
+    { name: 'Cyber Incidents', url: gnews('cyber+attack+OR+data+breach+OR+ransomware+when:3d'), category: 'security' },
+    { name: 'AI Regulation', url: gnews('AI+regulation+OR+"artificial+intelligence"+law+when:7d'), category: 'policy' },
+    { name: 'M&A Deals', url: gnews('("merger"+OR+"acquisition"+OR+"takeover+bid")+tech+when:3d'), category: 'markets' },
+];
 
-async function fetchFeed(feed: Feed): Promise<RawArticle[]> {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
+const ALL_FEEDS = [...TIER_1_FEEDS, ...TIER_2_FEEDS, ...TIER_3_FEEDS];
 
+function normalizeUrl(url: string): string {
     try {
-        const res = await fetch(feed.url, {
-            signal: controller.signal,
-            headers: {
-                'User-Agent': 'KeystoneAnalytics/1.0 (RSS Reader)',
-                'Accept': 'application/rss+xml, application/xml, text/xml, */*',
-            },
-        });
-        clearTimeout(timeout);
-        if (!res.ok) return [];
-        const xml = await res.text();
-        return parseRSSXml(xml, feed);
+        const u = new URL(url);
+        ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'ref', 'source', 'ncid', 'sr_share'].forEach(p => u.searchParams.delete(p));
+        u.pathname = u.pathname.replace(/\/+$/, '') || '/';
+        return u.toString();
     } catch {
-        clearTimeout(timeout);
-        return [];
+        return url;
     }
 }
 
-function deduplicateArticles(articles: RawArticle[]): RawArticle[] {
-    // Phase 1: URL dedup
-    const urlMap = new Map<string, RawArticle>();
-    for (const a of articles) {
-        const existing = urlMap.get(a.link);
-        if (!existing || a.tier < existing.tier) {
-            urlMap.set(a.link, a);
-        }
-    }
-    let deduped = Array.from(urlMap.values());
-
-    // Phase 2: Title similarity dedup (>85% Jaccard => keep higher-tier)
-    const toRemove = new Set<number>();
-    for (let i = 0; i < deduped.length; i++) {
-        if (toRemove.has(i)) continue;
-        for (let j = i + 1; j < deduped.length; j++) {
-            if (toRemove.has(j)) continue;
-            if (titleSimilarity(deduped[i].title, deduped[j].title) > 0.85) {
-                // Remove the lower-tier (higher number) one
-                toRemove.add(deduped[i].tier <= deduped[j].tier ? j : i);
-            }
-        }
-    }
-
-    deduped = deduped.filter((_, i) => !toRemove.has(i));
-
-    // Filter to last 48 hours
-    const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
-    deduped = deduped.filter(a => a.pubDate >= cutoff);
-
-    // Sort by pubDate descending
-    deduped.sort((a, b) => b.pubDate.localeCompare(a.pubDate));
-
-    return deduped;
+function titleSimilarity(a: string, b: string): number {
+    const clean = (s: string) => s.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/).filter(Boolean);
+    const wordsA = new Set(clean(a));
+    const wordsB = new Set(clean(b));
+    const intersection = new Set([...wordsA].filter(w => wordsB.has(w)));
+    const union = new Set([...wordsA, ...wordsB]);
+    return union.size === 0 ? 0 : intersection.size / union.size;
 }
-
-// ─── Gemini Prompt (Spec §6) ────────────────────────────────
 
 function buildPrompt(articles: RawArticle[]): string {
     const articleList = articles.map((a, i) =>
@@ -197,414 +112,240 @@ function buildPrompt(articles: RawArticle[]): string {
     ).join('\n');
 
     return `You are Sentinel, a financial intelligence analyst for a trading platform called Keystone Analytics. Your job is to process a batch of news articles and extract structured intelligence.
-
-ARTICLES TO PROCESS:
-${articleList}
-
-For EACH article, return a JSON object with these fields:
-- index: the article number [0], [1], etc.
-- summary: 1-2 sentence briefing of why this matters to traders/investors. Be specific and actionable, not generic.
-- category: one of: ai_ml, crypto_web3, macro_economy, tech_earnings, startups_vc, cybersecurity, regulation_policy, semiconductors, markets_trading, geopolitics, other
-- sentiment: "bullish", "bearish", or "neutral" — from a MARKET perspective, not general positivity
-- sentimentScore: float from -1.0 (extremely bearish) to +1.0 (extremely bullish). 0 = neutral.
-- impact: "high" (market-moving, breaking), "medium" (noteworthy, sector-relevant), "low" (background, informational)
-- signals: array of trading signals. Each signal has:
-  - type: one of: earnings, funding, ipo, merger, policy_change, product_launch, hack_breach, layoffs, rate_decision, partnership, legal_action, supply_chain
-  - ticker: stock/crypto ticker if identifiable (e.g. "NVDA", "BTC"). null if none.
-  - direction: "up", "down", or "volatile" — expected market impact
-  - confidence: 0.0 to 1.0
-  - note: 1-line explanation
-  If no trading signal, use empty array [].
-- entities: array of mentioned tickers, company names, or key people.
-- affected_tickers: array of stock tickers that could be materially impacted by this news. For EACH ticker include:
-  - ticker: the stock symbol (e.g. "NVDA", "TSLA"). Only include real, traded tickers — never guess.
-  - relationship: one of "direct" (company is the subject), "sector_contagion" (same-sector peer likely to move in sympathy), "supply_chain" (supplier/customer), "competitor" (direct competitor affected inversely or in sympathy)
-  - direction: "up", "down", or "volatile" — expected price impact on THIS ticker
-  - confidence: 0.0 to 1.0 — how confident you are this ticker is affected
-  Example: If TSMC reports bad earnings, affected_tickers might include:
-  [{"ticker":"TSM","relationship":"direct","direction":"down","confidence":0.95},
-   {"ticker":"NVDA","relationship":"supply_chain","direction":"down","confidence":0.7},
-   {"ticker":"AMD","relationship":"sector_contagion","direction":"down","confidence":0.6},
-   {"ticker":"INTC","relationship":"competitor","direction":"up","confidence":0.4}]
-  If no tickers are identifiable, return empty array [].
-
-Also return a "briefing" object:
-- topStories: array of 5 strings — the most important headlines rephrased as sharp one-liners
-- marketMood: "risk-on", "risk-off", or "mixed" — overall mood across all articles
-- trendingTopics: array of 5 strings — most common themes
-- signalCount: { bullish: number, bearish: number, neutral: number }
-
-IMPORTANT RULES:
-- Be concise. Summaries should be 1-2 sentences max.
-- Sentiment is about MARKET IMPACT, not whether the news is "good" or "bad" generally.
-- Only flag "high" impact for genuinely market-moving events.
-- For ArXiv papers: category = ai_ml, impact = low unless it's from a major lab announcing a capability breakthrough.
-- Don't hallucinate tickers. If you're not sure of the ticker, omit it.
-- If an article is too vague to analyze meaningfully, set impact = "low" and signals = [].
-
-Return valid JSON in this exact structure:
-{
-  "articles": [ { "index": 0, "summary": "...", "category": "...", "sentiment": "...", "sentimentScore": 0, "impact": "...", "signals": [], "entities": [], "affected_tickers": [] }, ... ],
-  "briefing": { "topStories": [], "marketMood": "mixed", "trendingTopics": [], "signalCount": { "bullish": 0, "bearish": 0, "neutral": 0 } }
-}`;
+  
+  ARTICLES TO PROCESS:
+  ${articleList}
+  
+  For EACH article, return a JSON object with these fields:
+  - index: the article number [0], [1], etc.
+  - summary: 1-2 sentence briefing of why this matters to traders/investors. Be specific and actionable, not generic.
+  - category: one of: ai_ml, crypto_web3, macro_economy, tech_earnings, startups_vc, cybersecurity, regulation_policy, semiconductors, markets_trading, geopolitics, other
+  - sentiment: "bullish", "bearish", or "neutral" — from a MARKET perspective, not general positivity
+  - sentimentScore: float from -1.0 (extremely bearish) to +1.0 (extremely bullish). 0 = neutral.
+  - impact: "high" (market-moving, breaking), "medium" (noteworthy, sector-relevant), "low" (background, informational)
+  - signals: array of trading signals. Each signal has:
+    - type: one of: earnings, funding, ipo, merger, policy_change, product_launch, hack_breach, layoffs, rate_decision, partnership, legal_action, supply_chain
+    - ticker: stock/crypto ticker if identifiable (e.g. "NVDA", "BTC", "AAPL"). null if none.
+    - direction: "up", "down", or "volatile" — expected market impact
+    - confidence: 0.0 to 1.0
+    - note: 1-line explanation
+    If no trading signal, use empty array [].
+  - entities: array of mentioned tickers, company names, or key people. e.g. ["NVDA", "Jensen Huang", "TSMC"]
+  
+  Also return a "briefing" object:
+  - topStories: array of 5 strings — the most important headlines rephrased as sharp one-liners
+  - marketMood: "risk-on", "risk-off", or "mixed" — overall mood across all articles
+  - trendingTopics: array of 5 strings — most common themes
+  - signalCount: { bullish: number, bearish: number, neutral: number }
+  
+  IMPORTANT RULES:
+  - Be concise. Summaries should be 1-2 sentences max.
+  - Sentiment is about MARKET IMPACT. A company getting hacked is bearish for that stock even if the article tone is neutral.
+  - Only flag "high" impact for genuinely market-moving events (earnings, policy, breaches, rate decisions, M&A).
+  - For ArXiv/academic: category = ai_ml, impact = low unless it's a major breakthrough.
+  - Don't hallucinate tickers. If unsure, omit.
+  - If an article is too vague or not a news story, set impact = "low" and signals = [].
+  
+  Return valid JSON in this exact structure matching the articles passed in:
+  {
+    "articles": [ { "index": 0, "summary": "...", "category": "...", "sentiment": "...", "sentimentScore": 0, "impact": "...", "signals": [], "entities": [] } ],
+    "briefing": { "topStories": [], "marketMood": "mixed", "trendingTopics": [], "signalCount": { "bullish": 0, "bearish": 0, "neutral": 0 } }
+  }`;
 }
 
-// ─── Main Handler ────────────────────────────────────────────
-
 serve(async (req) => {
-    if (req.method === 'OPTIONS') {
-        return new Response('ok', { headers: corsHeaders });
-    }
-
-    const startTime = Date.now();
-    const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
-    const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
-    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
-
-    // Validate all required secrets upfront with clear diagnostics
-    const missing: string[] = [];
-    if (!GEMINI_API_KEY) missing.push('GEMINI_API_KEY');
-    if (!SUPABASE_URL) missing.push('SUPABASE_URL');
-    if (!SUPABASE_SERVICE_ROLE_KEY) missing.push('SUPABASE_SERVICE_ROLE_KEY');
-
-    if (missing.length > 0) {
-        const msg = `Missing required Edge Function secrets: ${missing.join(', ')}. Set them in Supabase Dashboard → Edge Functions → Secrets.`;
-        console.error(`[sentinel] ${msg}`);
-        return new Response(JSON.stringify({ error: msg }), {
-            status: 500,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-    }
-
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    if (req.method === 'OPTIONS') { return new Response('ok', { headers: corsHeaders }) }
 
     try {
-        // ═══ STEP 1: Fetch all feeds in parallel ═══
-        console.log('[sentinel] Fetching feeds...');
-        const feedResults = await Promise.allSettled(ALL_FEEDS.map(fetchFeed));
+        const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';
+        const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+        const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY') || '';
 
-        let allArticles: RawArticle[] = [];
-        const feedsFailed: string[] = [];
+        if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY missing');
 
-        feedResults.forEach((result, i) => {
-            if (result.status === 'fulfilled' && result.value.length > 0) {
-                allArticles = allArticles.concat(result.value);
-            } else {
-                feedsFailed.push(ALL_FEEDS[i].name);
-            }
+        const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+        const startTime = Date.now();
+
+        // 1. Fetch Feeds in Parallel
+        const parser = new Parser({
+            timeout: 5000,
+            headers: { 'User-Agent': 'KeystoneAnalytics/1.0 (RSS Reader)', 'Accept': 'application/rss+xml, application/xml, text/xml' }
         });
 
-        const articlesRaw = allArticles.length;
-        console.log(`[sentinel] Fetched ${articlesRaw} raw articles from ${ALL_FEEDS.length - feedsFailed.length}/${ALL_FEEDS.length} feeds`);
-
-        // ═══ STEP 2: Deduplicate ═══
-        const deduped = deduplicateArticles(allArticles);
-        const articlesDeduplicated = articlesRaw - deduped.length;
-
-        // ═══ STEP 3: Check Supabase for already-processed ═══
-        const links = deduped.map(a => a.link);
-        const { data: existing } = await supabase
-            .from('sentinel_articles')
-            .select('link')
-            .in('link', links.slice(0, 500)); // Supabase IN limit
-
-        const existingLinks = new Set((existing || []).map((e: any) => e.link));
-        const newArticles = deduped.filter(a => !existingLinks.has(a.link));
-        const cachedCount = deduped.length - newArticles.length;
-
-        console.log(`[sentinel] ${newArticles.length} new articles, ${cachedCount} cached`);
-
-        let geminiTokensUsed = 0;
-        let processedResults: any[] = [];
-        let briefing: any = { topStories: [], marketMood: 'mixed', trendingTopics: [], signalCount: { bullish: 0, bearish: 0, neutral: 0 } };
-
-        // ═══ STEP 4: Batch Gemini call (only for new articles) ═══
-        if (newArticles.length > 0) {
-            // Split into batches of 40 if >80 articles (Spec §12.6)
-            const batchSize = newArticles.length > 80 ? 40 : newArticles.length;
-            const batches = [];
-            for (let i = 0; i < newArticles.length; i += batchSize) {
-                batches.push(newArticles.slice(i, i + batchSize));
+        const failedFeeds: string[] = [];
+        const rawResults = await Promise.allSettled(ALL_FEEDS.map(async (feed) => {
+            try {
+                const res = await parser.parseURL(feed.url);
+                return (res.items || []).slice(0, 15).map(item => ({
+                    title: item.title?.trim() || '',
+                    link: normalizeUrl(item.link || ''),
+                    pubDate: item.pubDate || item.isoDate || new Date().toISOString(),
+                    source: feed.name,
+                    feedCategory: feed.category,
+                    snippet: (item.contentSnippet || item.content || '').slice(0, 200),
+                }));
+            } catch (e) {
+                failedFeeds.push(feed.name);
+                return [];
             }
+        }));
 
-            for (const batch of batches) {
-                const prompt = buildPrompt(batch);
+        let allRawArticles: RawArticle[] = rawResults
+            .filter((r): r is PromiseFulfilledResult<RawArticle[]> => r.status === 'fulfilled')
+            .flatMap(r => r.value);
 
+        // 2. Normalize & Deduplicate
+        const uniqueLinks = new Set<string>();
+        const dedupedArticles: RawArticle[] = [];
+        const FORTY_EIGHT_HOURS_AGO = Date.now() - (48 * 60 * 60 * 1000);
+
+        // Sort by date newest first
+        allRawArticles.sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime());
+
+        for (const article of allRawArticles) {
+            if (new Date(article.pubDate).getTime() < FORTY_EIGHT_HOURS_AGO) continue;
+            if (uniqueLinks.has(article.link)) continue;
+
+            // Jaccard similarity check against already accepted articles
+            const isSimilar = dedupedArticles.some(accepted => titleSimilarity(article.title, accepted.title) > 0.85);
+            if (!isSimilar) {
+                uniqueLinks.add(article.link);
+                dedupedArticles.push(article);
+            }
+        }
+
+        // 3. Check Supabase Cache for existing
+        const links = dedupedArticles.map(a => a.link);
+        const { data: cachedRows } = await supabase
+            .from('sentinel_articles')
+            .select('*')
+            .in('link', links);
+
+        const cachedLinks = new Set(cachedRows?.map(r => r.link) || []);
+
+        // Split into new and cached
+        const newArticles = dedupedArticles.filter(a => !cachedLinks.has(a.link)).slice(0, 40); // Cap at 40 new to avoid Gemini token bloat
+
+        console.log(`[Sentinel] Fetched ${allRawArticles.length} raw -> ${dedupedArticles.length} deduped -> ${newArticles.length} brand new`);
+
+        let processedNewArticles: any[] = [];
+        let briefingToSave: any = null;
+
+        // 4. Batch Gemini Processing (only if there are new articles)
+        if (newArticles.length > 0) {
+            const prompt = buildPrompt(newArticles);
+
+            const geminiRes = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: prompt }] }],
+                        generationConfig: {
+                            responseMimeType: 'application/json',
+                            temperature: 0.1,
+                        }
+                    })
+                }
+            );
+
+            if (!geminiRes.ok) throw new Error(`Gemini Error: ${await geminiRes.text()}`);
+            const data = await geminiRes.json();
+            const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+            if (text) {
                 try {
-                    const geminiRes = await fetch(
-                        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash:generateContent?key=${GEMINI_API_KEY}`,
-                        {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                contents: [{ parts: [{ text: prompt }] }],
-                                generationConfig: {
-                                    responseMimeType: 'application/json',
-                                    temperature: 0.1,
-                                },
-                            }),
-                        }
-                    );
+                    const parsed = JSON.parse(text);
+                    briefingToSave = parsed.briefing;
 
-                    if (!geminiRes.ok) {
-                        console.error(`[sentinel] Gemini API error: ${geminiRes.status}`);
-                        // Spec §12.2: Fallback — store raw articles without AI processing
-                        for (const a of batch) {
-                            processedResults.push({
-                                title: a.title,
-                                link: a.link,
-                                source: a.source,
-                                pub_date: a.pubDate,
-                                summary: a.title,
-                                category: mapFeedCategory(a.feedCategory),
-                                sentiment: 'neutral',
-                                sentiment_score: 0,
-                                impact: 'low',
-                                signals: [],
-                                entities: [],
-                            });
-                        }
-                        continue;
-                    }
-
-                    const data = await geminiRes.json();
-                    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-                    geminiTokensUsed += (data.usageMetadata?.promptTokenCount || 0) + (data.usageMetadata?.candidatesTokenCount || 0);
-
-                    let parsed: any;
-                    try {
-                        parsed = JSON.parse(text);
-                    } catch {
-                        // Spec §12.3: Retry once on invalid JSON
-                        console.warn('[sentinel] Invalid JSON from Gemini, retrying...');
-                        const retryRes = await fetch(
-                            `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash:generateContent?key=${GEMINI_API_KEY}`,
-                            {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    contents: [{ parts: [{ text: prompt }] }],
-                                    generationConfig: { responseMimeType: 'application/json', temperature: 0.1 },
-                                }),
-                            }
-                        );
-                        const retryData = await retryRes.json();
-                        const retryText = retryData.candidates?.[0]?.content?.parts?.[0]?.text;
-                        geminiTokensUsed += (retryData.usageMetadata?.promptTokenCount || 0) + (retryData.usageMetadata?.candidatesTokenCount || 0);
-
-                        try {
-                            parsed = JSON.parse(retryText);
-                        } catch {
-                            // Still failed — fall back to raw
-                            console.error('[sentinel] Retry also failed. Using unprocessed articles.');
-                            for (const a of batch) {
-                                processedResults.push({
-                                    title: a.title, link: a.link, source: a.source, pub_date: a.pubDate,
-                                    summary: a.title, category: mapFeedCategory(a.feedCategory),
-                                    sentiment: 'neutral', sentiment_score: 0, impact: 'low', signals: [], entities: [],
-                                });
-                            }
-                            continue;
-                        }
-                    }
-
-                    // Map Gemini output back to articles
-                    if (parsed?.articles && Array.isArray(parsed.articles)) {
-                        for (const art of parsed.articles) {
-                            const original = batch[art.index];
-                            if (!original) continue;
-                            processedResults.push({
-                                title: original.title,
-                                link: original.link,
-                                source: original.source,
-                                pub_date: original.pubDate,
-                                summary: art.summary || original.title,
-                                category: art.category || 'other',
-                                sentiment: art.sentiment || 'neutral',
-                                sentiment_score: art.sentimentScore || 0,
-                                impact: art.impact || 'low',
-                                signals: art.signals || [],
-                                entities: art.entities || [],
-                                affected_tickers: art.affected_tickers || [],
-                            });
-                        }
-                    }
-
-                    if (parsed?.briefing) {
-                        briefing = {
-                            topStories: parsed.briefing.topStories || [],
-                            marketMood: parsed.briefing.marketMood || 'mixed',
-                            trendingTopics: parsed.briefing.trendingTopics || [],
-                            signalCount: parsed.briefing.signalCount || { bullish: 0, bearish: 0, neutral: 0 },
+                    // Map back to our schema
+                    processedNewArticles = newArticles.map((raw, i) => {
+                        const aiData = parsed.articles?.find((a: any) => a.index === i) || {};
+                        return {
+                            link: raw.link,
+                            title: raw.title,
+                            source: raw.source,
+                            pub_date: raw.pubDate,
+                            summary: aiData.summary || raw.snippet || raw.title,
+                            category: aiData.category || raw.feedCategory || 'other',
+                            sentiment: aiData.sentiment || 'neutral',
+                            sentiment_score: aiData.sentimentScore || 0,
+                            impact: aiData.impact || 'low',
+                            signals: aiData.signals || [],
+                            entities: aiData.entities || []
                         };
-                    }
-                } catch (err) {
-                    console.error('[sentinel] Gemini call failed:', err);
-                    // Fallback for this batch
-                    for (const a of batch) {
-                        processedResults.push({
-                            title: a.title, link: a.link, source: a.source, pub_date: a.pubDate,
-                            summary: a.title, category: mapFeedCategory(a.feedCategory),
-                            sentiment: 'neutral', sentiment_score: 0, impact: 'low', signals: [], entities: [],
-                        });
-                    }
+                    });
+                } catch (e) {
+                    console.error("Gemini JSON parse failed", e, text);
+                    // Fallback to raw data
+                    processedNewArticles = newArticles.map(raw => ({
+                        link: raw.link,
+                        title: raw.title,
+                        source: raw.source,
+                        pub_date: raw.pubDate,
+                        summary: raw.snippet || raw.title,
+                        category: raw.feedCategory || 'other',
+                        sentiment: 'neutral',
+                        sentiment_score: 0,
+                        impact: 'low',
+                        signals: [],
+                        entities: []
+                    }));
                 }
             }
 
-            // ═══ STEP 5: Store in Supabase ═══
-            if (processedResults.length > 0) {
-                const { error: insertError } = await supabase
-                    .from('sentinel_articles')
-                    .upsert(
-                        processedResults.map(r => ({
-                            ...r,
-                            processed_at: new Date().toISOString(),
-                        })),
-                        { onConflict: 'link' }
-                    );
-                if (insertError) console.error('[sentinel] Insert error:', insertError.message);
+            // 5. Store in Supabase
+            if (processedNewArticles.length > 0) {
+                await supabase.from('sentinel_articles').insert(processedNewArticles);
             }
-
-            // Upsert daily briefing
-            const { error: briefingError } = await supabase
-                .from('sentinel_briefings')
-                .upsert({
-                    briefing_date: new Date().toISOString().slice(0, 10),
-                    top_stories: briefing.topStories,
-                    market_mood: briefing.marketMood,
-                    trending_topics: briefing.trendingTopics,
-                    signal_count: briefing.signalCount,
-                    generated_at: new Date().toISOString(),
+            if (briefingToSave) {
+                await supabase.from('sentinel_briefings').upsert({
+                    briefing_date: new Date().toISOString().split('T')[0],
+                    top_stories: briefingToSave.topStories || [],
+                    market_mood: briefingToSave.marketMood || 'mixed',
+                    trending_topics: briefingToSave.trendingTopics || [],
+                    signal_count: briefingToSave.signalCount || { bullish: 0, bearish: 0, neutral: 0 }
                 }, { onConflict: 'briefing_date' });
-            if (briefingError) console.error('[sentinel] Briefing upsert error:', briefingError.message);
+            }
         }
 
-        // ═══ STEP 6: Return combined response ═══
-        // Fetch latest 50 articles (new + cached)
-        const { data: latestArticles } = await supabase
+        // 6. Return Data (combine cached + new, max 50)
+        const { data: finalArticles } = await supabase
             .from('sentinel_articles')
             .select('*')
             .order('pub_date', { ascending: false })
             .limit(50);
 
-        // Fetch today's briefing
-        const { data: latestBriefing } = await supabase
+        const { data: finalBriefing } = await supabase
             .from('sentinel_briefings')
             .select('*')
-            .eq('briefing_date', new Date().toISOString().slice(0, 10))
+            .order('generated_at', { ascending: false })
+            .limit(1)
             .single();
 
-        const processingTimeMs = Date.now() - startTime;
-        const costEstimateUsd = (geminiTokensUsed / 1_000_000) * 0.15; // rough avg
+        const durationMs = Date.now() - startTime;
 
-        const response = {
-            articles: (latestArticles || []).map((a: any) => ({
-                id: a.id,
-                title: a.title,
-                link: a.link,
-                pubDate: a.pub_date,
-                source: a.source,
-                summary: a.summary,
-                category: a.category,
-                sentiment: a.sentiment,
-                sentimentScore: a.sentiment_score,
-                impact: a.impact,
-                signals: a.signals || [],
-                entities: a.entities || [],
-                affectedTickers: a.affected_tickers || [],
-                processedAt: a.processed_at,
-            })),
-            briefing: latestBriefing
-                ? {
-                    topStories: latestBriefing.top_stories,
-                    marketMood: latestBriefing.market_mood,
-                    trendingTopics: latestBriefing.trending_topics,
-                    signalCount: latestBriefing.signal_count,
-                    generatedAt: latestBriefing.generated_at,
-                }
-                : briefing,
+        const responsePayload = {
+            articles: finalArticles || [],
+            briefing: finalBriefing || { top_stories: [], market_mood: 'mixed', trending_topics: [], signal_count: { bullish: 0, bearish: 0, neutral: 0 } },
             meta: {
-                feedsFetched: ALL_FEEDS.length - feedsFailed.length,
-                feedsFailed,
-                articlesRaw,
-                articlesDeduplicated,
+                feedsFetched: ALL_FEEDS.length,
+                feedsFailed: failedFeeds,
+                articlesRaw: allRawArticles.length,
+                articlesDeduplicated: dedupedArticles.length,
                 articlesNew: newArticles.length,
-                articlesCached: cachedCount,
-                geminiTokensUsed,
-                processingTimeMs,
-                costEstimateUsd,
-            },
+                articlesCached: cachedRows?.length || 0,
+                processingTimeMs: durationMs
+            }
         };
 
-        return new Response(JSON.stringify(response), {
-            headers: {
-                ...corsHeaders,
-                'Content-Type': 'application/json',
-                'Cache-Control': 'public, max-age=60, s-maxage=300',
-            },
+        return new Response(JSON.stringify(responsePayload), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=60, s-maxage=300' }
         });
-    } catch (err: any) {
-        console.error('[sentinel] Fatal error:', err);
 
-        // Spec §12.1: All feeds fail — return cached articles
-        try {
-            const { data: cachedArticles } = await supabase
-                .from('sentinel_articles')
-                .select('*')
-                .gte('pub_date', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
-                .order('pub_date', { ascending: false })
-                .limit(50);
-
-            const { data: cachedBriefing } = await supabase
-                .from('sentinel_briefings')
-                .select('*')
-                .order('briefing_date', { ascending: false })
-                .limit(1)
-                .single();
-
-            return new Response(JSON.stringify({
-                articles: (cachedArticles || []).map((a: any) => ({
-                    id: a.id, title: a.title, link: a.link, pubDate: a.pub_date,
-                    source: a.source, summary: a.summary || a.title, category: a.category,
-                    sentiment: a.sentiment, sentimentScore: a.sentiment_score,
-                    impact: a.impact, signals: a.signals || [], entities: a.entities || [],
-                    affectedTickers: a.affected_tickers || [],
-                    processedAt: a.processed_at,
-                })),
-                briefing: cachedBriefing ? {
-                    topStories: cachedBriefing.top_stories, marketMood: cachedBriefing.market_mood,
-                    trendingTopics: cachedBriefing.trending_topics, signalCount: cachedBriefing.signal_count,
-                    generatedAt: cachedBriefing.generated_at,
-                } : { topStories: [], marketMood: 'mixed', trendingTopics: [], signalCount: { bullish: 0, bearish: 0, neutral: 0 }, generatedAt: new Date().toISOString() },
-                meta: {
-                    feedsFetched: 0, feedsFailed: ALL_FEEDS.map(f => f.name),
-                    articlesRaw: 0, articlesDeduplicated: 0, articlesNew: 0,
-                    articlesCached: cachedArticles?.length || 0,
-                    geminiTokensUsed: 0, processingTimeMs: Date.now() - startTime,
-                    costEstimateUsd: 0, usedCache: true,
-                },
-            }), {
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            });
-        } catch (cacheErr: any) {
-            console.error('[sentinel] Cache fallback also failed:', cacheErr);
-            return new Response(JSON.stringify({
-                error: `Sentinel error: ${err.message}. Cache fallback also failed: ${cacheErr.message}`,
-            }), {
-                status: 500,
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            });
-        }
+    } catch (error: any) {
+        console.error(`[Sentinel] Fatal Error:`, error.message);
+        return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: corsHeaders });
     }
 });
-
-// Helper: map RSS feed category → ArticleCategory
-function mapFeedCategory(feedCat: string): string {
-    const map: Record<string, string> = {
-        markets: 'markets_trading', macro: 'macro_economy', regulation: 'regulation_policy',
-        tech: 'tech_earnings', ai: 'ai_ml', startups: 'startups_vc', vc: 'startups_vc',
-        crypto: 'crypto_web3', security: 'cybersecurity', hardware: 'semiconductors',
-        dev: 'tech_earnings', policy: 'regulation_policy', labor: 'geopolitics',
-    };
-    return map[feedCat] || 'other';
-}

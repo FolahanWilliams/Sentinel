@@ -1,10 +1,3 @@
-/**
- * Sentinel — SentinelPanel (Spec §7.1)
- *
- * Main container for the news intelligence feed.
- * Composes: BriefingBar + FilterBar + ArticleCard feed + SignalsSidebar
- */
-
 import { useState, useMemo } from 'react';
 import { useSentinel } from '@/hooks/useSentinel';
 import { BriefingBar } from './BriefingBar';
@@ -12,168 +5,116 @@ import { FilterBar } from './FilterBar';
 import { ArticleCard } from './ArticleCard';
 import { SignalsSidebar } from './SignalsSidebar';
 import { SentinelSkeleton } from './SentinelSkeleton';
-import type { SentinelFilters, ArticleCategory } from '@/types/sentinel';
-import { RefreshCw, AlertTriangle } from 'lucide-react';
-
-const DEFAULT_FILTERS: SentinelFilters = {
-    categories: [],
-    sentiment: 'all',
-    highImpactOnly: false,
-    searchQuery: '',
-    sortBy: 'newest',
-};
+import type { ArticleCategory } from '@/types/sentinel';
+import { RefreshCw, AlertCircle } from 'lucide-react';
 
 export function SentinelPanel() {
-    const { data, loading, error, refresh } = useSentinel();
-    const [filters, setFilters] = useState<SentinelFilters>(DEFAULT_FILTERS);
+    const { data, loading, error, isRefreshing } = useSentinel();
 
-    // Client-side filtering
+    // Filter State
+    const [searchQuery, setSearchQuery] = useState('');
+    const [activeCategories, setActiveCategories] = useState<Set<ArticleCategory>>(new Set());
+    const [activeSentiment, setActiveSentiment] = useState<'all' | 'bullish' | 'bearish'>('all');
+    const [highImpactOnly, setHighImpactOnly] = useState(false);
+
+    // Derived Client-Side Filtering
     const filteredArticles = useMemo(() => {
         if (!data?.articles) return [];
 
-        let articles = [...data.articles];
+        return data.articles.filter(article => {
+            // 1. Search Query
+            if (searchQuery) {
+                const query = searchQuery.toLowerCase();
+                const matchesTitle = article.title.toLowerCase().includes(query);
+                const matchesSummary = article.summary.toLowerCase().includes(query);
+                const matchesEntities = article.entities.some(e => e.toLowerCase().includes(query));
+                if (!matchesTitle && !matchesSummary && !matchesEntities) return false;
+            }
 
-        // Category filter
-        if (filters.categories.length > 0) {
-            articles = articles.filter(a =>
-                filters.categories.includes(a.category as ArticleCategory)
-            );
-        }
+            // 2. Category
+            if (activeCategories.size > 0 && !activeCategories.has(article.category)) {
+                return false;
+            }
 
-        // Sentiment filter
-        if (filters.sentiment !== 'all') {
-            articles = articles.filter(a => a.sentiment === filters.sentiment);
-        }
+            // 3. Sentiment
+            if (activeSentiment !== 'all' && article.sentiment !== activeSentiment) {
+                return false;
+            }
 
-        // High impact only
-        if (filters.highImpactOnly) {
-            articles = articles.filter(a => a.impact === 'high');
-        }
+            // 4. Impact
+            if (highImpactOnly && article.impact !== 'high') {
+                return false;
+            }
 
-        // Search
-        if (filters.searchQuery.trim()) {
-            const q = filters.searchQuery.toLowerCase();
-            articles = articles.filter(a =>
-                a.title.toLowerCase().includes(q) ||
-                a.summary.toLowerCase().includes(q) ||
-                a.entities.some(e => e.toLowerCase().includes(q)) ||
-                a.source.toLowerCase().includes(q)
-            );
-        }
+            return true;
+        });
+    }, [data, searchQuery, activeCategories, activeSentiment, highImpactOnly]);
 
-        // Sort
-        if (filters.sortBy === 'impact') {
-            const impactOrder = { high: 0, medium: 1, low: 2 };
-            articles.sort((a, b) =>
-                (impactOrder[a.impact] ?? 3) - (impactOrder[b.impact] ?? 3)
-            );
-        } else {
-            articles.sort((a, b) => b.pubDate.localeCompare(a.pubDate));
-        }
-
-        return articles;
-    }, [data?.articles, filters]);
+    if (error) {
+        return (
+            <div className="flex flex-col items-center justify-center h-96 text-red-500 bg-sentinel-900/20 rounded-xl border border-red-500/20 p-8">
+                <AlertCircle className="h-12 w-12 mb-4 opacity-50" />
+                <h3 className="text-xl font-bold mb-2">Intelligence Feed Offline</h3>
+                <p className="text-sentinel-400 text-center max-w-md">{error}</p>
+            </div>
+        );
+    }
 
     if (loading && !data) {
         return <SentinelSkeleton />;
     }
 
-    if (error && !data) {
-        return (
-            <div className="card text-center" style={{ padding: 'var(--spacing-2xl)' }}>
-                <AlertTriangle size={32} style={{ color: 'var(--color-warning)', marginBottom: 12 }} />
-                <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-                    Failed to load intelligence feed
-                </p>
-                <p className="text-xs" style={{ color: 'var(--color-text-muted)', marginBottom: 16 }}>
-                    {error}
-                </p>
-                <button
-                    onClick={refresh}
-                    className="text-sm font-medium"
-                    style={{
-                        padding: '8px 16px',
-                        borderRadius: 'var(--radius-md)',
-                        border: '1px solid var(--color-info)',
-                        backgroundColor: 'transparent',
-                        color: 'var(--color-info)',
-                        cursor: 'pointer',
-                    }}
-                >
-                    Retry
-                </button>
-            </div>
-        );
-    }
-
-    const briefing = data?.briefing || {
-        topStories: [],
-        marketMood: 'mixed' as const,
-        trendingTopics: [],
-        signalCount: { bullish: 0, bearish: 0, neutral: 0 },
-        generatedAt: new Date().toISOString(),
-    };
-
     return (
-        <div className="space-y-4">
-            {/* Header */}
-            <div className="flex items-center justify-between mb-2">
-                <div>
-                    <h1 className="text-xl font-bold" style={{ color: 'var(--color-text-primary)', margin: 0 }}>
-                        Intelligence Feed
-                    </h1>
-                    <p className="text-xs" style={{ color: 'var(--color-text-muted)', margin: '4px 0 0' }}>
-                        {data?.meta
-                            ? `${data.meta.feedsFetched} feeds · ${data.meta.articlesNew} new · ${data.meta.articlesCached} cached · ${data.meta.processingTimeMs}ms`
-                            : 'Loading...'
-                        }
-                    </p>
+        <div className="flex flex-col h-[calc(100vh-8rem)] relative">
+
+            {/* Refresh Indicator */}
+            {isRefreshing && (
+                <div className="absolute top-2 right-4 z-50 flex items-center space-x-2 text-xs font-medium text-sentinel-400 bg-sentinel-800/80 backdrop-blur-md px-3 py-1.5 rounded-full border border-sentinel-700/50 shadow-lg animate-pulse">
+                    <RefreshCw className="h-3 w-3 animate-spin" />
+                    <span>Gathering Intelligence...</span>
                 </div>
-                <button
-                    onClick={refresh}
-                    disabled={loading}
-                    style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        padding: '6px 14px',
-                        borderRadius: 'var(--radius-md)',
-                        border: '1px solid var(--color-border-default)',
-                        backgroundColor: 'var(--color-bg-surface)',
-                        color: 'var(--color-text-secondary)',
-                        cursor: loading ? 'not-allowed' : 'pointer',
-                        fontSize: '0.8rem',
-                        opacity: loading ? 0.5 : 1,
-                    }}
-                >
-                    <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-                    Refresh
-                </button>
-            </div>
+            )}
 
-            {/* Briefing Bar */}
-            <BriefingBar briefing={briefing} />
+            {/* Briefing Bar (Top Level Meta) */}
+            {data?.briefing && (
+                <div className="mb-6 shrink-0">
+                    <BriefingBar briefing={data.briefing} meta={data.meta} />
+                </div>
+            )}
 
-            {/* Filter Bar */}
-            <FilterBar filters={filters} onFiltersChange={setFilters} />
+            {/* Main Content Area */}
+            <div className="flex flex-1 min-h-0 gap-6">
 
-            {/* Main content: articles + signals sidebar */}
-            <div className="flex gap-4" style={{ alignItems: 'flex-start' }}>
-                {/* Article feed (main column) */}
-                <div className="flex-1 space-y-3 min-w-0">
-                    {filteredArticles.length === 0 ? (
-                        <div className="card text-center" style={{ padding: 'var(--spacing-2xl)', color: 'var(--color-text-muted)' }}>
-                            <p className="text-sm">No articles match your filters</p>
-                        </div>
-                    ) : (
-                        filteredArticles.map(article => (
-                            <ArticleCard key={article.id || article.link} article={article} />
-                        ))
-                    )}
+                {/* Left Column: Feed & Filters */}
+                <div className="flex-1 flex flex-col min-w-0">
+                    <div className="mb-4 shrink-0">
+                        <FilterBar
+                            searchQuery={searchQuery}
+                            setSearchQuery={setSearchQuery}
+                            activeCategories={activeCategories}
+                            setActiveCategories={setActiveCategories}
+                            activeSentiment={activeSentiment}
+                            setActiveSentiment={setActiveSentiment}
+                            highImpactOnly={highImpactOnly}
+                            setHighImpactOnly={setHighImpactOnly}
+                        />
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
+                        {filteredArticles.length === 0 ? (
+                            <div className="text-center py-20 text-sentinel-400 border border-dashed border-sentinel-700 rounded-xl">
+                                No intelligence briefing matches your current filters.
+                            </div>
+                        ) : (
+                            filteredArticles.map(article => (
+                                <ArticleCard key={article.id || article.link} article={article} />
+                            ))
+                        )}
+                    </div>
                 </div>
 
-                {/* Signals Sidebar (right column for larger screens) */}
-                <div className="hidden lg:block" style={{ width: 280, flexShrink: 0, position: 'sticky', top: 80 }}>
+                {/* Right Column: Aggregated Signals Sidebar */}
+                <div className="w-80 shrink-0 hidden lg:block overflow-y-auto custom-scrollbar">
                     <SignalsSidebar articles={filteredArticles} />
                 </div>
             </div>

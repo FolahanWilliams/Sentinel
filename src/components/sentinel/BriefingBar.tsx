@@ -1,139 +1,91 @@
-/**
- * Sentinel — BriefingBar (Spec §7.2)
- *
- * Sticky bar at top showing market mood, top stories, and signal counter.
- */
-
-import { useState } from 'react';
-import { ChevronDown, ChevronUp, TrendingUp, TrendingDown, Minus } from 'lucide-react';
-import type { DailyBriefing } from '@/types/sentinel';
+import type { DailyBriefing, SentinelResponse } from '@/types/sentinel';
+import { Activity, Clock, ShieldAlert, Zap, Compass, CheckCircle2 } from 'lucide-react';
+import { SENTIMENT_COLORS } from '@/utils/sentinel-helpers';
 
 interface BriefingBarProps {
     briefing: DailyBriefing;
+    meta: SentinelResponse['meta'];
 }
 
-const MOOD_CONFIG = {
-    'risk-on': { label: 'Risk-On', color: '#22C55E', bg: '#22C55E22' },
-    'risk-off': { label: 'Risk-Off', color: '#EF4444', bg: '#EF444422' },
-    'mixed': { label: 'Mixed', color: '#F59E0B', bg: '#F59E0B22' },
-} as const;
+export function BriefingBar({ briefing, meta }: BriefingBarProps) {
 
-export function BriefingBar({ briefing }: BriefingBarProps) {
-    const [expanded, setExpanded] = useState(false);
-    const mood = MOOD_CONFIG[briefing.marketMood] || MOOD_CONFIG.mixed;
+    const moodConfig = {
+        'risk-on': { color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20', icon: Zap },
+        'risk-off': { color: 'text-red-400 bg-red-500/10 border-red-500/20', icon: ShieldAlert },
+        'mixed': { color: 'text-amber-400 bg-amber-500/10 border-amber-500/20', icon: Compass }
+    };
+
+    const moodMatch = moodConfig[briefing.market_mood] || moodConfig['mixed'];
+    const MoodIcon = moodMatch.icon;
 
     return (
-        <div
-            className="card"
-            style={{
-                padding: 'var(--spacing-md) var(--spacing-lg)',
-                position: 'sticky',
-                top: 0,
-                zIndex: 10,
-                backdropFilter: 'blur(12px)',
-                backgroundColor: 'var(--color-bg-surface)',
-            }}
-        >
-            <div className="flex items-center gap-4 flex-wrap">
-                {/* Market Mood Badge */}
-                <span
-                    style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        padding: '4px 12px',
-                        borderRadius: 'var(--radius-full)',
-                        backgroundColor: mood.bg,
-                        color: mood.color,
-                        fontSize: '0.8rem',
-                        fontWeight: 600,
-                        letterSpacing: '0.03em',
-                        whiteSpace: 'nowrap',
-                    }}
-                >
-                    {briefing.marketMood === 'risk-on' && <TrendingUp size={14} />}
-                    {briefing.marketMood === 'risk-off' && <TrendingDown size={14} />}
-                    {briefing.marketMood === 'mixed' && <Minus size={14} />}
-                    {mood.label}
-                </span>
+        <div className="bg-sentinel-800/40 border border-sentinel-700/50 rounded-xl overflow-hidden backdrop-blur-md">
+            {/* Top Stats Row */}
+            <div className="flex flex-wrap items-center justify-between p-4 border-b border-sentinel-700/30 bg-sentinel-900/20">
+                <div className="flex items-center space-x-4">
+                    <div className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg border ${moodMatch.color}`}>
+                        <MoodIcon className="h-4 w-4" />
+                        <span className="text-sm font-bold uppercase tracking-wider">{briefing.market_mood}</span>
+                    </div>
 
-                {/* Top Stories (center) */}
-                <div className="flex-1 min-w-0">
-                    {briefing.topStories.length > 0 && (
-                        <p
-                            className="text-sm truncate"
-                            style={{ color: 'var(--color-text-primary)', margin: 0 }}
-                            title={briefing.topStories[0]}
-                        >
-                            {briefing.topStories[0]}
-                        </p>
-                    )}
+                    <div className="hidden sm:flex items-center space-x-3 text-sm">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${SENTIMENT_COLORS.bullish}`}>
+                            {briefing.signal_count.bullish} Bullish
+                        </span>
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${SENTIMENT_COLORS.bearish}`}>
+                            {briefing.signal_count.bearish} Bearish
+                        </span>
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${SENTIMENT_COLORS.neutral}`}>
+                            {briefing.signal_count.neutral} Neutral
+                        </span>
+                    </div>
                 </div>
 
-                {/* Signal Counter (right) */}
-                <div className="flex items-center gap-3 text-xs font-mono" style={{ whiteSpace: 'nowrap' }}>
-                    <span style={{ color: '#22C55E' }}>🟢 {briefing.signalCount.bullish}</span>
-                    <span style={{ color: '#EF4444' }}>🔴 {briefing.signalCount.bearish}</span>
-                    <span style={{ color: '#6B7280' }}>⚪ {briefing.signalCount.neutral}</span>
+                <div className="flex items-center space-x-4 text-xs text-sentinel-400 font-mono mt-2 sm:mt-0">
+                    <div className="flex items-center">
+                        <Activity className="h-3 w-3 mr-1" />
+                        <span>{meta.articlesNew} new / {meta.articlesDeduplicated} deduped</span>
+                    </div>
+                    <div className="flex items-center text-sentinel-500">
+                        <Clock className="h-3 w-3 mr-1" />
+                        <span>{meta.processingTimeMs}ms CPU</span>
+                    </div>
                 </div>
-
-                {/* Expand toggle */}
-                <button
-                    onClick={() => setExpanded(!expanded)}
-                    style={{
-                        background: 'none',
-                        border: 'none',
-                        cursor: 'pointer',
-                        color: 'var(--color-text-muted)',
-                        padding: 4,
-                    }}
-                >
-                    {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                </button>
             </div>
 
-            {/* Expanded content */}
-            {expanded && (
-                <div className="mt-3 pt-3" style={{ borderTop: '1px solid var(--color-border-subtle)' }}>
-                    {/* All top stories */}
-                    {briefing.topStories.length > 1 && (
-                        <div className="mb-3">
-                            <h4 className="text-xs font-semibold mb-2" style={{ color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Top Stories</h4>
-                            <ul className="space-y-1" style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-                                {briefing.topStories.map((story, i) => (
-                                    <li key={i} className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-                                        • {story}
-                                    </li>
-                                ))}
-                            </ul>
-                        </div>
-                    )}
-
-                    {/* Trending Topics */}
-                    {briefing.trendingTopics.length > 0 && (
-                        <div>
-                            <h4 className="text-xs font-semibold mb-2" style={{ color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Trending</h4>
-                            <div className="flex flex-wrap gap-2">
-                                {briefing.trendingTopics.map((topic, i) => (
-                                    <span
-                                        key={i}
-                                        className="text-xs"
-                                        style={{
-                                            padding: '2px 10px',
-                                            borderRadius: 'var(--radius-full)',
-                                            backgroundColor: 'var(--color-bg-elevated)',
-                                            color: 'var(--color-text-secondary)',
-                                            border: '1px solid var(--color-border-subtle)',
-                                        }}
-                                    >
-                                        {topic}
-                                    </span>
-                                ))}
-                            </div>
-                        </div>
-                    )}
+            {/* Bottom Content Row */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-0 divide-y md:divide-y-0 md:divide-x divide-sentinel-700/30">
+                {/* Top Stories */}
+                <div className="p-4 bg-gradient-to-br from-transparent to-sentinel-900/10">
+                    <h3 className="text-xs font-semibold text-sentinel-400 uppercase tracking-widest mb-3 flex items-center">
+                        <CheckCircle2 className="h-3 w-3 mr-1.5 text-sentinel-500" />
+                        Key Takeaways
+                    </h3>
+                    <ul className="space-y-2">
+                        {briefing.top_stories.map((story, i) => (
+                            <li key={i} className="text-sm text-sentinel-100 flex items-start">
+                                <span className="text-sentinel-500 mr-2 font-mono text-xs mt-0.5">{i + 1}.</span>
+                                <span className="leading-snug">{story}</span>
+                            </li>
+                        ))}
+                    </ul>
                 </div>
-            )}
+
+                {/* Trending Topics */}
+                <div className="p-4">
+                    <h3 className="text-xs font-semibold text-sentinel-400 uppercase tracking-widest mb-3 flex items-center">
+                        <Activity className="h-3 w-3 mr-1.5 text-sentinel-500" />
+                        Trending Themes
+                    </h3>
+                    <div className="flex flex-wrap gap-2">
+                        {briefing.trending_topics.map((topic, i) => (
+                            <span key={i} className="px-3 py-1 bg-sentinel-800 border border-sentinel-700/50 rounded-full text-xs text-sentinel-300 font-medium">
+                                #{topic}
+                            </span>
+                        ))}
+                    </div>
+                </div>
+            </div>
         </div>
     );
 }

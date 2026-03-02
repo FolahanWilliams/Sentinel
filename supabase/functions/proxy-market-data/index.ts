@@ -38,108 +38,126 @@ serve(async (req) => {
         }
 
         // 2. Parse Request
-        const { endpoint, ticker, timeframe = 'day', limit = 100 } = await req.json()
+        const { endpoint, ticker } = await req.json()
         if (!endpoint) throw new Error('Missing endpoint')
+        if (!ticker) throw new Error('Missing ticker')
 
-        // 3. Load Secrets from the secure Edge Function environment
+        // 3. Load Secrets
         const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
         const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
+        const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY')
 
-        // Choose between Polygon or AlphaVantage based on provider secret
-        const PROVIDER = Deno.env.get('MARKET_DATA_PROVIDER') || 'polygon'
-        const API_KEY = Deno.env.get('MARKET_DATA_API_KEY')
-
-        if (!API_KEY) throw new Error('MARKET_DATA_API_KEY secret is not set')
+        if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY secret is not set')
 
         const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+        const PROVIDER = 'ai-scraper'
         console.log(`[proxy-market-data] ${endpoint} for ${ticker} via ${PROVIDER}`)
 
         const startTime = Date.now()
-        let rawData: any = null
         let responseData: any = null
 
         // 4. Route Provider
-        if (PROVIDER === 'polygon') {
-            if (endpoint === 'quote') {
-                // e.g. https://api.polygon.io/v2/aggs/ticker/AAPL/prev?adjusted=true&apiKey=YOUR_API_KEY
-                if (!ticker) throw new Error('Missing ticker')
-                const tickerUpper = ticker.toUpperCase()
+        if (endpoint === 'quote') {
+            const tickerUpper = ticker.toUpperCase()
+            let html = '';
+            let url = '';
+            let source = '';
 
-                const res = await fetch(`https://api.polygon.io/v2/aggs/ticker/${tickerUpper}/prev?adjusted=true&apiKey=${API_KEY}`)
-                if (!res.ok) throw new Error(`Polygon API Error: ${res.status}`)
+            if (['BTC', 'ETH', 'SOL'].includes(tickerUpper)) {
+                // Crypto
+                url = `https://www.cnbc.com/quotes/${tickerUpper}=`;
+                source = 'CNBC';
+            } else if (tickerUpper === 'VIX' || tickerUpper === '^VIX') {
+                // VIX
+                url = `https://www.cnbc.com/quotes/.VIX`;
+                source = 'CNBC';
+            } else {
+                // Equities / ETFs
+                url = `https://finviz.com/quote.ashx?t=${tickerUpper}`;
+                source = 'Finviz';
+            }
 
-                rawData = await res.json()
+            console.log(`[proxy-market-data] Fetching HTML from ${url}`);
+            const res = await fetch(url, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                }
+            });
 
-                if (rawData.results && rawData.results.length > 0) {
-                    const r = rawData.results[0]
-                    // Polygon's prev day aggs: c = close, o = open, h = high, l = low, v = volume
-                    // We return a simplified stub mapped to our Quote type.
-                    responseData = {
-                        success: true,
-                        data: {
-                            ticker: tickerUpper,
-                            price: r.c,
-                            change: r.c - r.o,
-                            changePercent: ((r.c - r.o) / r.o) * 100,
-                            volume: r.v,
-                            previousClose: r.c, // Stub mapping 
-                            open: r.o,
-                            high: r.h,
-                            low: r.l,
-                            lastUpdated: new Date().toISOString()
-                        } as Quote
-                    }
-                } else {
-                    throw new Error(`Polygon API Error: No data for ${tickerUpper}`)
+            if (!res.ok) {
+                console.warn(`[proxy-market-data] Target ${source} returned ${res.status}.`);
+                throw new Error(`${source} returned ${res.status}`);
+            }
+
+            html = await res.text();
+
+            // Call Gemini REST API to parse the HTML
+            console.log(`[proxy-market-data] Parsing ${source} HTML with Gemini`);
+            const prompt = `Extract from this ${source} HTML for ${tickerUpper}: current price, daily change amount, daily change percentage (as a number, dropping the % sign), open, high, low, volume, and previous close. Output as JSON only matching this exact schema: { "price": number, "change": number, "changePercent": number, "volume": number, "previousClose": number, "open": number, "high": number, "low": number }. If a value is missing, use 0. Return a clean JSON object.\n\nHTML Data:\n${html.slice(0, 45000)}`;
+
+            const payload = {
+                contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                generationConfig: {
+                    temperature: 0.1,
+                    responseMimeType: 'application/json',
+                }
+            };
+
+            const geminiRes = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                }
+            );
+
+            if (!geminiRes.ok) throw new Error(`Gemini API Error: ${await geminiRes.text()}`);
+            const data = await geminiRes.json();
+
+            let text = ''
+            if (data.candidates && data.candidates.length > 0) {
+                text = data.candidates[0].content.parts[0].text;
+
+                // Strip markdown backticks if Gemini wraps the JSON
+                if (text.startsWith('```json')) {
+                    text = text.replace(/^```json/, '').replace(/```$/, '').trim();
+                } else if (text.startsWith('```')) {
+                    text = text.replace(/^```/, '').replace(/```$/, '').trim();
                 }
             }
-            else {
-                throw new Error(`Unsupported endpoint: ${endpoint} for provider ${PROVIDER}`)
+
+            let parsed: any = {};
+            try {
+                parsed = JSON.parse(text);
+            } catch (e) {
+                console.error("[proxy-market-data] Failed to parse Gemini JSON:", text, e);
             }
 
-        } else if (PROVIDER === 'alphavantage') {
-            if (endpoint === 'quote') {
-                // https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=IBM&apikey=demo
-                if (!ticker) throw new Error('Missing ticker')
-                const tickerUpper = ticker.toUpperCase()
-
-                const res = await fetch(`https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${tickerUpper}&apikey=${API_KEY}`)
-                if (!res.ok) throw new Error(`AlphaVantage API Error: ${res.status}`)
-
-                rawData = await res.json()
-
-                const q = rawData['Global Quote']
-                if (q && q['05. price']) {
-                    responseData = {
-                        success: true,
-                        data: {
-                            ticker: tickerUpper,
-                            price: parseFloat(q['05. price']),
-                            change: parseFloat(q['09. change']),
-                            changePercent: parseFloat(q['10. change percent'].replace('%', '')),
-                            volume: parseInt(q['06. volume'], 10),
-                            previousClose: parseFloat(q['08. previous close']),
-                            open: parseFloat(q['02. open']),
-                            high: parseFloat(q['03. high']),
-                            low: parseFloat(q['04. low']),
-                            lastUpdated: new Date().toISOString()
-                        } as Quote
-                    }
-                } else {
-                    throw new Error(`AlphaVantage API Error: Rate limit or invalid ticker ${tickerUpper}`)
-                }
-            }
-            // Add other endpoints (bars, technicals) here later
-            else {
-                throw new Error(`Unsupported endpoint: ${endpoint} for provider ${PROVIDER}`)
+            responseData = {
+                success: true,
+                data: {
+                    ticker: tickerUpper,
+                    price: Number(parsed.price) || 0,
+                    change: Number(parsed.change) || 0,
+                    changePercent: Number(parsed.changePercent) || 0,
+                    volume: Number(parsed.volume) || 0,
+                    previousClose: Number(parsed.previousClose) || 0,
+                    open: Number(parsed.open) || 0,
+                    high: Number(parsed.high) || 0,
+                    low: Number(parsed.low) || 0,
+                    lastUpdated: new Date().toISOString()
+                } as Quote
             }
         } else {
-            throw new Error(`Unknown MARKET_DATA_PROVIDER config: ${PROVIDER}`)
+            throw new Error(`Unsupported endpoint: ${endpoint} for provider ${PROVIDER}`)
         }
 
         const durationMs = Date.now() - startTime
 
-        // 5. Log API Usage (for tracking costs/rate limits)
+        // 5. Log API Usage
         // Bypassing RLS using Service Role Key
         await supabaseAdmin.from('api_usage').insert({
             provider: PROVIDER,
@@ -147,8 +165,7 @@ serve(async (req) => {
             ticker,
             latency_ms: durationMs,
             success: true,
-            // Very rough estimate cost
-            estimated_cost_usd: PROVIDER === 'polygon' ? 0.0001 : 0.005
+            estimated_cost_usd: 0.0001
         })
 
         // 6. Return Data

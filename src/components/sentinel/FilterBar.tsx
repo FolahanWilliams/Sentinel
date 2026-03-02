@@ -1,155 +1,105 @@
-/**
- * Sentinel — FilterBar (Spec §7.4)
- *
- * Category pills, sentiment toggle, impact filter, search, and sort.
- */
-
-import { Search } from 'lucide-react';
-import type { SentinelFilters, ArticleCategory } from '@/types/sentinel';
-import { ARTICLE_CATEGORY_COLORS, ARTICLE_CATEGORY_LABELS } from '@/utils/sentinelHelpers';
+import { Search, Filter, AlertTriangle } from 'lucide-react';
+import type { ArticleCategory } from '@/types/sentinel';
+import { CATEGORY_COLORS } from '@/utils/sentinel-helpers';
 
 interface FilterBarProps {
-    filters: SentinelFilters;
-    onFiltersChange: (filters: SentinelFilters) => void;
+    searchQuery: string;
+    setSearchQuery: (q: string) => void;
+    activeCategories: Set<ArticleCategory>;
+    setActiveCategories: (cats: Set<ArticleCategory> | ((prev: Set<ArticleCategory>) => Set<ArticleCategory>)) => void;
+    activeSentiment: 'all' | 'bullish' | 'bearish';
+    setActiveSentiment: (s: 'all' | 'bullish' | 'bearish') => void;
+    highImpactOnly: boolean;
+    setHighImpactOnly: (val: boolean) => void;
 }
 
-const ALL_CATEGORIES: ArticleCategory[] = [
-    'ai_ml', 'crypto_web3', 'macro_economy', 'tech_earnings', 'startups_vc',
-    'cybersecurity', 'regulation_policy', 'semiconductors', 'markets_trading',
-    'geopolitics', 'other',
-];
+export function FilterBar({
+    searchQuery, setSearchQuery,
+    activeCategories, setActiveCategories,
+    activeSentiment, setActiveSentiment,
+    highImpactOnly, setHighImpactOnly
+}: FilterBarProps) {
 
-export function FilterBar({ filters, onFiltersChange }: FilterBarProps) {
     const toggleCategory = (cat: ArticleCategory) => {
-        const current = filters.categories;
-        const newCats = current.includes(cat)
-            ? current.filter(c => c !== cat)
-            : [...current, cat];
-        onFiltersChange({ ...filters, categories: newCats });
+        setActiveCategories(prev => {
+            const next = new Set(prev);
+            if (next.has(cat)) next.delete(cat);
+            else next.add(cat);
+            return next;
+        });
     };
 
     return (
-        <div className="space-y-3">
-            {/* Category pills */}
-            <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
-                {ALL_CATEGORIES.map(cat => {
-                    const isActive = filters.categories.length === 0 || filters.categories.includes(cat);
-                    const color = ARTICLE_CATEGORY_COLORS[cat];
+        <div className="flex flex-col space-y-4 bg-sentinel-800/40 p-4 rounded-xl border border-sentinel-700/50 backdrop-blur-md">
+            {/* Top Row: Search & Toggles */}
+            <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+
+                {/* Search */}
+                <div className="relative w-full sm:w-96 text-sentinel-400 focus-within:text-sentinel-300">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" />
+                    <input
+                        type="text"
+                        placeholder="Search briefings, entities, tickers..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="w-full bg-sentinel-900/50 border border-sentinel-700/50 rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sentinel-500 transition-shadow text-white placeholder-sentinel-500"
+                    />
+                </div>
+
+                {/* Toggles */}
+                <div className="flex gap-2 w-full sm:w-auto">
+                    <select
+                        value={activeSentiment}
+                        onChange={(e) => setActiveSentiment(e.target.value as any)}
+                        className="bg-sentinel-900/50 border border-sentinel-700/50 rounded-lg px-3 py-2 text-sm text-sentinel-300 focus:outline-none focus:ring-2 focus:ring-sentinel-500 appearance-none flex-1 sm:flex-none cursor-pointer"
+                    >
+                        <option value="all">All Sentiment</option>
+                        <option value="bullish">🟢 Bullish Only</option>
+                        <option value="bearish">🔴 Bearish Only</option>
+                    </select>
+
+                    <button
+                        onClick={() => setHighImpactOnly(!highImpactOnly)}
+                        className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-colors flex-1 sm:flex-none ${highImpactOnly
+                                ? 'bg-amber-500/20 text-amber-400 border-amber-500/50'
+                                : 'bg-sentinel-900/50 text-sentinel-400 border-sentinel-700/50 hover:bg-sentinel-800'
+                            }`}
+                    >
+                        <AlertTriangle className="h-4 w-4" />
+                        High Impact
+                    </button>
+                </div>
+            </div>
+
+            {/* Bottom Row: Categories Filter */}
+            <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-1">
+                <Filter className="h-4 w-4 text-sentinel-500 shrink-0" />
+                {Object.keys(CATEGORY_COLORS).map((catName) => {
+                    const cat = catName as ArticleCategory;
+                    const isActive = activeCategories.has(cat);
+                    const baseColor = CATEGORY_COLORS[cat];
+
                     return (
                         <button
                             key={cat}
                             onClick={() => toggleCategory(cat)}
-                            style={{
-                                padding: '4px 12px',
-                                borderRadius: 'var(--radius-full)',
-                                border: `1px solid ${isActive ? color : 'var(--color-border-default)'}`,
-                                backgroundColor: isActive ? `${color}22` : 'transparent',
-                                color: isActive ? color : 'var(--color-text-muted)',
-                                fontSize: '0.75rem',
-                                fontWeight: 500,
-                                cursor: 'pointer',
-                                whiteSpace: 'nowrap',
-                                transition: 'all 0.15s ease',
-                            }}
+                            className={`shrink-0 px-3 py-1 rounded-full text-xs font-mono font-medium border transition-all ${isActive
+                                    ? baseColor
+                                    : 'bg-transparent text-sentinel-400 border-transparent hover:border-sentinel-700/50 hover:bg-sentinel-800'
+                                }`}
                         >
-                            {ARTICLE_CATEGORY_LABELS[cat]}
+                            {cat.replace('_', ' ')}
                         </button>
-                    );
+                    )
                 })}
-            </div>
-
-            {/* Second row: sentiment, impact, search, sort */}
-            <div className="flex items-center gap-3 flex-wrap">
-                {/* Sentiment toggle */}
-                <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid var(--color-border-default)' }}>
-                    {(['all', 'bullish', 'bearish'] as const).map(s => {
-                        const isActive = filters.sentiment === s;
-                        const colors: Record<string, string> = { all: 'var(--color-text-primary)', bullish: '#22C55E', bearish: '#EF4444' };
-                        return (
-                            <button
-                                key={s}
-                                onClick={() => onFiltersChange({ ...filters, sentiment: s === 'all' ? 'all' : s })}
-                                style={{
-                                    padding: '4px 10px',
-                                    border: 'none',
-                                    backgroundColor: isActive ? 'var(--color-bg-elevated)' : 'transparent',
-                                    color: isActive ? colors[s] : 'var(--color-text-muted)',
-                                    fontSize: '0.75rem',
-                                    fontWeight: 500,
-                                    cursor: 'pointer',
-                                }}
-                            >
-                                {s === 'all' ? '⚪ All' : s === 'bullish' ? '🟢 Bull' : '🔴 Bear'}
-                            </button>
-                        );
-                    })}
-                </div>
-
-                {/* High impact toggle */}
-                <button
-                    onClick={() => onFiltersChange({ ...filters, highImpactOnly: !filters.highImpactOnly })}
-                    style={{
-                        padding: '4px 10px',
-                        borderRadius: 'var(--radius-full)',
-                        border: `1px solid ${filters.highImpactOnly ? '#F59E0B' : 'var(--color-border-default)'}`,
-                        backgroundColor: filters.highImpactOnly ? '#F59E0B22' : 'transparent',
-                        color: filters.highImpactOnly ? '#F59E0B' : 'var(--color-text-muted)',
-                        fontSize: '0.75rem',
-                        fontWeight: 500,
-                        cursor: 'pointer',
-                    }}
-                >
-                    ★ High Only
-                </button>
-
-                {/* Search */}
-                <div className="flex-1 min-w-48 relative">
-                    <Search
-                        size={14}
-                        style={{
-                            position: 'absolute',
-                            left: 10,
-                            top: '50%',
-                            transform: 'translateY(-50%)',
-                            color: 'var(--color-text-muted)',
-                        }}
-                    />
-                    <input
-                        type="text"
-                        placeholder="Search articles..."
-                        value={filters.searchQuery}
-                        onChange={e => onFiltersChange({ ...filters, searchQuery: e.target.value })}
-                        style={{
-                            width: '100%',
-                            padding: '6px 10px 6px 30px',
-                            borderRadius: 'var(--radius-md)',
-                            border: '1px solid var(--color-border-default)',
-                            backgroundColor: 'var(--color-bg-elevated)',
-                            color: 'var(--color-text-primary)',
-                            fontSize: '0.8rem',
-                            outline: 'none',
-                        }}
-                    />
-                </div>
-
-                {/* Sort */}
-                <select
-                    value={filters.sortBy}
-                    onChange={e => onFiltersChange({ ...filters, sortBy: e.target.value as 'newest' | 'impact' })}
-                    style={{
-                        padding: '6px 10px',
-                        borderRadius: 'var(--radius-md)',
-                        border: '1px solid var(--color-border-default)',
-                        backgroundColor: 'var(--color-bg-elevated)',
-                        color: 'var(--color-text-secondary)',
-                        fontSize: '0.75rem',
-                        cursor: 'pointer',
-                        outline: 'none',
-                    }}
-                >
-                    <option value="newest">Newest first</option>
-                    <option value="impact">Highest impact</option>
-                </select>
+                {activeCategories.size > 0 && (
+                    <button
+                        onClick={() => setActiveCategories(new Set())}
+                        className="shrink-0 px-3 py-1 text-xs text-sentinel-500 hover:text-sentinel-300 underline ml-2"
+                    >
+                        Clear
+                    </button>
+                )}
             </div>
         </div>
     );

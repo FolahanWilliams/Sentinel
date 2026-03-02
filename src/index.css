@@ -7,50 +7,52 @@
 
 @theme {
   /* Background layers */
-  --color-bg-primary: #0a0a0f;
-  --color-bg-surface: #12121a;
-  --color-bg-elevated: #1a1a2e;
-  --color-bg-hover: #22223a;
+  --color-bg-primary: #0b0c10;
+  --color-bg-surface: #141620;
+  --color-bg-elevated: #1a1c29;
+  --color-bg-hover: #1f2233;
 
   /* Borders */
-  --color-border-default: #2a2a3e;
-  --color-border-subtle: #1e1e32;
-  --color-border-accent: #4a9eff33;
+  --color-border-default: #242738;
+  --color-border-subtle: #1c1e2d;
+  --color-border-accent: #374151;
 
   /* Text */
-  --color-text-primary: #e8e8f0;
-  --color-text-secondary: #8888a0;
-  --color-text-muted: #555570;
-  --color-text-inverse: #0a0a0f;
+  --color-text-primary: #f8fafc;
+  --color-text-secondary: #94a3b8;
+  --color-text-muted: #64748b;
+  --color-text-inverse: #0f172a;
 
   /* Semantic: Trading signals */
-  --color-bullish: #00d4aa;
-  --color-bullish-dim: #00d4aa22;
-  --color-bearish: #ff4757;
-  --color-bearish-dim: #ff475722;
-  --color-info: #4a9eff;
-  --color-info-dim: #4a9eff22;
-  --color-warning: #ffb347;
-  --color-warning-dim: #ffb34722;
-  --color-bias: #a855f7;
-  --color-bias-dim: #a855f722;
+  --color-bullish: #10b981;
+  --color-bullish-dim: #10b98122;
+  --color-bearish: #ef4444;
+  --color-bearish-dim: #ef444422;
+  --color-info: #3b82f6;
+  --color-info-dim: #3b82f622;
+  --color-warning: #f59e0b;
+  --color-warning-dim: #f59e0b22;
+  --color-bias: #8b5cf6;
+  --color-bias-dim: #8b5cf622;
 
   /* Typography */
   --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 
   /* Sentinel dark palette — maps to bg-sentinel-*, text-sentinel-* etc. */
-  --color-sentinel-50: #e8e8f0;
-  --color-sentinel-100: #d0d0e0;
-  --color-sentinel-200: #b0b0c8;
-  --color-sentinel-300: #8888a0;
-  --color-sentinel-400: #6a6a82;
-  --color-sentinel-500: #555570;
-  --color-sentinel-600: #3e3e58;
-  --color-sentinel-700: #2a2a3e;
-  --color-sentinel-800: #1e1e32;
-  --color-sentinel-900: #12121a;
-  --color-sentinel-950: #0a0a0f;
+  --color-sentinel-50: #f8fafc;
+  --color-sentinel-100: #e2e8f0;
+  --color-sentinel-200: #cbd5e1;
+  --color-sentinel-300: #94a3b8;
+  --color-sentinel-400: #64748b;
+  --color-sentinel-500: #475569;
+  --color-sentinel-600: #334155;
+  --color-sentinel-700: #1e293b;
+  --color-sentinel-800: #0f172a;
+  --color-sentinel-900: #141620;
+  /* Card bg */
+  --color-sentinel-950: #0b0c10;
+  /* Main bg */
 }
 
 /*
@@ -75,12 +77,12 @@
   --radius-full: 9999px;
 
   /* Shadows */
-  --shadow-glow-blue: 0 0 20px #4a9eff33;
-  --shadow-glow-green: 0 0 20px #00d4aa33;
-  --shadow-glow-red: 0 0 20px #ff475733;
-  --shadow-glow-purple: 0 0 20px #a855f733;
-  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4);
-  --shadow-elevated: 0 4px 12px rgba(0, 0, 0, 0.5);
+  --shadow-glow-blue: 0 0 20px #3b82f633;
+  --shadow-glow-green: 0 0 20px #10b98133;
+  --shadow-glow-red: 0 0 20px #ef444433;
+  --shadow-glow-purple: 0 0 20px #8b5cf633;
+  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-elevated: 0 8px 24px rgba(0, 0, 0, 0.6);
 }
 
 /* ===========================

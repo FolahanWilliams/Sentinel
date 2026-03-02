@@ -1,49 +1,45 @@
-/**
- * Sentinel — SentinelSkeleton (Spec §7)
- *
- * Shimmer loading state for the intelligence feed.
- */
+import { LayoutDashboard } from 'lucide-react';
 
 export function SentinelSkeleton() {
-    const shimmer = 'animate-pulse rounded-lg';
-
     return (
-        <div className="space-y-4">
-            {/* Briefing bar skeleton */}
-            <div className="card" style={{ padding: 'var(--spacing-md)' }}>
-                <div className="flex items-center gap-4">
-                    <div className={shimmer} style={{ width: 80, height: 28, backgroundColor: 'var(--color-bg-elevated)' }} />
-                    <div className="flex-1 space-y-2">
-                        <div className={shimmer} style={{ width: '70%', height: 14, backgroundColor: 'var(--color-bg-elevated)' }} />
-                        <div className={shimmer} style={{ width: '50%', height: 14, backgroundColor: 'var(--color-bg-elevated)' }} />
-                    </div>
-                    <div className={shimmer} style={{ width: 160, height: 24, backgroundColor: 'var(--color-bg-elevated)' }} />
+        <div className="flex flex-col h-[calc(100vh-8rem)] animate-pulse">
+
+            {/* Briefing Bar Skeleton */}
+            <div className="mb-6 shrink-0 bg-sentinel-800/20 border border-sentinel-700/30 rounded-xl h-40 flex items-center justify-center">
+                <div className="flex flex-col items-center text-sentinel-600">
+                    <LayoutDashboard className="h-8 w-8 mb-4 opacity-50" />
+                    <span className="font-mono text-sm tracking-widest uppercase">Initializing Intelligence Feed...</span>
                 </div>
             </div>
 
-            {/* Filter bar skeleton */}
-            <div className="flex gap-2">
-                {Array.from({ length: 6 }).map((_, i) => (
-                    <div key={i} className={shimmer} style={{ width: 72, height: 32, backgroundColor: 'var(--color-bg-elevated)', borderRadius: 'var(--radius-full)' }} />
-                ))}
-            </div>
+            <div className="flex flex-1 min-h-0 gap-6">
 
-            {/* Article cards skeleton */}
-            {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="card" style={{ padding: 'var(--spacing-lg)' }}>
-                    <div className="flex gap-2 mb-3">
-                        <div className={shimmer} style={{ width: 70, height: 22, backgroundColor: 'var(--color-bg-elevated)', borderRadius: 'var(--radius-full)' }} />
-                        <div className={shimmer} style={{ width: 60, height: 22, backgroundColor: 'var(--color-bg-elevated)', borderRadius: 'var(--radius-full)' }} />
-                        <div className={shimmer} style={{ width: 90, height: 22, backgroundColor: 'var(--color-bg-elevated)', borderRadius: 'var(--radius-full)' }} />
-                    </div>
-                    <div className={shimmer} style={{ width: '85%', height: 18, backgroundColor: 'var(--color-bg-elevated)', marginBottom: 8 }} />
-                    <div className={shimmer} style={{ width: '40%', height: 12, backgroundColor: 'var(--color-bg-elevated)', marginBottom: 12 }} />
-                    <div className="space-y-1">
-                        <div className={shimmer} style={{ width: '100%', height: 14, backgroundColor: 'var(--color-bg-elevated)' }} />
-                        <div className={shimmer} style={{ width: '75%', height: 14, backgroundColor: 'var(--color-bg-elevated)' }} />
+                {/* Left Column Skeleton */}
+                <div className="flex-1 flex flex-col min-w-0">
+                    {/* Filter Bar */}
+                    <div className="mb-4 shrink-0 h-24 bg-sentinel-800/20 border border-sentinel-700/30 rounded-xl" />
+
+                    {/* Article Cards */}
+                    <div className="flex-1 overflow-hidden space-y-4 pr-2">
+                        {[...Array(5)].map((_, i) => (
+                            <div key={i} className="h-48 bg-sentinel-800/10 border border-sentinel-700/20 rounded-xl p-5">
+                                <div className="h-4 w-1/4 bg-sentinel-700/20 rounded mb-4" />
+                                <div className="h-6 w-3/4 bg-sentinel-700/30 rounded mb-3" />
+                                <div className="h-4 w-full bg-sentinel-700/10 rounded mb-2" />
+                                <div className="h-4 w-2/3 bg-sentinel-700/10 rounded" />
+                            </div>
+                        ))}
                     </div>
                 </div>
-            ))}
+
+                {/* Right Column Skeleton */}
+                <div className="w-80 shrink-0 hidden lg:block h-full bg-sentinel-800/10 border border-sentinel-700/20 rounded-xl p-4">
+                    <div className="h-6 w-1/2 bg-sentinel-700/30 rounded mb-6" />
+                    {[...Array(4)].map((_, i) => (
+                        <div key={i} className="h-24 bg-sentinel-700/10 rounded-lg mb-4" />
+                    ))}
+                </div>
+            </div>
         </div>
     );
 }
