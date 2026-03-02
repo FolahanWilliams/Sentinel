@@ -1,0 +1,189 @@
+/**
+ * useTickerAnalysis — On-demand AI-powered analysis for a specific ticker.
+ *
+ * Lazily fetches 3 datasets via proxy-gemini with Google Search grounding:
+ * 1. Bias weights (why was this flagged?)
+ * 2. Recent events (news, filings, analyst actions)
+ * 3. Fundamental metrics (P/E, institutional ownership, etc.)
+ *
+ * Results are cached per ticker so re-expanding doesn't re-fetch.
+ */
+
+import { useState, useCallback, useRef } from 'react';
+import { supabase } from '@/config/supabase';
+
+export interface BiasWeight {
+    factor: string;
+    weight: number;        // 0-100
+    description: string;
+    sentiment: 'bullish' | 'bearish' | 'neutral';
+}
+
+export interface AIEvent {
+    date: string;
+    type: string;           // 'earnings' | 'filing' | 'analyst' | 'news' | 'insider' | 'macro'
+    headline: string;
+    impact: 'high' | 'medium' | 'low';
+    priceMove?: string;     // e.g. "+3.2%" or "-1.5%"
+    source?: string;
+}
+
+export interface FundamentalMetrics {
+    forwardPE: number | null;
+    priceToSales: number | null;
+    evToEbitda: number | null;
+    debtToEquity: number | null;
+    institutionalOwnershipPct: number | null;
+    shortInterestPct: number | null;
+    insiderTransactions30d: string | null;
+    revenueGrowthYoY: number | null;
+    profitMargin: number | null;
+    marketCap: string | null;
+    sector: string | null;
+    industry: string | null;
+}
+
+export interface TickerAnalysis {
+    biasWeights: BiasWeight[];
+    events: AIEvent[];
+    fundamentals: FundamentalMetrics | null;
+}
+
+// Per-session cache
+const analysisCache = new Map<string, TickerAnalysis>();
+
+export function useTickerAnalysis() {
+    const [data, setData] = useState<Record<string, TickerAnalysis>>({});
+    const [loading, setLoading] = useState<Record<string, boolean>>({});
+    const inflight = useRef<Set<string>>(new Set());
+
+    const fetchAnalysis = useCallback(async (ticker: string) => {
+        if (!ticker) return;
+
+        // Return cached
+        const cached = analysisCache.get(ticker);
+        if (cached) {
+            setData(prev => ({ ...prev, [ticker]: cached }));
+            return;
+        }
+
+        // Prevent duplicate in-flight requests
+        if (inflight.current.has(ticker)) return;
+        inflight.current.add(ticker);
+
+        setLoading(prev => ({ ...prev, [ticker]: true }));
+
+        try {
+            // Fire all 3 AI calls in parallel
+            const [biasRes, eventsRes, fundRes] = await Promise.allSettled([
+                fetchBiasWeights(ticker),
+                fetchEvents(ticker),
+                fetchFundamentals(ticker),
+            ]);
+
+            const result: TickerAnalysis = {
+                biasWeights: biasRes.status === 'fulfilled' ? biasRes.value : [],
+                events: eventsRes.status === 'fulfilled' ? eventsRes.value : [],
+                fundamentals: fundRes.status === 'fulfilled' ? fundRes.value : null,
+            };
+
+            analysisCache.set(ticker, result);
+            setData(prev => ({ ...prev, [ticker]: result }));
+        } catch (err) {
+            console.error(`[useTickerAnalysis] Failed for ${ticker}:`, err);
+        } finally {
+            inflight.current.delete(ticker);
+            setLoading(prev => ({ ...prev, [ticker]: false }));
+        }
+    }, []);
+
+    return { data, loading, fetchAnalysis };
+}
+
+
+// ── Internal fetch helpers ─────────────────────────────────────────
+
+async function fetchBiasWeights(ticker: string): Promise<BiasWeight[]> {
+    const { data, error } = await supabase.functions.invoke('proxy-gemini', {
+        body: {
+            systemInstruction: `You are a financial signal analysis engine. For the stock ticker ${ticker}, analyze the current market environment and break down the primary factors that would drive a trading signal for this stock right now. Return a JSON array of factors with their relative weights (must sum to 100).`,
+            prompt: `Analyze ${ticker} and return the primary signal drivers with weighted contributions. Consider: market sentiment (social media, news tone), insider buying/selling, technical signals (RSI, moving averages, volume), analyst ratings, institutional flow, sector momentum, and macro factors. Return the top 4-6 most relevant factors.`,
+            requireGroundedSearch: true,
+            responseSchema: {
+                type: 'ARRAY',
+                items: {
+                    type: 'OBJECT',
+                    properties: {
+                        factor: { type: 'STRING', description: 'Short label like "Bearish Sentiment" or "Insider Buying"' },
+                        weight: { type: 'NUMBER', description: 'Percentage weight 0-100, all must sum to 100' },
+                        description: { type: 'STRING', description: 'One sentence explanation' },
+                        sentiment: { type: 'STRING', enum: ['bullish', 'bearish', 'neutral'] }
+                    },
+                    required: ['factor', 'weight', 'description', 'sentiment']
+                }
+            }
+        }
+    });
+
+    if (error) throw error;
+    return JSON.parse(data.text);
+}
+
+async function fetchEvents(ticker: string): Promise<AIEvent[]> {
+    const { data, error } = await supabase.functions.invoke('proxy-gemini', {
+        body: {
+            systemInstruction: `You are a financial event tracker. For stock ticker ${ticker}, find the most significant recent events (last 30 days) that have affected or could affect its stock price. Include earnings, SEC filings, analyst actions, major news, insider transactions, and macro events.`,
+            prompt: `List the 6-10 most impactful recent events for ${ticker} in the last 30 days. For each, include the exact date, the type of event, a headline, the impact level, and the approximate price move (if known). Order by date, most recent first.`,
+            requireGroundedSearch: true,
+            responseSchema: {
+                type: 'ARRAY',
+                items: {
+                    type: 'OBJECT',
+                    properties: {
+                        date: { type: 'STRING', description: 'ISO date string YYYY-MM-DD' },
+                        type: { type: 'STRING', enum: ['earnings', 'filing', 'analyst', 'news', 'insider', 'macro'] },
+                        headline: { type: 'STRING', description: 'Event headline' },
+                        impact: { type: 'STRING', enum: ['high', 'medium', 'low'] },
+                        priceMove: { type: 'STRING', description: 'Approximate price change like +3.2% or -1.5%, or empty if unknown' },
+                        source: { type: 'STRING', description: 'Source name like Reuters, SEC, Bloomberg' }
+                    },
+                    required: ['date', 'type', 'headline', 'impact']
+                }
+            }
+        }
+    });
+
+    if (error) throw error;
+    return JSON.parse(data.text);
+}
+
+async function fetchFundamentals(ticker: string): Promise<FundamentalMetrics> {
+    const { data, error } = await supabase.functions.invoke('proxy-gemini', {
+        body: {
+            systemInstruction: `You are a financial data extraction engine. For stock ticker ${ticker}, find the latest fundamental financial metrics. Use the most recent publicly available data from financial websites.`,
+            prompt: `Get the latest fundamental metrics for ${ticker}: Forward P/E ratio, Price/Sales ratio, EV/EBITDA, Debt/Equity ratio, Institutional Ownership %, Short Interest %, recent insider transactions (last 30 days summary), Revenue Growth YoY %, Profit Margin %, Market Cap (formatted like "$2.5T"), Sector, and Industry. Return null for any metric you cannot find.`,
+            requireGroundedSearch: true,
+            responseSchema: {
+                type: 'OBJECT',
+                properties: {
+                    forwardPE: { type: 'NUMBER', nullable: true },
+                    priceToSales: { type: 'NUMBER', nullable: true },
+                    evToEbitda: { type: 'NUMBER', nullable: true },
+                    debtToEquity: { type: 'NUMBER', nullable: true },
+                    institutionalOwnershipPct: { type: 'NUMBER', nullable: true },
+                    shortInterestPct: { type: 'NUMBER', nullable: true },
+                    insiderTransactions30d: { type: 'STRING', nullable: true },
+                    revenueGrowthYoY: { type: 'NUMBER', nullable: true },
+                    profitMargin: { type: 'NUMBER', nullable: true },
+                    marketCap: { type: 'STRING', nullable: true },
+                    sector: { type: 'STRING', nullable: true },
+                    industry: { type: 'STRING', nullable: true }
+                },
+                required: ['forwardPE', 'priceToSales', 'evToEbitda', 'debtToEquity', 'institutionalOwnershipPct', 'shortInterestPct', 'insiderTransactions30d', 'revenueGrowthYoY', 'profitMargin', 'marketCap', 'sector', 'industry']
+            }
+        }
+    });
+
+    if (error) throw error;
+    return JSON.parse(data.text);
+}

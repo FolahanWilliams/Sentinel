@@ -2,9 +2,12 @@
  * Analysis — Deep-dive signal analysis page with modular components.
  * Shows agent reasoning, bias breakdown, fundamentals, historical matches,
  * position sizing, and event timeline.
+ *
+ * When a signal is expanded, lazily fetches AI-enriched data via useTickerAnalysis.
  */
 
 import { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
 import { Filter, ChevronDown, ChevronRight, Clock } from 'lucide-react';
 import { formatPrice } from '@/utils/formatters';
@@ -16,16 +19,19 @@ import { HistoricalPrecedent } from '@/components/analysis/HistoricalPrecedent';
 import { AgentReasoning } from '@/components/analysis/AgentReasoning';
 import { ConfidenceMeter } from '@/components/shared/ConfidenceMeter';
 import { LoadingState } from '@/components/shared/LoadingState';
+import { useTickerAnalysis } from '@/hooks/useTickerAnalysis';
 
 export function Analysis() {
+    const { ticker: urlTicker } = useParams<{ ticker?: string }>();
     const [signals, setSignals] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [expandedId, setExpandedId] = useState<string | null>(null);
     const [events, setEvents] = useState<Record<string, any[]>>({});
+    const { data: analysisData, loading: analysisLoading, fetchAnalysis } = useTickerAnalysis();
 
     useEffect(() => {
         async function fetchSignals() {
-            const { data, error } = await supabase
+            let query = supabase
                 .from('signals')
                 .select(`
                     *,
@@ -39,8 +45,14 @@ export function Analysis() {
                         max_drawdown
                     )
                 `)
-                .order('created_at', { ascending: false })
-                .limit(20);
+                .order('created_at', { ascending: false });
+
+            // If a ticker is in the URL, filter to that ticker
+            if (urlTicker) {
+                query = query.eq('ticker', urlTicker.toUpperCase());
+            }
+
+            const { data, error } = await query.limit(20);
 
             if (!error && data) {
                 setSignals(data);
@@ -64,11 +76,29 @@ export function Analysis() {
                         setEvents(grouped);
                     }
                 }
+
+                // Auto-expand if there's a URL ticker and we found signals
+                if (urlTicker && data.length > 0) {
+                    const firstSignal = data[0];
+                    if (firstSignal) {
+                        setExpandedId(firstSignal.id);
+                        fetchAnalysis(firstSignal.ticker);
+                    }
+                }
             }
             setLoading(false);
         }
         fetchSignals();
-    }, []);
+    }, [urlTicker, fetchAnalysis]);
+
+    // When a signal is expanded, fetch AI analysis for its ticker
+    function handleExpand(signalId: string, ticker: string) {
+        const isExpanding = expandedId !== signalId;
+        setExpandedId(isExpanding ? signalId : null);
+        if (isExpanding) {
+            fetchAnalysis(ticker);
+        }
+    }
 
     if (loading) return <LoadingState message="Loading signals..." />;
 
@@ -77,7 +107,7 @@ export function Analysis() {
             <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
                 <div>
                     <h1 className="text-3xl font-bold font-display tracking-tight text-sentinel-100">
-                        Signal Analysis
+                        {urlTicker ? `${urlTicker.toUpperCase()} Analysis` : 'Signal Analysis'}
                     </h1>
                     <p className="text-sentinel-400 mt-1">
                         Deep dives into agent reasoning, bias detection, and Red Team counter-theses.
@@ -92,7 +122,12 @@ export function Analysis() {
 
             {signals.length === 0 ? (
                 <div className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 p-12 text-center">
-                    <p className="text-sentinel-400">No signals generated yet. The agents are watching.</p>
+                    <p className="text-sentinel-400">
+                        {urlTicker
+                            ? `No signals generated for ${urlTicker.toUpperCase()} yet.`
+                            : 'No signals generated yet. The agents are watching.'
+                        }
+                    </p>
                 </div>
             ) : (
                 <div className="space-y-4">
@@ -101,12 +136,14 @@ export function Analysis() {
                         const outcomeData = signal.signal_outcomes?.[0];
                         const agentOutputs = signal.agent_outputs || {};
                         const tickerEvents = events[signal.ticker] || [];
+                        const tickerAnalysis = analysisData[signal.ticker];
+                        const isLoadingAnalysis = analysisLoading[signal.ticker] || false;
 
                         return (
                             <div key={signal.id} className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 overflow-hidden backdrop-blur-sm transition-all">
                                 {/* Header */}
                                 <div
-                                    onClick={() => setExpandedId(isExpanded ? null : signal.id)}
+                                    onClick={() => handleExpand(signal.id, signal.ticker)}
                                     className="p-5 flex flex-col md:flex-row gap-4 md:items-center justify-between cursor-pointer hover:bg-sentinel-800/30 transition-colors"
                                 >
                                     <div className="flex items-center gap-4">
@@ -172,10 +209,15 @@ export function Analysis() {
                                                     counterArgument={signal.counter_argument}
                                                     confidenceScore={signal.confidence_score}
                                                     agentOutputs={agentOutputs}
+                                                    biasWeights={tickerAnalysis?.biasWeights}
+                                                    weightsLoading={isLoadingAnalysis}
                                                 />
 
                                                 <FundamentalSnapshot
                                                     sanityCheck={agentOutputs.sanity_checker || agentOutputs.red_team}
+                                                    fundamentals={tickerAnalysis?.fundamentals}
+                                                    fundamentalsLoading={isLoadingAnalysis}
+                                                    onRefresh={() => fetchAnalysis(signal.ticker)}
                                                 />
 
                                                 <PositionSizeCard
@@ -189,7 +231,11 @@ export function Analysis() {
 
                                             {/* Right column */}
                                             <div className="space-y-6">
-                                                <EventTimeline events={tickerEvents} />
+                                                <EventTimeline
+                                                    events={tickerEvents}
+                                                    aiEvents={tickerAnalysis?.events}
+                                                    aiEventsLoading={isLoadingAnalysis}
+                                                />
 
                                                 <HistoricalPrecedent
                                                     matches={agentOutputs.historical_matcher?.matches}
