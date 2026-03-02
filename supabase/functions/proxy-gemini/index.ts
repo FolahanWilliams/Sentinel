@@ -26,7 +26,7 @@ serve(async (req) => {
         const {
             systemInstruction,
             prompt,
-            model = 'gemini-3-flash',
+            model = 'gemini-2.5-flash',
             requireGroundedSearch = false,
             responseSchema
         } = await req.json()

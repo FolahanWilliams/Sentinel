@@ -27,13 +27,12 @@ export class RSSReaderService {
                 try {
                     // Use a public CORS proxy for client-side RSS fetching
                     // Note: In prod, you'd move this to an Edge Function to avoid third-party proxy limits
-                    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(feed.url)}`;
+                    const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(feed.url)}`;
                     const res = await fetch(proxyUrl);
 
                     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-                    const data = await res.json();
-                    const xmlText = data.contents;
+                    const xmlText = await res.text();
 
                     // Very rudimentary XML regex parser (since we don't want heavy DOMParser in Edge/Workers)
                     const items = this.parseSimpleRSS(xmlText);

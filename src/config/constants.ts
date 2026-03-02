@@ -7,7 +7,7 @@
 // ===========================
 // AI MODEL
 // ===========================
-export const GEMINI_MODEL = 'gemini-3-flash';
+export const GEMINI_MODEL = 'gemini-2.5-flash';
 
 // ===========================
 // SCANNER DEFAULTS

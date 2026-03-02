@@ -7,6 +7,7 @@
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
+import { useScannerLogs } from '@/hooks/useScannerLogs';
 import {
     LayoutDashboard,
     List,
@@ -32,6 +33,10 @@ const NAV_ITEMS = [
 
 export function Sidebar() {
     const [collapsed, setCollapsed] = useState(false);
+    const { logs } = useScannerLogs(1);
+
+    const latestLog = logs[0];
+    const isScanning = latestLog?.status === 'running';
 
     const handleSignOut = async () => {
         await supabase.auth.signOut();
@@ -102,10 +107,13 @@ export function Sidebar() {
             {/* Scanner Status (bottom) */}
             <div className="px-4 py-3" style={{ borderTop: '1px solid var(--color-border-subtle)' }}>
                 <div className="flex items-center gap-2">
-                    <span className="status-dot status-stopped" />
+                    <span
+                        className={`w-2 h-2 rounded-full ${isScanning ? 'bg-blue-500 animate-pulse' : 'bg-red-500'}`}
+                        title={isScanning ? 'Scanning Active' : 'Scanner Idle'}
+                    />
                     {!collapsed && (
                         <span className="text-xs" style={{ color: 'var(--color-text-muted)' }}>
-                            Scanner idle
+                            {isScanning ? 'Scanning Active' : 'Scanner Idle'}
                         </span>
                     )}
                 </div>
