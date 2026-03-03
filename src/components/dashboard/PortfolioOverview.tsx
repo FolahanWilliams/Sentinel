@@ -5,7 +5,7 @@
 
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { formatPrice, formatPercent } from '@/utils/formatters';
-import { ShieldAlert, TrendingUp, TrendingDown, Briefcase, PieChart, ArrowRight } from 'lucide-react';
+import { TrendingUp, TrendingDown, Briefcase, PieChart, ArrowRight } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/config/supabase';
 import { motion } from 'framer-motion';
@@ -193,7 +193,7 @@ export function PortfolioOverview() {
                                 .map(([sector, amount]) => ({
                                     label: sector,
                                     value: amount,
-                                    color: SECTOR_COLORS[sector] || SECTOR_COLORS.Other,
+                                    color: SECTOR_COLORS[sector] || SECTOR_COLORS.Other || '#6b7280',
                                 }))}
                             size={130}
                             thickness={16}
@@ -205,7 +205,7 @@ export function PortfolioOverview() {
                                 .sort(([, a], [, b]) => b - a)
                                 .map(([sector, amount]) => {
                                     const pct = totalCapital > 0 ? (amount / totalCapital) * 100 : 0;
-                                    const color = SECTOR_COLORS[sector] || SECTOR_COLORS.Other;
+                                    const color = SECTOR_COLORS[sector] || SECTOR_COLORS.Other || '#6b7280';
                                     return (
                                         <div key={sector} className="flex items-center gap-2 text-xs">
                                             <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />

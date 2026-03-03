@@ -323,7 +323,7 @@ export function Positions() {
 
                 {loading ? (
                     <div className="p-6">
-                        <SkeletonTable rows={4} columns={7} />
+                        <SkeletonTable rows={4} cols={7} />
                     </div>
                 ) : openPositions.length === 0 ? (
                     <EmptyState
