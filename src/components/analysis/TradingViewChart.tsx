@@ -5,7 +5,8 @@
  * Dark theme matches the Sentinel aesthetic.
  */
 
-import React, { useEffect, memo } from 'react';
+import React, { useEffect, useState, memo } from 'react';
+import { AlertCircle } from 'lucide-react';
 
 interface TradingViewChartProps {
     ticker: string;
@@ -14,9 +15,12 @@ interface TradingViewChartProps {
 
 const TradingViewChartInner: React.FC<TradingViewChartProps> = ({ ticker, height = 500 }) => {
     const containerId = `tv_chart_${ticker.replace(/[^a-zA-Z0-9]/g, '')}`;
+    const [hasError, setHasError] = useState(false);
 
     useEffect(() => {
         if (!ticker) return;
+
+        setHasError(false);
 
         const initWidget = () => {
             if (typeof (window as any).TradingView !== 'undefined') {
@@ -50,6 +54,7 @@ const TradingViewChartInner: React.FC<TradingViewChartProps> = ({ ticker, height
             script.type = 'text/javascript';
             script.async = true;
             script.onload = initWidget;
+            script.onerror = () => setHasError(true);
             document.head.appendChild(script);
         } else {
             // If already loaded, just initialize our widget
@@ -71,6 +76,17 @@ const TradingViewChartInner: React.FC<TradingViewChartProps> = ({ ticker, height
         <div className="glass-panel rounded-xl overflow-hidden border border-sentinel-800/50 relative w-full" style={{ height: `${height}px` }}>
             {/* Dark overlay for aesthetic effect */}
             <div className="absolute inset-0 bg-radial-glow opacity-10 pointer-events-none" />
+
+            {hasError ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-sentinel-400 p-6 text-center z-20">
+                    <AlertCircle className="w-10 h-10 text-sentinel-500 mb-4 opacity-50" />
+                    <p className="font-medium text-sentinel-300">Chart failed to load</p>
+                    <p className="text-sm mt-2 max-w-sm">
+                        It looks like an adblocker, strict privacy extension, or network firewall is blocking TradingView scripts.
+                        Please disable shields for this site to view the chart.
+                    </p>
+                </div>
+            ) : null}
 
             <div
                 id={containerId}
