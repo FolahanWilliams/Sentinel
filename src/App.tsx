@@ -18,6 +18,7 @@ import { Settings } from '@/pages/Settings';
 import { Journal } from '@/pages/Journal';
 import { Intelligence } from '@/pages/Intelligence';
 import { StockAnalysis } from '@/pages/StockAnalysis';
+import { Positions } from '@/pages/Positions';
 import type { Session } from '@supabase/supabase-js';
 
 export default function App() {
@@ -70,6 +71,7 @@ export default function App() {
                     <Route path="/intelligence" element={<Intelligence />} />
                     <Route path="/settings" element={<Settings />} />
                     <Route path="/journal" element={<Journal />} />
+                    <Route path="/positions" element={<Positions />} />
                 </Route>
             </Routes>
         </BrowserRouter>

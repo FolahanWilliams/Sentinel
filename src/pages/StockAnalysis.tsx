@@ -16,6 +16,7 @@ import { EventTimeline } from '@/components/analysis/EventTimeline';
 import { FundamentalSnapshot } from '@/components/analysis/FundamentalSnapshot';
 import { TradingViewChart } from '@/components/analysis/TradingViewChart';
 import { NewsFeed } from '@/components/dashboard/NewsFeed';
+import { AnalystChat } from '@/components/analysis/AnalystChat';
 import { formatPrice } from '@/utils/formatters';
 import type { Quote } from '@/types/market';
 
@@ -360,6 +361,14 @@ export function StockAnalysis() {
                         ))}
                     </div>
                 </div>
+            )}
+            {/* Floating AI Analyst Chat */}
+            {activeTicker && (
+                <AnalystChat
+                    ticker={activeTicker}
+                    tickerAnalysis={tickerAnalysis}
+                    quote={quote}
+                />
             )}
         </div>
     );

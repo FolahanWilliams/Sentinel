@@ -7,6 +7,7 @@
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
+import { SignalToast } from '@/components/notifications/SignalToast';
 
 export function AppLayout() {
     return (
@@ -18,6 +19,7 @@ export function AppLayout() {
                     <Outlet />
                 </main>
             </div>
+            <SignalToast />
         </div>
     );
 }
