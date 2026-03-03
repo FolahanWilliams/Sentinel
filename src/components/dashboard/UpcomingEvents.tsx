@@ -5,7 +5,7 @@ export function UpcomingEvents() {
     const { data, loading } = useUpcomingEvents();
 
     return (
-        <div className="card-elevated">
+        <div className="glass-panel">
             <div className="flex justify-between items-start mb-4">
                 <h2 className="text-sm font-bold text-sentinel-100 uppercase tracking-wider">Upcoming Events</h2>
                 <ArrowUpRight className="w-4 h-4 text-sentinel-400" />

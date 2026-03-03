@@ -107,7 +107,7 @@ export function FundamentalSnapshot({ sanityCheck, fundamentals, fundamentalsLoa
     ] : [];
 
     return (
-        <div className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 p-5 backdrop-blur-sm">
+        <div className="glass-panel p-5 rounded-xl">
             <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-semibold text-sentinel-300 uppercase tracking-wider flex items-center gap-2">
                     <ShieldCheck className="w-4 h-4 text-emerald-400" /> Fundamental Snapshot
@@ -125,7 +125,7 @@ export function FundamentalSnapshot({ sanityCheck, fundamentals, fundamentalsLoa
 
             {/* ── Live Financial Metrics Grid ── */}
             {fundamentalsLoading ? (
-                <div className="mb-5 p-4 bg-sentinel-950/50 rounded-lg border border-sentinel-800/50">
+                <div className="mb-5 p-4 bg-sentinel-950/30 rounded-lg border border-white/5">
                     <div className="flex items-center gap-2 text-sm text-sentinel-400">
                         <Loader2 className="w-4 h-4 animate-spin" /> Fetching financial metrics...
                     </div>
@@ -157,7 +157,7 @@ export function FundamentalSnapshot({ sanityCheck, fundamentals, fundamentalsLoa
                         {metrics.map((m) => {
                             const style = HEALTH_STYLES[m.health];
                             return (
-                                <div key={m.label} className="bg-sentinel-950/50 rounded-lg p-2.5 border border-sentinel-800/50">
+                                <div key={m.label} className="bg-sentinel-950/30 rounded-lg p-2.5 border border-white/5">
                                     <div className="flex items-center gap-1.5 mb-1">
                                         <div className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
                                         <span className="text-[10px] text-sentinel-500 uppercase tracking-wide">{m.label}</span>
@@ -172,7 +172,7 @@ export function FundamentalSnapshot({ sanityCheck, fundamentals, fundamentalsLoa
 
                     {/* Insider activity */}
                     {fundamentals.insiderTransactions30d && (
-                        <div className="mt-3 p-2.5 bg-sentinel-950/50 rounded-lg border border-sentinel-800/50">
+                        <div className="mt-3 p-2.5 bg-sentinel-950/30 rounded-lg border border-white/5">
                             <div className="flex items-center gap-1.5 mb-1">
                                 <TrendingUp className="w-3 h-3 text-amber-400" />
                                 <span className="text-[10px] text-sentinel-500 uppercase">Insider Activity (30d)</span>
@@ -234,7 +234,7 @@ export function FundamentalSnapshot({ sanityCheck, fundamentals, fundamentalsLoa
 
                     {/* Additional info */}
                     {(sanityCheck.insider_activity || sanityCheck.institutional_changes) && (
-                        <div className="space-y-2 mb-4 p-3 bg-sentinel-950/50 rounded-lg border border-sentinel-800/50">
+                        <div className="space-y-2 mb-4 p-3 bg-sentinel-950/30 rounded-lg border border-white/5">
                             {sanityCheck.insider_activity && (
                                 <div className="text-xs">
                                     <span className="text-sentinel-500">Insider Activity:</span>{' '}

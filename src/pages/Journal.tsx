@@ -259,7 +259,7 @@ export function Journal() {
             </div>
 
             {/* CALENDAR HEATMAP */}
-            <div className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 p-4 backdrop-blur-sm">
+            <div className="glass-panel p-4 rounded-xl">
                 <h3 className="text-xs font-semibold text-sentinel-400 uppercase tracking-wider mb-3">Activity — Last 12 Months</h3>
                 <CalendarHeatmap
                     entryCounts={entryCounts}
@@ -271,28 +271,28 @@ export function Journal() {
 
             {/* ENTRY FORM */}
             {showForm && (
-                <form onSubmit={handleSave} className="bg-sentinel-900/80 rounded-xl border border-sentinel-700 p-6 space-y-4">
-                    <h2 className="text-lg font-semibold text-sentinel-200 border-b border-sentinel-800 pb-2">Log Execution</h2>
+                <form onSubmit={handleSave} className="glass-panel p-6 rounded-xl space-y-4">
+                    <h2 className="text-lg font-semibold text-sentinel-200 border-b border-white/5 pb-2">Log Execution</h2>
 
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                         <div>
                             <label className="block text-xs text-sentinel-400 mb-1">Ticker</label>
-                            <input required value={ticker} onChange={e => setTicker(e.target.value)} placeholder="AAPL" className="w-full bg-sentinel-950 border border-sentinel-700 rounded-lg px-3 py-2 text-sentinel-100 uppercase" />
+                            <input required value={ticker} onChange={e => setTicker(e.target.value)} placeholder="AAPL" className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sentinel-100 uppercase transition-colors" />
                         </div>
                         <div>
                             <label className="block text-xs text-sentinel-400 mb-1">Direction</label>
-                            <select value={direction} onChange={e => setDirection(e.target.value as any)} className="w-full bg-sentinel-950 border border-sentinel-700 rounded-lg px-3 py-2 text-sentinel-100">
+                            <select value={direction} onChange={e => setDirection(e.target.value as any)} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sentinel-100 transition-colors">
                                 <option value="long">LONG</option>
                                 <option value="short">SHORT</option>
                             </select>
                         </div>
                         <div>
                             <label className="block text-xs text-sentinel-400 mb-1">Entry Price</label>
-                            <input required type="number" step="0.01" value={entryPrice} onChange={e => setEntryPrice(e.target.value)} placeholder="150.00" className="w-full bg-sentinel-950 border border-sentinel-700 rounded-lg px-3 py-2 text-sentinel-100" />
+                            <input required type="number" step="0.01" value={entryPrice} onChange={e => setEntryPrice(e.target.value)} placeholder="150.00" className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sentinel-100 transition-colors" />
                         </div>
                         <div>
                             <label className="block text-xs text-sentinel-400 mb-1">Exit Price (Optional)</label>
-                            <input type="number" step="0.01" value={exitPrice} onChange={e => setExitPrice(e.target.value)} placeholder="165.00" className="w-full bg-sentinel-950 border border-sentinel-700 rounded-lg px-3 py-2 text-sentinel-100" />
+                            <input type="number" step="0.01" value={exitPrice} onChange={e => setExitPrice(e.target.value)} placeholder="165.00" className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sentinel-100 transition-colors" />
                         </div>
                     </div>
 
@@ -305,7 +305,7 @@ export function Journal() {
                                     key={m}
                                     type="button"
                                     onClick={() => setMood(m)}
-                                    className={`px-3 py-2 rounded-lg text-lg transition-all ${mood === m ? 'bg-blue-600/20 ring-2 ring-blue-500 scale-110' : 'bg-sentinel-800 hover:bg-sentinel-700'}`}
+                                    className={`px-3 py-2 rounded-lg text-lg transition-all ${mood === m ? 'bg-blue-600/20 ring-2 ring-blue-500 scale-110' : 'bg-white/5 hover:bg-white/10'}`}
                                     title={MOOD_LABELS[m]}
                                 >
                                     {m}
@@ -331,16 +331,16 @@ export function Journal() {
                                 onChange={e => setTagInput(e.target.value)}
                                 onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addTag(); } }}
                                 placeholder="Add tag..."
-                                className="flex-1 bg-sentinel-950 border border-sentinel-700 rounded-lg px-3 py-1.5 text-sm text-sentinel-200"
+                                className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-sm text-sentinel-200 transition-colors"
                             />
-                            <button type="button" onClick={addTag} className="px-3 py-1.5 bg-sentinel-800 hover:bg-sentinel-700 text-sentinel-300 rounded-lg text-xs">Add</button>
+                            <button type="button" onClick={addTag} className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-sentinel-300 rounded-lg text-xs transition-colors border border-white/5">Add</button>
                         </div>
                     </div>
 
                     {/* Notes */}
                     <div>
                         <label className="block text-xs text-sentinel-400 mb-1">Execution Notes & Review</label>
-                        <textarea required rows={3} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Why did you take this trade? Did you follow the Red Team advice?" className="w-full bg-sentinel-950 border border-sentinel-700 rounded-lg px-3 py-2 text-sentinel-100"></textarea>
+                        <textarea required rows={3} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Why did you take this trade? Did you follow the Red Team advice?" className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sentinel-100 transition-colors"></textarea>
                     </div>
 
                     <div className="flex justify-end pt-2">
@@ -352,8 +352,8 @@ export function Journal() {
             )}
 
             {/* FILTER BAR */}
-            <div className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 overflow-hidden backdrop-blur-sm">
-                <div className="p-4 border-b border-sentinel-800/50">
+            <div className="glass-panel rounded-xl overflow-hidden">
+                <div className="p-4 border-b border-white/5">
                     <div className="flex flex-col sm:flex-row gap-3">
                         {/* Search */}
                         <div className="relative flex-1">
@@ -363,7 +363,7 @@ export function Journal() {
                                 value={searchQuery}
                                 onChange={e => setSearchQuery(e.target.value)}
                                 placeholder="Search journal..."
-                                className="w-full bg-sentinel-950 border border-sentinel-800 rounded-lg pl-9 pr-4 py-1.5 text-sm text-sentinel-200 focus:outline-none focus:ring-1 focus:ring-sentinel-600"
+                                className="w-full bg-white/5 border border-white/10 rounded-lg pl-9 pr-4 py-1.5 text-sm text-sentinel-200 focus:outline-none focus:ring-1 focus:ring-sentinel-600 transition-colors"
                             />
                         </div>
 
@@ -373,7 +373,7 @@ export function Journal() {
                                 <button
                                     key={t}
                                     onClick={() => setSelectedType(selectedType === t ? null : t)}
-                                    className={`px-2.5 py-1 text-xs rounded-full capitalize transition-colors ${selectedType === t ? 'bg-blue-600/20 text-blue-400 ring-1 ring-blue-500/50' : 'bg-sentinel-800 text-sentinel-400 hover:text-sentinel-200'}`}
+                                    className={`px-2.5 py-1 text-xs rounded-full capitalize transition-colors ${selectedType === t ? 'bg-blue-600/20 text-blue-400 ring-1 ring-blue-500/50' : 'bg-white/5 text-sentinel-400 hover:text-sentinel-200 border border-white/5'}`}
                                 >
                                     {t}
                                 </button>
@@ -386,7 +386,7 @@ export function Journal() {
                                 <button
                                     key={m}
                                     onClick={() => setSelectedMood(selectedMood === m ? null : m)}
-                                    className={`w-8 h-8 rounded-lg text-sm transition-all ${selectedMood === m ? 'bg-blue-600/20 ring-1 ring-blue-500' : 'bg-sentinel-800 hover:bg-sentinel-700'}`}
+                                    className={`w-8 h-8 rounded-lg text-sm transition-all ${selectedMood === m ? 'bg-blue-600/20 ring-1 ring-blue-500' : 'bg-white/5 hover:bg-white/10 border border-white/5'}`}
                                     title={MOOD_LABELS[m]}
                                 >
                                     {m}
@@ -402,7 +402,7 @@ export function Journal() {
                                 <button
                                     key={t}
                                     onClick={() => setSelectedTag(selectedTag === t ? null : t)}
-                                    className={`inline-flex items-center gap-1 px-2 py-0.5 text-[11px] rounded-full transition-colors ${selectedTag === t ? 'bg-purple-600/20 text-purple-400 ring-1 ring-purple-500/50' : 'bg-sentinel-800/60 text-sentinel-500 hover:text-sentinel-300'}`}
+                                    className={`inline-flex items-center gap-1 px-2 py-0.5 text-[11px] rounded-full transition-colors ${selectedTag === t ? 'bg-purple-600/20 text-purple-400 ring-1 ring-purple-500/50' : 'bg-white/5 text-sentinel-500 hover:text-sentinel-300 border border-white/5'}`}
                                 >
                                     <Tag className="w-2.5 h-2.5" />{t}
                                 </button>
@@ -434,7 +434,7 @@ export function Journal() {
                         {entries.length === 0 ? 'No trades logged yet.' : 'No entries match your filters.'}
                     </div>
                 ) : (
-                    <div className="divide-y divide-sentinel-800/50">
+                    <div className="divide-y divide-white/5">
                         {filteredEntries.map(entry => {
                             // Parse PnL from content
                             const entryMatch = (entry.content || '').match(/Entry:\s*\$?([\d.]+)/);
@@ -449,7 +449,7 @@ export function Journal() {
                             }
 
                             return (
-                                <div key={entry.id} className="p-5 hover:bg-sentinel-800/30 transition-colors">
+                                <div key={entry.id} className="p-5 hover:bg-white/5 transition-colors">
                                     <div className="flex justify-between items-start mb-3">
                                         <div className="flex items-center gap-3">
                                             {entry.mood && <span className="text-lg" title={MOOD_LABELS[entry.mood]}>{entry.mood}</span>}
@@ -490,7 +490,7 @@ export function Journal() {
                                     <div className="text-xs text-sentinel-500 mb-2">
                                         {new Date(entry.created_at).toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
                                     </div>
-                                    <p className="text-sm text-sentinel-300 leading-relaxed bg-sentinel-900/50 p-3 rounded-lg border-l-2 border-l-sentinel-600 whitespace-pre-wrap">
+                                    <p className="text-sm text-sentinel-300 leading-relaxed bg-white/5 p-3 rounded-lg border-l-4 border-l-sentinel-600 whitespace-pre-wrap">
                                         {entry.content || entry.notes}
                                     </p>
                                 </div>

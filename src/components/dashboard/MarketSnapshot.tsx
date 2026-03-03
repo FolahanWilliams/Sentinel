@@ -6,7 +6,7 @@ export function MarketSnapshot() {
 
     if (loading || !data) {
         return (
-            <div className="card-elevated flex flex-col h-full bg-gradient-to-b from-sentinel-900 to-sentinel-950 animate-pulse">
+            <div className="glass-panel flex flex-col h-full animate-pulse">
                 <div className="flex justify-between items-start mb-4">
                     <div className="h-4 bg-sentinel-800 rounded w-32"></div>
                     <div className="h-4 w-4 bg-sentinel-800 rounded"></div>
@@ -44,7 +44,7 @@ export function MarketSnapshot() {
     const fgColor = fearGreedValue < 25 ? 'text-red-500' : fearGreedValue < 45 ? 'text-amber-500' : fearGreedValue < 55 ? 'text-yellow-400' : fearGreedValue < 75 ? 'text-lime-400' : 'text-emerald-500';
 
     return (
-        <div className="card-elevated flex flex-col h-full bg-gradient-to-b from-sentinel-900 to-sentinel-950">
+        <div className="glass-panel-heavy flex flex-col h-full">
             <div className="flex justify-between items-start mb-4">
                 <div className="flex items-center gap-2">
                     <h2 className="text-sm font-bold text-sentinel-100 uppercase tracking-wider">Market Snapshot</h2>

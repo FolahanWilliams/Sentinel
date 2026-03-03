@@ -12,7 +12,7 @@ export function MarketTrends() {
     };
 
     return (
-        <div className="card-elevated">
+        <div className="glass-panel">
             <div className="flex justify-between items-start mb-4">
                 <h2 className="text-sm font-bold text-sentinel-100 uppercase tracking-wider">Market Trends</h2>
                 <ArrowUpRight className="w-4 h-4 text-sentinel-400" />
@@ -68,7 +68,7 @@ export function PotentialSignals() {
     const { signals, loading } = usePotentialSignals();
 
     return (
-        <div className="card-elevated">
+        <div className="glass-panel">
             <div className="flex justify-between items-start mb-4">
                 <h2 className="text-sm font-bold text-sentinel-100 uppercase tracking-wider">Potential Early Signals</h2>
             </div>

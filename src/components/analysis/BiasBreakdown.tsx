@@ -70,14 +70,14 @@ export function BiasBreakdown({
     }, [biasWeights]);
 
     return (
-        <div className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 p-5 backdrop-blur-sm">
+        <div className="glass-panel p-5 rounded-xl">
             <h3 className="text-sm font-semibold text-sentinel-300 uppercase tracking-wider mb-4 flex items-center gap-2">
                 <Brain className="w-4 h-4 text-purple-400" /> Bias Analysis
             </h3>
 
             {/* ── Signal Driver Weights (AI-fetched) ── */}
             {weightsLoading ? (
-                <div className="mb-5 p-4 bg-sentinel-950/50 rounded-lg border border-sentinel-800/50">
+                <div className="mb-5 p-4 bg-sentinel-950/30 rounded-lg border border-white/5">
                     <div className="flex items-center gap-2 text-sm text-sentinel-400">
                         <Loader2 className="w-4 h-4 animate-spin" /> Analyzing signal drivers...
                     </div>
@@ -163,7 +163,7 @@ export function BiasBreakdown({
 
             {/* ── Expected Correction ── */}
             {correction && (
-                <div className="mb-4 p-3 bg-sentinel-950/50 rounded-lg border border-sentinel-800/50">
+                <div className="mb-4 p-3 bg-sentinel-950/30 rounded-lg border border-white/5">
                     <p className="text-xs text-sentinel-500 mb-1">Expected Correction</p>
                     <div className="flex items-center gap-4 text-sm">
                         <span className={correction.direction === 'up' ? 'text-emerald-400 font-bold' : 'text-red-400 font-bold'}>
@@ -181,7 +181,7 @@ export function BiasBreakdown({
                     <h4 className="text-xs font-semibold text-sentinel-500 uppercase flex items-center gap-2 mb-2">
                         <AlertTriangle className="w-3 h-3" /> Counter-Argument
                     </h4>
-                    <p className="text-sm text-sentinel-300 leading-relaxed bg-sentinel-900/50 p-3 rounded-lg border-l-2 border-l-red-500/50">
+                    <p className="text-sm text-sentinel-300 leading-relaxed bg-sentinel-950/30 p-3 rounded-lg border-l-2 border-l-red-500/50">
                         {counterArgument}
                     </p>
                 </div>

@@ -251,7 +251,7 @@ export function Positions() {
 
             {/* Summary Cards */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 p-4 backdrop-blur-sm">
+                <div className="glass-panel p-4 rounded-xl">
                     <div className="flex items-center gap-2 text-sentinel-400 text-xs uppercase tracking-wider mb-2">
                         <DollarSign className="w-3.5 h-3.5" /> Unrealized P&L
                     </div>
@@ -259,13 +259,13 @@ export function Positions() {
                         {summaryStats.totalPnl >= 0 ? '+' : ''}{summaryStats.totalPnl.toFixed(2)}
                     </p>
                 </div>
-                <div className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 p-4 backdrop-blur-sm">
+                <div className="glass-panel p-4 rounded-xl">
                     <div className="flex items-center gap-2 text-sentinel-400 text-xs uppercase tracking-wider mb-2">
                         <BarChart3 className="w-3.5 h-3.5" /> Open Positions
                     </div>
                     <p className="text-2xl font-bold font-mono text-sentinel-100">{summaryStats.openCount}</p>
                 </div>
-                <div className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 p-4 backdrop-blur-sm">
+                <div className="glass-panel p-4 rounded-xl">
                     <div className="flex items-center gap-2 text-sentinel-400 text-xs uppercase tracking-wider mb-2">
                         <ArrowUpRight className="w-3.5 h-3.5 text-emerald-400" /> Best Position
                     </div>
@@ -273,7 +273,7 @@ export function Positions() {
                         {summaryStats.biggestWin > 0 ? `+$${summaryStats.biggestWin.toFixed(0)}` : '—'}
                     </p>
                 </div>
-                <div className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 p-4 backdrop-blur-sm">
+                <div className="glass-panel p-4 rounded-xl">
                     <div className="flex items-center gap-2 text-sentinel-400 text-xs uppercase tracking-wider mb-2">
                         <ArrowDownRight className="w-3.5 h-3.5 text-red-400" /> Worst Position
                     </div>
@@ -284,8 +284,8 @@ export function Positions() {
             </div>
 
             {/* Open Positions Table */}
-            <div className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 overflow-hidden backdrop-blur-sm">
-                <div className="px-5 py-4 border-b border-sentinel-800/50 flex items-center justify-between">
+            <div className="glass-panel rounded-xl overflow-hidden">
+                <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
                     <h2 className="text-sm font-semibold text-sentinel-200 uppercase tracking-wider">Open Positions</h2>
                     {quotesLoading && <Loader2 className="w-4 h-4 text-sentinel-500 animate-spin" />}
                 </div>
@@ -304,7 +304,7 @@ export function Positions() {
                     <div className="overflow-x-auto">
                         <table className="w-full text-sm">
                             <thead>
-                                <tr className="text-sentinel-400 text-xs uppercase tracking-wider border-b border-sentinel-800/30">
+                                <tr className="text-sentinel-400 text-xs uppercase tracking-wider border-b border-white/5">
                                     <th className="px-5 py-3 text-left">Ticker</th>
                                     <th className="px-5 py-3 text-left">Side</th>
                                     <th className="px-5 py-3 text-right">Shares</th>
@@ -322,7 +322,7 @@ export function Positions() {
                                     const isProfit = pnl ? pnl.pnlUsd >= 0 : true;
 
                                     return (
-                                        <tr key={pos.id} className="border-b border-sentinel-800/20 hover:bg-sentinel-800/20 transition-colors">
+                                        <tr key={pos.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
                                             <td className="px-5 py-3">
                                                 <span className="font-mono font-bold text-sentinel-100">{pos.ticker}</span>
                                             </td>
@@ -373,8 +373,8 @@ export function Positions() {
 
             {/* Closed Positions */}
             {closedPositions.length > 0 && (
-                <div className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 overflow-hidden backdrop-blur-sm">
-                    <div className="px-5 py-4 border-b border-sentinel-800/50">
+                <div className="glass-panel rounded-xl overflow-hidden">
+                    <div className="px-5 py-4 border-b border-white/5">
                         <h2 className="text-sm font-semibold text-sentinel-200 uppercase tracking-wider">Closed Positions</h2>
                     </div>
                     <div className="overflow-x-auto">
@@ -396,7 +396,7 @@ export function Positions() {
                                     const isProfit = (pos.realized_pnl || 0) >= 0;
                                     return (
                                         <Fragment key={pos.id}>
-                                            <tr className="border-b border-sentinel-800/20 opacity-70 hover:opacity-100 transition-opacity">
+                                            <tr className="border-b border-white/5 hover:bg-white/5 transition-colors">
                                                 <td className="px-5 py-3 font-mono font-bold text-sentinel-300">{pos.ticker}</td>
                                                 <td className="px-5 py-3 text-xs text-sentinel-400">{pos.side?.toUpperCase()}</td>
                                                 <td className="px-5 py-3 text-right font-mono text-sentinel-400">${pos.entry_price?.toFixed(2)}</td>
@@ -427,7 +427,7 @@ export function Positions() {
                                             </tr>
                                             {expandedNotes === pos.id && pos.notes && (
                                                 <tr>
-                                                    <td colSpan={8} className="px-5 py-3 bg-sentinel-900/30">
+                                                    <td colSpan={8} className="px-5 py-3 bg-white/5">
                                                         <p className="text-xs text-sentinel-300 leading-relaxed whitespace-pre-wrap max-w-2xl">{pos.notes}</p>
                                                     </td>
                                                 </tr>
@@ -455,7 +455,7 @@ export function Positions() {
                             initial={{ scale: 0.9, opacity: 0 }}
                             animate={{ scale: 1, opacity: 1 }}
                             exit={{ scale: 0.9, opacity: 0 }}
-                            className="bg-sentinel-950 rounded-2xl border border-sentinel-800/60 p-6 w-full max-w-md shadow-2xl"
+                            className="bg-black/60 backdrop-blur-2xl rounded-2xl border border-white/10 p-6 w-full max-w-md shadow-2xl"
                             onClick={e => e.stopPropagation()}
                         >
                             <div className="flex items-center justify-between mb-5">
@@ -473,7 +473,7 @@ export function Positions() {
                                             value={formTicker}
                                             onChange={e => setFormTicker(e.target.value)}
                                             placeholder="AAPL"
-                                            className="w-full px-3 py-2 bg-sentinel-900 border border-sentinel-800 rounded-lg text-sm font-mono text-sentinel-100 placeholder-sentinel-600 outline-none focus:border-blue-500/50"
+                                            className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm font-mono text-sentinel-100 placeholder-sentinel-600 outline-none focus:border-blue-500/50 transition-colors"
                                             required
                                         />
                                     </div>
@@ -483,14 +483,14 @@ export function Positions() {
                                             <button
                                                 type="button"
                                                 onClick={() => setFormSide('long')}
-                                                className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer border ${formSide === 'long' ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400' : 'bg-sentinel-900 border-sentinel-800 text-sentinel-400'}`}
+                                                className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer border ${formSide === 'long' ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400' : 'bg-white/5 border-white/10 text-sentinel-400'}`}
                                             >
                                                 LONG
                                             </button>
                                             <button
                                                 type="button"
                                                 onClick={() => setFormSide('short')}
-                                                className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer border ${formSide === 'short' ? 'bg-red-500/20 border-red-500/30 text-red-400' : 'bg-sentinel-900 border-sentinel-800 text-sentinel-400'}`}
+                                                className={`flex-1 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer border ${formSide === 'short' ? 'bg-red-500/20 border-red-500/30 text-red-400' : 'bg-white/5 border-white/10 text-sentinel-400'}`}
                                             >
                                                 SHORT
                                             </button>
@@ -507,7 +507,7 @@ export function Positions() {
                                             placeholder="100"
                                             type="number"
                                             step="any"
-                                            className="w-full px-3 py-2 bg-sentinel-900 border border-sentinel-800 rounded-lg text-sm font-mono text-sentinel-100 placeholder-sentinel-600 outline-none focus:border-blue-500/50"
+                                            className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm font-mono text-sentinel-100 placeholder-sentinel-600 outline-none focus:border-blue-500/50 transition-colors"
                                             required
                                         />
                                     </div>
@@ -519,7 +519,7 @@ export function Positions() {
                                             placeholder="150.00"
                                             type="number"
                                             step="any"
-                                            className="w-full px-3 py-2 bg-sentinel-900 border border-sentinel-800 rounded-lg text-sm font-mono text-sentinel-100 placeholder-sentinel-600 outline-none focus:border-blue-500/50"
+                                            className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm font-mono text-sentinel-100 placeholder-sentinel-600 outline-none focus:border-blue-500/50 transition-colors"
                                             required
                                         />
                                     </div>
@@ -532,7 +532,7 @@ export function Positions() {
                                         onChange={e => setFormNotes(e.target.value)}
                                         placeholder="Trade thesis, setup notes..."
                                         rows={2}
-                                        className="w-full px-3 py-2 bg-sentinel-900 border border-sentinel-800 rounded-lg text-sm text-sentinel-100 placeholder-sentinel-600 outline-none focus:border-blue-500/50 resize-none"
+                                        className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-sentinel-100 placeholder-sentinel-600 outline-none focus:border-blue-500/50 resize-none transition-colors"
                                     />
                                 </div>
 
@@ -562,7 +562,7 @@ export function Positions() {
                             initial={{ scale: 0.9, opacity: 0 }}
                             animate={{ scale: 1, opacity: 1 }}
                             exit={{ scale: 0.9, opacity: 0 }}
-                            className="bg-sentinel-950 rounded-2xl border border-sentinel-800/60 p-6 w-full max-w-sm shadow-2xl"
+                            className="bg-black/60 backdrop-blur-2xl rounded-2xl border border-white/10 p-6 w-full max-w-sm shadow-2xl"
                             onClick={e => e.stopPropagation()}
                         >
                             <h3 className="text-lg font-bold text-sentinel-100 mb-4">Close Position</h3>
@@ -575,7 +575,7 @@ export function Positions() {
                                         placeholder="155.00"
                                         type="number"
                                         step="any"
-                                        className="w-full px-3 py-2 bg-sentinel-900 border border-sentinel-800 rounded-lg text-sm font-mono text-sentinel-100 placeholder-sentinel-600 outline-none focus:border-blue-500/50"
+                                        className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm font-mono text-sentinel-100 placeholder-sentinel-600 outline-none focus:border-blue-500/50 transition-colors"
                                         required
                                     />
                                 </div>
@@ -584,7 +584,7 @@ export function Positions() {
                                     <select
                                         value={closeReason}
                                         onChange={e => setCloseReason(e.target.value)}
-                                        className="w-full px-3 py-2 bg-sentinel-900 border border-sentinel-800 rounded-lg text-sm text-sentinel-100 outline-none"
+                                        className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-sentinel-100 outline-none transition-colors"
                                     >
                                         <option value="manual">Manual Close</option>
                                         <option value="target_hit">Hit Target</option>

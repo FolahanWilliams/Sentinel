@@ -11,7 +11,7 @@ import { SignalToast } from '@/components/notifications/SignalToast';
 
 export function AppLayout() {
     return (
-        <div className="flex min-h-screen" style={{ backgroundColor: 'var(--color-bg-primary)' }}>
+        <div className="flex min-h-screen main-ambient-background">
             <Sidebar />
             <div className="flex flex-col flex-1 min-w-0">
                 <Header />

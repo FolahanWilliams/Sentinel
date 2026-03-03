@@ -70,47 +70,47 @@ export function Settings() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
                 <div className="lg:col-span-2 space-y-6">
-                    <form onSubmit={handleSave} className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 p-6 backdrop-blur-sm space-y-6">
+                    <form onSubmit={handleSave} className="glass-panel p-6 rounded-xl space-y-6">
 
                         <div>
-                            <h2 className="text-lg font-semibold text-sentinel-200 flex items-center gap-2 border-b border-sentinel-800 pb-2 mb-4">
+                            <h2 className="text-lg font-semibold text-sentinel-200 flex items-center gap-2 border-b border-white/5 pb-2 mb-4">
                                 <Shield className="w-5 h-5 text-blue-400" /> Risk Limits (Position Sizer)
                             </h2>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-xs text-sentinel-400 mb-1">Total Capital ($)</label>
-                                    <input type="number" step="100" value={settings.total_capital} onChange={e => setSettings({ ...settings, total_capital: parseFloat(e.target.value) })} className="w-full bg-sentinel-950 border border-sentinel-700 rounded-lg px-3 py-2 text-sentinel-100" />
+                                    <input type="number" step="100" value={settings.total_capital} onChange={e => setSettings({ ...settings, total_capital: parseFloat(e.target.value) })} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sentinel-100 transition-colors" />
                                 </div>
                                 <div>
                                     <label className="block text-xs text-sentinel-400 mb-1">Max Position Size (%)</label>
-                                    <input type="number" step="0.5" value={settings.max_position_pct} onChange={e => setSettings({ ...settings, max_position_pct: parseFloat(e.target.value) })} className="w-full bg-sentinel-950 border border-sentinel-700 rounded-lg px-3 py-2 text-sentinel-100" />
+                                    <input type="number" step="0.5" value={settings.max_position_pct} onChange={e => setSettings({ ...settings, max_position_pct: parseFloat(e.target.value) })} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sentinel-100 transition-colors" />
                                 </div>
                                 <div>
                                     <label className="block text-xs text-sentinel-400 mb-1">Max Total Exposure (%)</label>
-                                    <input type="number" step="1" value={settings.max_total_exposure_pct} onChange={e => setSettings({ ...settings, max_total_exposure_pct: parseFloat(e.target.value) })} className="w-full bg-sentinel-950 border border-sentinel-700 rounded-lg px-3 py-2 text-sentinel-100" />
+                                    <input type="number" step="1" value={settings.max_total_exposure_pct} onChange={e => setSettings({ ...settings, max_total_exposure_pct: parseFloat(e.target.value) })} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sentinel-100 transition-colors" />
                                 </div>
                                 <div>
                                     <label className="block text-xs text-sentinel-400 mb-1">Max Sector Exposure (%)</label>
-                                    <input type="number" step="1" value={settings.max_sector_exposure_pct} onChange={e => setSettings({ ...settings, max_sector_exposure_pct: parseFloat(e.target.value) })} className="w-full bg-sentinel-950 border border-sentinel-700 rounded-lg px-3 py-2 text-sentinel-100" />
+                                    <input type="number" step="1" value={settings.max_sector_exposure_pct} onChange={e => setSettings({ ...settings, max_sector_exposure_pct: parseFloat(e.target.value) })} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sentinel-100 transition-colors" />
                                 </div>
                                 <div>
                                     <label className="block text-xs text-sentinel-400 mb-1">Max Concurrent Positions</label>
-                                    <input type="number" step="1" value={settings.max_concurrent_positions} onChange={e => setSettings({ ...settings, max_concurrent_positions: parseInt(e.target.value) })} className="w-full bg-sentinel-950 border border-sentinel-700 rounded-lg px-3 py-2 text-sentinel-100" />
+                                    <input type="number" step="1" value={settings.max_concurrent_positions} onChange={e => setSettings({ ...settings, max_concurrent_positions: parseInt(e.target.value) })} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sentinel-100 transition-colors" />
                                 </div>
                                 <div>
                                     <label className="block text-xs text-sentinel-400 mb-1">Risk Per Trade (%)</label>
-                                    <input type="number" step="0.1" value={settings.risk_per_trade_pct} onChange={e => setSettings({ ...settings, risk_per_trade_pct: parseFloat(e.target.value) })} className="w-full bg-sentinel-950 border border-sentinel-700 rounded-lg px-3 py-2 text-sentinel-100" />
+                                    <input type="number" step="0.1" value={settings.risk_per_trade_pct} onChange={e => setSettings({ ...settings, risk_per_trade_pct: parseFloat(e.target.value) })} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sentinel-100 transition-colors" />
                                     <p className="text-[10px] text-sentinel-500 mt-1">% of capital risked per trade</p>
                                 </div>
                                 <div>
                                     <label className="block text-xs text-sentinel-400 mb-1">Kelly Fraction</label>
-                                    <input type="number" step="0.05" value={settings.kelly_fraction} onChange={e => setSettings({ ...settings, kelly_fraction: parseFloat(e.target.value) })} className="w-full bg-sentinel-950 border border-sentinel-700 rounded-lg px-3 py-2 text-sentinel-100" />
+                                    <input type="number" step="0.05" value={settings.kelly_fraction} onChange={e => setSettings({ ...settings, kelly_fraction: parseFloat(e.target.value) })} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sentinel-100 transition-colors" />
                                     <p className="text-[10px] text-sentinel-500 mt-1">1.0 = Full Kelly, 0.25 = Quarter Kelly (Recommended)</p>
                                 </div>
                             </div>
                         </div>
 
-                        <div className="flex justify-end pt-4 border-t border-sentinel-800/50">
+                        <div className="flex justify-end pt-4 border-t border-white/5">
                             <button type="submit" disabled={saving} className="px-6 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2">
                                 {saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : <Save className="w-4 h-4" />}
                                 Save Configuration
@@ -121,7 +121,7 @@ export function Settings() {
                 </div>
 
                 <div className="space-y-6">
-                    <div className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 p-6 backdrop-blur-sm">
+                    <div className="glass-panel p-6 rounded-xl">
                         <h3 className="text-sm font-semibold text-sentinel-300 uppercase tracking-wider mb-4 flex items-center gap-2">
                             <Bot className="w-4 h-4" /> Agent Status
                         </h3>
@@ -134,14 +134,14 @@ export function Settings() {
                                 <span className="text-sentinel-400">Grounded Search</span>
                                 <span className="text-emerald-400">Enabled</span>
                             </div>
-                            <div className="flex justify-between text-sm pt-2 border-t border-sentinel-800/50">
+                            <div className="flex justify-between text-sm pt-2 border-t border-white/5">
                                 <span className="text-sentinel-400">Red Team Bias Check</span>
                                 <span className="text-emerald-400">Strict</span>
                             </div>
                         </div>
                     </div>
 
-                    <div className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 p-6 backdrop-blur-sm">
+                    <div className="glass-panel p-6 rounded-xl">
                         <h3 className="text-sm font-semibold text-sentinel-300 uppercase tracking-wider mb-4 flex items-center gap-2">
                             <Bell className="w-4 h-4" /> Integrations
                         </h3>

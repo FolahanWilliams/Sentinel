@@ -156,7 +156,7 @@ export function StockAnalysis() {
                         value={tickerInput}
                         onChange={e => setTickerInput(e.target.value.toUpperCase())}
                         placeholder="Enter ticker (e.g. AAPL, NVDA, TSLA)"
-                        className="w-full pl-10 pr-4 py-3 bg-sentinel-900/50 border border-sentinel-700 rounded-xl text-sentinel-100 text-lg font-mono placeholder:text-sentinel-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
+                        className="w-full pl-10 pr-4 py-3 glass-panel border border-white/5 rounded-xl text-sentinel-100 text-lg font-mono placeholder:text-sentinel-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all shadow-none"
                         autoFocus
                     />
                 </div>
@@ -198,7 +198,7 @@ export function StockAnalysis() {
                 <div className="space-y-6">
 
                     {/* Quote Header Card */}
-                    <div className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 p-6 backdrop-blur-sm">
+                    <div className="glass-panel rounded-xl p-6">
                         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                             <div className="flex items-center gap-4">
                                 <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-blue-600/20 to-purple-600/20 flex items-center justify-center ring-1 ring-blue-500/20">
@@ -312,7 +312,7 @@ export function StockAnalysis() {
                             />
 
                             {/* Quick Actions */}
-                            <div className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 p-5 backdrop-blur-sm">
+                            <div className="glass-panel p-5 rounded-xl">
                                 <h3 className="text-sm font-semibold text-sentinel-300 uppercase tracking-wider mb-3">
                                     Quick Actions
                                 </h3>
@@ -340,7 +340,7 @@ export function StockAnalysis() {
 
             {/* Empty state */}
             {!activeTicker && (
-                <div className="bg-sentinel-900/30 rounded-xl border border-sentinel-800/30 p-16 text-center">
+                <div className="glass-panel p-16 text-center rounded-xl">
                     <div className="w-16 h-16 rounded-full bg-blue-600/10 flex items-center justify-center mx-auto mb-4 ring-1 ring-blue-500/20">
                         <Search className="w-8 h-8 text-blue-400" />
                     </div>

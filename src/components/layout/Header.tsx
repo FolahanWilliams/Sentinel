@@ -34,12 +34,7 @@ export function Header() {
 
     return (
         <header
-            className="flex items-center justify-between px-6 py-3 sticky top-0 z-10"
-            style={{
-                backgroundColor: 'var(--color-bg-surface)',
-                borderBottom: '1px solid var(--color-border-default)',
-                backdropFilter: 'blur(12px)',
-            }}
+            className="flex items-center justify-between px-6 py-3 sticky top-0 z-10 glass-panel-heavy border-l-0 border-t-0 border-r-0 rounded-none shadow-none"
         >
             {/* Left: Page Title */}
             <h1 className="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>

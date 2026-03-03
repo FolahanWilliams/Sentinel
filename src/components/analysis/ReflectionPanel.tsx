@@ -65,7 +65,7 @@ export function ReflectionPanel() {
     };
 
     return (
-        <div className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 overflow-hidden backdrop-blur-sm">
+        <div className="glass-panel overflow-hidden">
             {/* Header */}
             <div className="px-5 py-4 border-b border-sentinel-800/50 flex items-center justify-between">
                 <div className="flex items-center gap-3">

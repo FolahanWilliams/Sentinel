@@ -51,11 +51,11 @@ export function Sidebar() {
 
     return (
         <aside
-            className={`flex flex-col h-screen sticky top-0 transition-all duration-300 z-50 bg-sentinel-950/80 backdrop-blur-xl border-r border-sentinel-800/50 ${collapsed ? 'w-[72px]' : 'w-[240px]'
+            className={`flex flex-col h-screen sticky top-0 transition-all duration-300 z-50 glass-panel-heavy border-l-0 border-t-0 border-b-0 ${collapsed ? 'w-[72px]' : 'w-[240px]'
                 }`}
         >
             {/* Logo area */}
-            <div className="flex items-center gap-3 px-5 py-6 h-20 border-b border-sentinel-800/30">
+            <div className="flex items-center gap-3 px-5 py-6 h-20 border-b border-white/5">
                 <div className="relative flex items-center justify-center w-8 h-8 rounded-lg bg-blue-500/10 ring-1 ring-blue-500/20 shrink-0">
                     <Radar className="w-5 h-5 text-blue-400" />
                     {isScanning && (
@@ -110,7 +110,7 @@ export function Sidebar() {
             </nav>
 
             {/* Bottom Actions */}
-            <div className="p-3 border-t border-sentinel-800/30 bg-sentinel-950/50 space-y-2">
+            <div className="p-3 border-t border-white/5 bg-transparent space-y-2">
                 <button
                     onClick={handleSignOut}
                     className="flex flex-row items-center gap-3 px-3 py-2.5 w-full rounded-xl text-sm font-medium text-sentinel-400 hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer border-none outline-none group"
