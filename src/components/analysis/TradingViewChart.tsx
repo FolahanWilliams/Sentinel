@@ -72,7 +72,7 @@ const TradingViewChartInner: React.FC<TradingViewChartProps> = ({ ticker, height
             <div className="absolute inset-0 bg-radial-glow opacity-10 pointer-events-none" />
             <div
                 ref={containerRef}
-                className="tradingview-widget-container relative z-10"
+                className="tradingview-widget-container relative z-10 h-full w-full"
             />
         </div>
     );
