@@ -731,8 +731,9 @@ export class ScannerService {
             const { data: geminiRes, error: geminiErr } = await supabase.functions.invoke('proxy-gemini', {
                 body: {
                     systemInstruction: `You are an elite market analyst for a quantitative trading desk. Today is ${new Date().toISOString().split('T')[0]}. Your job is to identify US equities experiencing significant catalytic events RIGHT NOW that could create short-term trading opportunities. Focus on: earnings surprises, FDA decisions, analyst upgrades/downgrades, unusual volume spikes, sector rotation, insider activity, and geopolitical events affecting specific companies. Only suggest liquid US equities (no penny stocks, no OTC).`,
-                    prompt: `Identify the top ${count} most actionable US stock tickers to analyze right now based on today's market conditions. For each, explain the specific catalyst driving the opportunity. Return JSON matching the schema exactly.`,
+                    prompt: `Identify the top ${count} most actionable US stock tickers to analyze right now based on today's market conditions. For each, explain the specific catalyst driving the opportunity. To ensure diverse coverage, focus on different sectors than your previous scans. (Random seed for variance: ${Math.random()}). Return JSON matching the schema exactly.`,
                     requireGroundedSearch: true,
+                    temperature: 0.8,
                     responseSchema: {
                         type: 'object',
                         properties: {

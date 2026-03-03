@@ -104,17 +104,21 @@ export function CommandPalette() {
         {
             id: 'action-scan',
             label: 'Run AI Discovery Scan',
-            description: 'Scan all watched tickers',
+            description: 'Find new trending tickers to analyze',
             icon: <Activity className="w-4 h-4 text-emerald-400" />,
             group: 'Actions',
             action: async () => {
                 addToast('Starting AI Discovery Scan...', 'info');
                 try {
-                    const results = await ScannerService.runScan();
-                    const signalCount = (results as any)?.signalsGenerated || (results as any)?.signals?.length || 0;
-                    addToast(`Scan complete — ${signalCount} signal${signalCount !== 1 ? 's' : ''} generated`, 'success');
+                    const results = await ScannerService.runDiscoveryScan();
+                    const signalCount = results.signalsGenerated || 0;
+                    if (results.discovered === 0) {
+                        addToast('No new trending tickers found right now.', 'warning');
+                    } else {
+                        addToast(`Scan complete: ${results.discovered} tickers found, ${signalCount} signal${signalCount !== 1 ? 's' : ''} generated`, 'success');
+                    }
                 } catch {
-                    addToast('Scan failed. Check console for details.', 'error');
+                    addToast('Discovery scan failed. Check console for details.', 'error');
                 }
             },
         },
