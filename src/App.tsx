@@ -9,6 +9,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
 import { AuthGate } from '@/components/auth/AuthGate';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { ChatProvider } from '@/contexts/ChatContext';
 import { Dashboard } from '@/pages/Dashboard';
 import { Analysis } from '@/pages/Analysis';
 import { Watchlist } from '@/pages/Watchlist';
@@ -58,22 +59,24 @@ export default function App() {
     }
 
     return (
-        <BrowserRouter>
-            <Routes>
-                <Route element={<AppLayout />}>
-                    <Route path="/" element={<Dashboard />} />
-                    <Route path="/analysis/:ticker" element={<Analysis />} />
-                    <Route path="/watchlist" element={<Watchlist />} />
-                    <Route path="/backtest" element={<Backtest />} />
-                    <Route path="/scanner" element={<Scanner />} />
-                    <Route path="/research" element={<StockAnalysis />} />
-                    <Route path="/research/:ticker" element={<StockAnalysis />} />
-                    <Route path="/intelligence" element={<Intelligence />} />
-                    <Route path="/settings" element={<Settings />} />
-                    <Route path="/journal" element={<Journal />} />
-                    <Route path="/positions" element={<Positions />} />
-                </Route>
-            </Routes>
-        </BrowserRouter>
+        <ChatProvider>
+            <BrowserRouter>
+                <Routes>
+                    <Route element={<AppLayout />}>
+                        <Route path="/" element={<Dashboard />} />
+                        <Route path="/analysis/:ticker" element={<Analysis />} />
+                        <Route path="/watchlist" element={<Watchlist />} />
+                        <Route path="/backtest" element={<Backtest />} />
+                        <Route path="/scanner" element={<Scanner />} />
+                        <Route path="/research" element={<StockAnalysis />} />
+                        <Route path="/research/:ticker" element={<StockAnalysis />} />
+                        <Route path="/intelligence" element={<Intelligence />} />
+                        <Route path="/settings" element={<Settings />} />
+                        <Route path="/journal" element={<Journal />} />
+                        <Route path="/positions" element={<Positions />} />
+                    </Route>
+                </Routes>
+            </BrowserRouter>
+        </ChatProvider>
     );
 }

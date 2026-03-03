@@ -145,6 +145,14 @@ export function Watchlist() {
                                         key={item.id}
                                         className="hover:bg-sentinel-800/20 transition-colors group cursor-pointer"
                                         onClick={() => navigate(`/analysis/${item.ticker}`)}
+                                        draggable
+                                        onDragStart={(e) => {
+                                            e.dataTransfer.setData('application/json', JSON.stringify({
+                                                type: 'ticker',
+                                                payload: item.ticker
+                                            }));
+                                            e.dataTransfer.effectAllowed = 'copyLink';
+                                        }}
                                     >
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-3">

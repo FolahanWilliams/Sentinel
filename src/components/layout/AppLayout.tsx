@@ -12,6 +12,7 @@ import { SignalToast } from '@/components/notifications/SignalToast';
 import { ToastContainer } from '@/components/notifications/ToastContainer';
 import { CommandPalette } from '@/components/shared/CommandPalette';
 import { OnboardingOverlay } from '@/components/shared/OnboardingOverlay';
+import { AnalystChat } from '@/components/analysis/AnalystChat';
 
 export function AppLayout() {
     return (
@@ -27,6 +28,7 @@ export function AppLayout() {
             <ToastContainer />
             <CommandPalette />
             <OnboardingOverlay />
+            <AnalystChat />
         </div>
     );
 }

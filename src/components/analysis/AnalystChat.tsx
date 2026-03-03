@@ -10,6 +10,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { MessageSquare, X, Send, Loader2, Sparkles, Bot, User, CheckCircle2 } from 'lucide-react';
 import { GeminiService } from '@/services/gemini';
 import { supabase } from '@/config/supabase';
+import { useChat } from '@/contexts/ChatContext';
+import { MarketDataService } from '@/services/marketData';
 
 // Schema for the chatbot response
 export const ChatbotResponseSchema = {
@@ -55,14 +57,64 @@ interface ChatMessage {
     timestamp: Date;
 }
 
-interface AnalystChatProps {
-    ticker: string;
-    tickerAnalysis: any;
-    quote: any;
-}
+export function AnalystChat() {
+    const { isOpen, setIsOpen, activeTicker } = useChat();
 
-export function AnalystChat({ ticker, tickerAnalysis, quote }: AnalystChatProps) {
-    const [isOpen, setIsOpen] = useState(false);
+    const ticker = activeTicker || 'GLOBAL';
+    const [tickerAnalysis, setTickerAnalysis] = useState<any>(null);
+    const [quote, setQuote] = useState<any>(null);
+    const [hasLoadedContext, setHasLoadedContext] = useState(false);
+
+    // Fetch context if we have an active ticker
+    useEffect(() => {
+        let isMounted = true;
+
+        async function fetchContext() {
+            if (!activeTicker || !isOpen) return;
+
+            setHasLoadedContext(false);
+            try {
+                // Fetch quote
+                const q = await MarketDataService.getQuote(activeTicker);
+                if (isMounted) setQuote(q);
+
+                // Fetch recent events (like in StockAnalysis)
+                const { data: events } = await supabase
+                    .from('market_events')
+                    .select('*')
+                    .eq('ticker', activeTicker)
+                    .order('detected_at', { ascending: false })
+                    .limit(5);
+
+                // Fetch latest signal for bias/fundamentals
+                const { data: signal } = await supabase
+                    .from('signals')
+                    .select('agent_outputs')
+                    .eq('ticker', activeTicker)
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+                    .single();
+
+                if (isMounted) {
+                    const agentOutputs = signal?.agent_outputs as any;
+                    setTickerAnalysis({
+                        events,
+                        fundamentals: agentOutputs?.overreaction?.fundamentals || {},
+                        biasWeights: agentOutputs?.overreaction?.biasWeights || {}
+                    });
+                    setHasLoadedContext(true);
+                }
+            } catch (err) {
+                console.error("Failed to fetch chat context:", err);
+                if (isMounted) setHasLoadedContext(true);
+            }
+        }
+
+        fetchContext();
+
+        return () => { isMounted = false; };
+    }, [activeTicker, isOpen]);
+
     const [messages, setMessages] = useState<ChatMessage[]>(() => {
         // Restore from sessionStorage on mount
         try {
@@ -145,7 +197,7 @@ export function AnalystChat({ ticker, tickerAnalysis, quote }: AnalystChatProps)
         }
 
         return parts.join('\n');
-    }, [ticker, tickerAnalysis, quote]);
+    }, [ticker, tickerAnalysis, quote, activeTicker]);
 
     const handleSend = async () => {
         const trimmed = input.trim();
@@ -157,6 +209,50 @@ export function AnalystChat({ ticker, tickerAnalysis, quote }: AnalystChatProps)
         setIsLoading(true);
 
         try {
+            // --- SLASH COMMANDS HANDLING ---
+            if (trimmed.startsWith('/')) {
+                const parts = trimmed.split(' ');
+                const command = (parts[0] || '').toLowerCase();
+                const args = parts.slice(1).join(' ');
+
+                let systemResponse = '';
+
+                switch (command) {
+                    case '/screen':
+                        systemResponse = `**Screening command recognized:** Searching for \`${args || 'general setups'}\`...\n\n*Note: In a full production environment, this would trigger the backend scanner with specific filter criteria and return the top results directly in this chat.*`;
+                        break;
+                    case '/compare':
+                        if (!args) {
+                            systemResponse = `**Usage:** \`/compare TICKER\`\nExample: \`/compare MSFT\` to compare ${ticker} with MSFT.`;
+                        } else {
+                            systemResponse = `**Comparison command recognized:** Comparing ${ticker} vs \`${args.toUpperCase()}\`...\n\n*Note: This would fetch fundamental and technical data for both assets and provide a side-by-side Gemini analysis.*`;
+                        }
+                        break;
+                    case '/risk':
+                        const severitySum = tickerAnalysis?.events?.reduce((acc: number, ev: any) => acc + (ev?.severity || 0), 0) || 0;
+                        systemResponse = `**Risk Profile for ${ticker}:**\n- Volatility (Beta): ${tickerAnalysis?.fundamentals?.beta || 'Unknown'}\n- Recent Events Severity: ${severitySum} (Cumulative)\n- AI Bias Confidence: ${tickerAnalysis?.biasWeights?.overall_score || 'Unknown'}/100\n\n*Note: This is a simulated risk profile based on current context.*`;
+                        break;
+                    case '/help':
+                        systemResponse = `**Available Commands:**\n- \`/screen [criteria]\`: Run a custom market screen\n- \`/compare [ticker]\`: Compare current active ticker with another\n- \`/risk\`: Get a quick risk summary for the current ticker\n- \`/clear\`: Clear the chat history`;
+                        break;
+                    case '/clear':
+                        setMessages([]);
+                        setIsLoading(false);
+                        return;
+                    default:
+                        systemResponse = `Unknown command: \`${command}\`. Type \`/help\` to see available commands.`;
+                }
+
+                setMessages(prev => [...prev, {
+                    role: 'system',
+                    content: systemResponse,
+                    timestamp: new Date()
+                }]);
+                setIsLoading(false);
+                return; // Early return for slash commands
+            }
+            // --- END SLASH COMMANDS ---
+
             const context = buildContext();
 
             // Build conversation history for context
@@ -274,7 +370,7 @@ INSTRUCTIONS:
     ];
 
     return (
-        <>
+        <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end">
             {/* Floating Toggle Button */}
             <AnimatePresence>
                 {!isOpen && (
@@ -285,7 +381,7 @@ INSTRUCTIONS:
                         whileHover={{ scale: 1.1 }}
                         whileTap={{ scale: 0.95 }}
                         onClick={() => setIsOpen(true)}
-                        className="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 text-white shadow-lg shadow-blue-500/25 flex items-center justify-center cursor-pointer border-none outline-none"
+                        className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 text-white shadow-lg shadow-blue-500/25 flex items-center justify-center cursor-pointer border-none outline-none"
                         title="Ask the AI Analyst"
                     >
                         <Sparkles className="w-6 h-6" />
@@ -301,7 +397,7 @@ INSTRUCTIONS:
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 20, scale: 0.95 }}
                         transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-                        className="fixed bottom-6 right-6 z-50 w-[420px] h-[560px] bg-sentinel-950 rounded-2xl border border-sentinel-800/60 shadow-2xl shadow-black/50 flex flex-col overflow-hidden backdrop-blur-xl"
+                        className="w-[420px] h-[560px] bg-sentinel-950 rounded-2xl border border-sentinel-800/60 shadow-2xl shadow-black/50 flex flex-col overflow-hidden backdrop-blur-xl"
                     >
                         {/* Header */}
                         <div className="flex items-center justify-between px-4 py-3 border-b border-sentinel-800/50 bg-gradient-to-r from-blue-600/10 to-purple-600/10">
@@ -411,10 +507,15 @@ INSTRUCTIONS:
                                     <Send className="w-4 h-4" />
                                 </button>
                             </div>
+                            {activeTicker && !hasLoadedContext && isOpen && (
+                                <div className="mt-2 flex items-center justify-center gap-2 text-xs text-sentinel-500">
+                                    <Loader2 className="w-3 h-3 animate-spin" /> Fetching latest context for {activeTicker}...
+                                </div>
+                            )}
                         </div>
                     </motion.div>
                 )}
             </AnimatePresence>
-        </>
+        </div>
     );
 }

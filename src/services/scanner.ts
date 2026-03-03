@@ -395,10 +395,13 @@ export class ScannerService {
                                             secondary_biases: [],
                                             sources: [],
                                             is_paper: false
-                                        } as any).select('id').single();
+                                        } as any).select().single();
 
                                         // 8b. Seed outcome tracking row so OutcomeTracker can follow this signal
                                         if (savedSignal) {
+                                            // Dispatch alert rules
+                                            NotificationService.checkAndDispatchAlerts(savedSignal);
+
                                             await supabase.from('signal_outcomes').insert({
                                                 signal_id: savedSignal.id,
                                                 ticker: ev.ticker,
@@ -500,10 +503,12 @@ export class ScannerService {
                                                                 secondary_biases: ['herding'],
                                                                 sources: [],
                                                                 is_paper: false
-                                                            } as any).select('id').single();
+                                                            } as any).select().single();
 
                                                             // Seed outcome tracking
                                                             if (savedContagionSignal) {
+                                                                NotificationService.checkAndDispatchAlerts(savedContagionSignal);
+
                                                                 await supabase.from('signal_outcomes').insert({
                                                                     signal_id: savedContagionSignal.id,
                                                                     ticker: sat.ticker,
@@ -660,8 +665,9 @@ export class ScannerService {
 
                 if (sanity.success && sanity.data?.passes_sanity_check) {
                     // 7. Save Signal
+                    // 7. Save Signal
                     signalsGenerated = 1;
-                    await supabase.from('signals').insert({
+                    const { data: savedSignal } = await supabase.from('signals').insert({
                         ticker: ticker,
                         signal_type: 'long_overreaction',
                         confidence_score: analysis.data.confidence_score,
@@ -678,10 +684,13 @@ export class ScannerService {
                             red_team: sanity.data
                         },
                         status: 'open',
-                        secondary_biases: [],
                         sources: [],
                         is_paper: isPaper
-                    } as any);
+                    } as any).select().single();
+
+                    if (savedSignal) {
+                        NotificationService.checkAndDispatchAlerts(savedSignal);
+                    }
 
                     if (!isPaper) {
                         await NotificationService.sendSignalAlert(ticker, 'manual_scan');

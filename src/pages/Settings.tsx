@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/config/supabase';
 import { Settings as SettingsIcon, Save, Bot, Shield, Bell } from 'lucide-react';
 import { ReflectionPanel } from '@/components/analysis/ReflectionPanel';
+import { AlertRulesPanel } from '@/components/settings/AlertRulesPanel';
 
 export function Settings() {
     const [loading, setLoading] = useState(true);
@@ -158,6 +159,11 @@ export function Settings() {
                     </div>
                 </div>
 
+            </div>
+
+            {/* Alert Rules */}
+            <div className="glass-panel p-6 rounded-xl">
+                <AlertRulesPanel />
             </div>
 
             {/* Self-Learning Engine */}

@@ -5,6 +5,7 @@
  */
 
 import { supabase } from '@/config/supabase';
+import { getMatchingAlertRules } from '@/components/settings/AlertRulesPanel';
 
 export class NotificationService {
     /**
@@ -40,6 +41,31 @@ export class NotificationService {
         } catch (e: any) {
             console.error('[NotificationService] Failed to send alert', e);
             return { success: false, error: e.message };
+        }
+    }
+
+    /**
+     * Checks a newly generated signal against the user's active custom rules.
+     * If a rule matches, dispatches an email alert.
+     */
+    static async checkAndDispatchAlerts(signal: any) {
+        try {
+            const matches = getMatchingAlertRules(signal);
+            if (matches.length === 0) return;
+
+            console.log(`[NotificationService] Signal for ${signal.ticker} matched ${matches.length} alert rule(s). Dispatching...`);
+
+            // We only need to send one email per signal, even if multiple rules match.
+            await this.sendSignalAlert(
+                signal.ticker,
+                signal.signal_type,
+                signal.confidence_score,
+                signal.thesis,
+                signal.target_price,
+                signal.stop_loss
+            );
+        } catch (e: any) {
+            console.error('[NotificationService] Error checking/dispatching alerts:', e);
         }
     }
 }

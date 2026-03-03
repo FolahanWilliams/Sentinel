@@ -1,5 +1,5 @@
 import { Activity, ArrowRight, Clock, Loader2 } from 'lucide-react';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
 import { ScannerService } from '@/services/scanner';
@@ -13,6 +13,8 @@ import { NewsFeed } from '@/components/dashboard/NewsFeed';
 import { useScannerLogs } from '@/hooks/useScannerLogs';
 import { SkeletonSignalFeed } from '@/components/shared/SkeletonPrimitives';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { SignalFilterBar, applySignalFilters } from '@/components/signals/SignalFilterBar';
+import type { SignalFilters } from '@/components/signals/SignalFilterBar';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export function Dashboard() {
@@ -22,6 +24,14 @@ export function Dashboard() {
     const [scanning, setScanning] = useState(false);
     const [scanStatus, setScanStatus] = useState<string | null>(null);
     const { logs } = useScannerLogs(1);
+    const [signalFilters, setSignalFilters] = useState<SignalFilters>({
+        sector: 'All Sectors', minConfidence: 0, signalType: 'all', bias: 'all',
+    });
+
+    const filteredSignals = useMemo(
+        () => applySignalFilters(recentSignals, signalFilters),
+        [recentSignals, signalFilters]
+    );
 
     // Compute dynamic "last scan" text
     const lastScanText = (() => {
@@ -164,12 +174,38 @@ export function Dashboard() {
                         )}
                     </div>
 
+                    {/* Signal Filters */}
+                    {recentSignals.length > 0 && (
+                        <div className="mb-3">
+                            <SignalFilterBar
+                                filters={signalFilters}
+                                onChange={setSignalFilters}
+                                totalCount={recentSignals.length}
+                                filteredCount={filteredSignals.length}
+                            />
+                        </div>
+                    )}
+
                     <div className="glass-panel rounded-xl overflow-hidden h-[800px] flex flex-col relative w-full">
                         <div className="absolute inset-0 bg-radial-glow opacity-20 pointer-events-none" />
 
                         <div className="relative z-10 flex-1 overflow-y-auto w-full">
                             {loadingSignals ? (
                                 <SkeletonSignalFeed count={4} />
+                            ) : recentSignals.length > 0 && filteredSignals.length === 0 ? (
+                                <EmptyState
+                                    icon={<Activity className="w-8 h-8 text-amber-400" />}
+                                    title="No matching signals"
+                                    description="Try adjusting your filters to see more results."
+                                    action={
+                                        <button
+                                            onClick={() => setSignalFilters({ sector: 'All Sectors', minConfidence: 0, signalType: 'all', bias: 'all' })}
+                                            className="mt-2 px-4 py-2 bg-sentinel-800 hover:bg-sentinel-700 text-sentinel-100 rounded-xl text-sm font-medium transition-colors ring-1 ring-sentinel-700 cursor-pointer border-none"
+                                        >
+                                            Clear Filters
+                                        </button>
+                                    }
+                                />
                             ) : recentSignals.length === 0 ? (
                                 <EmptyState
                                     icon={<Activity className="w-8 h-8 text-blue-400" />}
@@ -188,7 +224,7 @@ export function Dashboard() {
                             ) : (
                                 <div className="divide-y divide-sentinel-800/30">
                                     <AnimatePresence initial={false}>
-                                        {recentSignals.map((signal, idx) => (
+                                        {filteredSignals.map((signal, idx) => (
                                             <motion.div
                                                 key={signal.id}
                                                 initial={{ opacity: 0, y: -20, backgroundColor: 'rgba(59, 130, 246, 0.1)' }}
