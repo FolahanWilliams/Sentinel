@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/config/supabase';
 import { Settings as SettingsIcon, Save, Bot, Shield, Bell } from 'lucide-react';
+import { ReflectionPanel } from '@/components/analysis/ReflectionPanel';
 
 export function Settings() {
     const [loading, setLoading] = useState(true);
@@ -158,6 +159,9 @@ export function Settings() {
                 </div>
 
             </div>
+
+            {/* Self-Learning Engine */}
+            <ReflectionPanel />
         </div>
     );
 }

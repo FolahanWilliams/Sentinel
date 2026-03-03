@@ -15,6 +15,7 @@ export interface GeminiRequest {
     systemInstruction?: string;
     requireGroundedSearch?: boolean;
     responseSchema?: any; // The JSON schema definitions
+    model?: string; // Override the default model (e.g., for Flash-Lite)
 }
 
 export class GeminiService {
@@ -23,10 +24,11 @@ export class GeminiService {
      */
     static async generate<T = any>(req: GeminiRequest): Promise<AgentResult<T>> {
         const startTime = Date.now();
+        const modelToUse = req.model ?? GEMINI_MODEL;
         try {
             // 1. Prepare payload
             const payload = {
-                model: GEMINI_MODEL,
+                model: modelToUse,
                 prompt: req.prompt,
                 // Always prepend our master objective to any specific agent prompt
                 systemInstruction: req.systemInstruction
@@ -69,7 +71,7 @@ export class GeminiService {
                 error: null,
                 duration_ms: Date.now() - startTime,
                 tokens_used: (data.metadata?.inputTokens || 0) + (data.metadata?.outputTokens || 0),
-                model_used: GEMINI_MODEL,
+                model_used: modelToUse,
                 grounded_search_used: req.requireGroundedSearch ?? false
             };
 
@@ -81,7 +83,7 @@ export class GeminiService {
                 error: err.message || 'Failed to generate content',
                 duration_ms: Date.now() - startTime,
                 tokens_used: 0,
-                model_used: GEMINI_MODEL,
+                model_used: modelToUse,
                 grounded_search_used: req.requireGroundedSearch ?? false
             };
         }

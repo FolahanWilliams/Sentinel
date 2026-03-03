@@ -19,6 +19,7 @@ import { AlphaVantageNewsService } from './alphaVantageNews';
 import { OutcomeTracker } from './outcomeTracker';
 import { PositionSizer } from './positionSizer';
 import { performanceStats } from './performanceStats';
+import { ReflectionAgent } from './reflectionAgent';
 import { isBudgetExceeded } from '@/utils/costEstimator';
 import { responseValidator } from '@/utils/responseValidator';
 
@@ -226,6 +227,15 @@ export class ScannerService {
                 perfContext = await performanceStats.buildPerformanceContext();
                 console.log('[Scanner] Performance context loaded for agent feedback loop.');
             } catch { /* non-fatal — agents run without historical context */ }
+
+            // 3c. Append self-learned lessons from Reflection Agent (RAG loop)
+            try {
+                const lessons = await ReflectionAgent.getLessonsForContext();
+                if (lessons) {
+                    perfContext += lessons;
+                    console.log('[Scanner] Reflection lessons injected into agent context.');
+                }
+            } catch { /* non-fatal — agents run without reflection lessons */ }
 
             // 4. Find fresh unparsed articles from the cache
             // In a real flow, we'd only grab articles from the last hour

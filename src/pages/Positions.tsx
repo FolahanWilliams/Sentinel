@@ -5,9 +5,10 @@
  * stop-loss breach detection, and position sizing metrics.
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, Fragment } from 'react';
 import { supabase } from '@/config/supabase';
 import { MarketDataService } from '@/services/marketData';
+import { PostMortemService } from '@/services/postMortemService';
 import {
     Briefcase, Plus, X, TrendingUp, TrendingDown,
     AlertTriangle, DollarSign,
@@ -47,6 +48,8 @@ export function Positions() {
     const [showCloseModal, setShowCloseModal] = useState<string | null>(null);
     const [liveQuotes, setLiveQuotes] = useState<Record<string, LiveQuote>>({});
     const [quotesLoading, setQuotesLoading] = useState(false);
+    const [generatingPostMortem, setGeneratingPostMortem] = useState<string | null>(null);
+    const [expandedNotes, setExpandedNotes] = useState<string | null>(null);
 
     // Form state
     const [formTicker, setFormTicker] = useState('');
@@ -203,6 +206,25 @@ export function Positions() {
             setClosePrice('');
             setCloseReason('manual');
             fetchPositions();
+
+            // Fire-and-forget AI post-mortem generation
+            setGeneratingPostMortem(pos.id);
+            PostMortemService.generateAndSave(pos.id, {
+                ticker: pos.ticker,
+                side: pos.side,
+                entry_price: pos.entry_price,
+                exit_price: exitPrice,
+                shares: pos.shares,
+                realized_pnl: realizedPnl,
+                realized_pnl_pct: realizedPnlPct,
+                opened_at: pos.opened_at || new Date().toISOString(),
+                closed_at: new Date().toISOString(),
+                close_reason: closeReason,
+                original_notes: pos.notes || undefined,
+            }).finally(() => {
+                setGeneratingPostMortem(null);
+                fetchPositions(); // Refresh to show generated notes
+            });
         }
     }
 
@@ -366,25 +388,51 @@ export function Positions() {
                                     <th className="px-5 py-3 text-right">P&L</th>
                                     <th className="px-5 py-3 text-right">Return</th>
                                     <th className="px-5 py-3 text-left">Reason</th>
+                                    <th className="px-5 py-3 text-left">Notes</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {closedPositions.slice(0, 10).map(pos => {
                                     const isProfit = (pos.realized_pnl || 0) >= 0;
                                     return (
-                                        <tr key={pos.id} className="border-b border-sentinel-800/20 opacity-70 hover:opacity-100 transition-opacity">
-                                            <td className="px-5 py-3 font-mono font-bold text-sentinel-300">{pos.ticker}</td>
-                                            <td className="px-5 py-3 text-xs text-sentinel-400">{pos.side?.toUpperCase()}</td>
-                                            <td className="px-5 py-3 text-right font-mono text-sentinel-400">${pos.entry_price?.toFixed(2)}</td>
-                                            <td className="px-5 py-3 text-right font-mono text-sentinel-400">${pos.exit_price?.toFixed(2)}</td>
-                                            <td className={`px-5 py-3 text-right font-mono font-bold ${isProfit ? 'text-emerald-400' : 'text-red-400'}`}>
-                                                {isProfit ? '+' : ''}${(pos.realized_pnl || 0).toFixed(2)}
-                                            </td>
-                                            <td className={`px-5 py-3 text-right font-mono ${isProfit ? 'text-emerald-400' : 'text-red-400'}`}>
-                                                {isProfit ? '+' : ''}{(pos.realized_pnl_pct || 0).toFixed(2)}%
-                                            </td>
-                                            <td className="px-5 py-3 text-xs text-sentinel-500">{pos.close_reason || '—'}</td>
-                                        </tr>
+                                        <Fragment key={pos.id}>
+                                            <tr className="border-b border-sentinel-800/20 opacity-70 hover:opacity-100 transition-opacity">
+                                                <td className="px-5 py-3 font-mono font-bold text-sentinel-300">{pos.ticker}</td>
+                                                <td className="px-5 py-3 text-xs text-sentinel-400">{pos.side?.toUpperCase()}</td>
+                                                <td className="px-5 py-3 text-right font-mono text-sentinel-400">${pos.entry_price?.toFixed(2)}</td>
+                                                <td className="px-5 py-3 text-right font-mono text-sentinel-400">${pos.exit_price?.toFixed(2)}</td>
+                                                <td className={`px-5 py-3 text-right font-mono font-bold ${isProfit ? 'text-emerald-400' : 'text-red-400'}`}>
+                                                    {isProfit ? '+' : ''}${(pos.realized_pnl || 0).toFixed(2)}
+                                                </td>
+                                                <td className={`px-5 py-3 text-right font-mono ${isProfit ? 'text-emerald-400' : 'text-red-400'}`}>
+                                                    {isProfit ? '+' : ''}{(pos.realized_pnl_pct || 0).toFixed(2)}%
+                                                </td>
+                                                <td className="px-5 py-3 text-xs text-sentinel-500">{pos.close_reason || '—'}</td>
+                                                <td className="px-5 py-3">
+                                                    {generatingPostMortem === pos.id ? (
+                                                        <span className="inline-flex items-center gap-1 text-xs text-purple-400 animate-pulse">
+                                                            <Loader2 className="w-3 h-3 animate-spin" /> Generating...
+                                                        </span>
+                                                    ) : pos.notes ? (
+                                                        <button
+                                                            onClick={() => setExpandedNotes(expandedNotes === pos.id ? null : pos.id)}
+                                                            className="text-xs text-blue-400 hover:text-blue-300 transition-colors cursor-pointer border-none bg-transparent underline"
+                                                        >
+                                                            {expandedNotes === pos.id ? 'Hide' : 'View'}
+                                                        </button>
+                                                    ) : (
+                                                        <span className="text-xs text-sentinel-600">—</span>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                            {expandedNotes === pos.id && pos.notes && (
+                                                <tr>
+                                                    <td colSpan={8} className="px-5 py-3 bg-sentinel-900/30">
+                                                        <p className="text-xs text-sentinel-300 leading-relaxed whitespace-pre-wrap max-w-2xl">{pos.notes}</p>
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </Fragment>
                                     );
                                 })}
                             </tbody>
@@ -563,6 +611,6 @@ export function Positions() {
                     </motion.div>
                 )}
             </AnimatePresence>
-        </div>
+        </div >
     );
 }
