@@ -16,6 +16,8 @@ import {
     CheckCircle2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { SkeletonTable } from '@/components/shared/SkeletonPrimitives';
+import { EmptyState } from '@/components/shared/EmptyState';
 
 interface Position {
     id: string;
@@ -320,15 +322,23 @@ export function Positions() {
                 </div>
 
                 {loading ? (
-                    <div className="p-12 text-center text-sentinel-500">
-                        <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
-                        Loading positions...
+                    <div className="p-6">
+                        <SkeletonTable rows={4} columns={7} />
                     </div>
                 ) : openPositions.length === 0 ? (
-                    <div className="p-12 text-center text-sentinel-500">
-                        <Briefcase className="w-8 h-8 mx-auto mb-3 opacity-40" />
-                        <p>No open positions. Click "New Position" to log a trade.</p>
-                    </div>
+                    <EmptyState
+                        icon={<Briefcase className="w-8 h-8 text-blue-400" />}
+                        title="No open positions"
+                        description='Click "New Position" to log a trade and start tracking P&L.'
+                        action={
+                            <button
+                                onClick={() => setShowForm(true)}
+                                className="mt-2 px-5 py-2.5 bg-sentinel-800 hover:bg-sentinel-700 text-sentinel-100 rounded-xl text-sm font-medium transition-colors ring-1 ring-sentinel-700 hover:ring-sentinel-600 flex items-center gap-2 cursor-pointer border-none"
+                            >
+                                <Plus className="w-4 h-4 text-emerald-400" /> New Position
+                            </button>
+                        }
+                    />
                 ) : (
                     <div className="overflow-x-auto">
                         <table className="w-full text-sm">

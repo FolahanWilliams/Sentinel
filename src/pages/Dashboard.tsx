@@ -11,6 +11,8 @@ import { WeeklyDigest } from '@/components/dashboard/WeeklyDigest';
 import { PortfolioOverview } from '@/components/dashboard/PortfolioOverview';
 import { NewsFeed } from '@/components/dashboard/NewsFeed';
 import { useScannerLogs } from '@/hooks/useScannerLogs';
+import { SkeletonSignalFeed } from '@/components/shared/SkeletonPrimitives';
+import { EmptyState } from '@/components/shared/EmptyState';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export function Dashboard() {
@@ -139,14 +141,14 @@ export function Dashboard() {
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
 
                 {/* LEFT COLUMN: Market Snapshot & Portfolio */}
-                <div className="xl:col-span-1 space-y-6">
+                <div className="xl:col-span-1 space-y-6 flex flex-col min-h-[600px]">
                     <MarketSnapshot />
                     <PortfolioOverview />
                     <WeeklyDigest />
                 </div>
 
                 {/* MIDDLE COLUMN: Signal Feed */}
-                <div className="xl:col-span-1 border-x border-sentinel-800/50 px-0 xl:px-6">
+                <div className="xl:col-span-1 border-x border-sentinel-800/50 px-0 xl:px-6 flex flex-col min-h-[600px]">
                     <div className="flex items-center justify-between mb-4">
                         <h2 className="text-xl font-semibold text-sentinel-200">Recent Signals</h2>
                         {recentSignals.length > 0 && (
@@ -167,13 +169,22 @@ export function Dashboard() {
 
                         <div className="relative z-10 flex-1 overflow-y-auto w-full">
                             {loadingSignals ? (
-                                <div className="p-8 justify-center flex">
-                                    <div className="w-6 h-6 border-2 border-sentinel-600 border-t-sentinel-300 rounded-full animate-spin"></div>
-                                </div>
+                                <SkeletonSignalFeed count={4} />
                             ) : recentSignals.length === 0 ? (
-                                <div className="p-8 text-center text-sentinel-400">
-                                    No signals generated yet. The agents are watching.
-                                </div>
+                                <EmptyState
+                                    icon={<Activity className="w-8 h-8 text-blue-400" />}
+                                    title="No signals yet"
+                                    description="The AI agents are monitoring markets. Signals will appear here as they're generated."
+                                    action={
+                                        <button
+                                            onClick={handleForceGlobalScan}
+                                            disabled={scanning}
+                                            className="mt-2 px-5 py-2.5 bg-sentinel-800 hover:bg-sentinel-700 text-sentinel-100 rounded-xl text-sm font-medium transition-colors ring-1 ring-sentinel-700 hover:ring-sentinel-600 flex items-center gap-2"
+                                        >
+                                            <Activity className="w-4 h-4 text-emerald-400" /> Run Discovery Scan
+                                        </button>
+                                    }
+                                />
                             ) : (
                                 <div className="divide-y divide-sentinel-800/30">
                                     <AnimatePresence initial={false}>
@@ -223,7 +234,7 @@ export function Dashboard() {
                 </div>
 
                 {/* RIGHT COLUMN: Trends & Events*/}
-                <div className="xl:col-span-1 space-y-6">
+                <div className="xl:col-span-1 space-y-6 flex flex-col min-h-[600px]">
                     <MarketTrends />
                     <PotentialSignals />
                     <NewsFeed limit={8} />

@@ -1,12 +1,16 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
-import { ListPlus, Trash2, ShieldAlert, Zap } from 'lucide-react';
+import { ListPlus, Trash2, ShieldAlert, Zap, ArrowRight } from 'lucide-react';
 import { MarketDataService } from '@/services/marketData';
 import { formatPrice, formatPercent } from '@/utils/formatters';
+import { SkeletonTable } from '@/components/shared/SkeletonPrimitives';
+import { EmptyState } from '@/components/shared/EmptyState';
 
 export function Watchlist() {
     const [watchlist, setWatchlist] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const navigate = useNavigate();
 
     // Realtime Market Data
     const [quotes, setQuotes] = useState<Record<string, any>>({});
@@ -105,11 +109,21 @@ export function Watchlist() {
 
             <div className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 overflow-hidden backdrop-blur-sm">
                 {loading ? (
-                    <div className="p-12 flex justify-center"><div className="w-6 h-6 border-2 border-sentinel-600 border-t-sentinel-300 rounded-full animate-spin"></div></div>
+                    <SkeletonTable rows={5} cols={5} />
                 ) : watchlist.length === 0 ? (
-                    <div className="p-12 text-center text-sentinel-500">
-                        Watchlist is empty. Add a ticker to begin scanning.
-                    </div>
+                    <EmptyState
+                        icon={<Zap className="w-8 h-8 text-yellow-400" />}
+                        title="Your watchlist is empty"
+                        description="Add tickers to start monitoring them for market anomalies with AI-powered analysis."
+                        action={
+                            <button
+                                onClick={() => document.querySelector<HTMLInputElement>('input[placeholder*="Ticker"]')?.focus()}
+                                className="mt-2 px-5 py-2.5 bg-sentinel-800 hover:bg-sentinel-700 text-sentinel-100 rounded-xl text-sm font-medium transition-colors ring-1 ring-sentinel-700 hover:ring-sentinel-600 flex items-center gap-2"
+                            >
+                                <ListPlus className="w-4 h-4 text-yellow-400" /> Add your first ticker
+                            </button>
+                        }
+                    />
                 ) : (
                     <table className="w-full text-left text-sm">
                         <thead className="text-xs uppercase bg-sentinel-950/50 text-sentinel-500 border-b border-sentinel-800/50">
@@ -127,7 +141,11 @@ export function Watchlist() {
                                 const isUp = quote?.changePercent >= 0;
 
                                 return (
-                                    <tr key={item.id} className="hover:bg-sentinel-800/20 transition-colors group">
+                                    <tr
+                                        key={item.id}
+                                        className="hover:bg-sentinel-800/20 transition-colors group cursor-pointer"
+                                        onClick={() => navigate(`/analysis/${item.ticker}`)}
+                                    >
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-3">
                                                 <span className="font-bold text-sentinel-100">{item.ticker}</span>
@@ -159,12 +177,15 @@ export function Watchlist() {
                                             </button>
                                         </td>
                                         <td className="px-6 py-4 text-right">
-                                            <button
-                                                onClick={() => removeTicker(item.id)}
-                                                className="p-2 text-sentinel-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
+                                            <div className="flex items-center justify-end gap-2">
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); removeTicker(item.id); }}
+                                                    className="p-2 text-sentinel-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                                <ArrowRight className="w-4 h-4 text-sentinel-600 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                            </div>
                                         </td>
                                     </tr>
                                 )

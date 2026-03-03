@@ -5,10 +5,13 @@
 
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { formatPrice, formatPercent } from '@/utils/formatters';
-import { ShieldAlert, TrendingUp, TrendingDown, Briefcase, PieChart } from 'lucide-react';
+import { ShieldAlert, TrendingUp, TrendingDown, Briefcase, PieChart, ArrowRight } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/config/supabase';
 import { motion } from 'framer-motion';
+import { DonutChart } from '@/components/shared/DonutChart';
+import { EmptyState } from '@/components/shared/EmptyState';
+import { useNavigate } from 'react-router-dom';
 
 // Sector colours for the visual breakdown
 const SECTOR_COLORS: Record<string, string> = {
@@ -28,6 +31,7 @@ const SECTOR_COLORS: Record<string, string> = {
 export function PortfolioOverview() {
     const { config, openPositions, closedPositions, loading } = usePortfolio();
     const [sectorMap, setSectorMap] = useState<Record<string, string>>({});
+    const navigate = useNavigate();
 
     // Fetch watchlist to get sector data for tickers
     useEffect(() => {
@@ -176,57 +180,60 @@ export function PortfolioOverview() {
                 </div>
             )}
 
-            {/* SECTOR BREAKDOWN */}
+            {/* SECTOR BREAKDOWN — DONUT CHART */}
             {Object.keys(sectorExposure).length > 0 && (
                 <div className="glass-panel p-5 rounded-xl">
                     <h3 className="text-sm font-semibold text-sentinel-300 uppercase tracking-wider flex items-center gap-2 mb-4">
                         <PieChart className="w-4 h-4 text-purple-400" /> Sector Exposure
                     </h3>
-                    <div className="space-y-3">
-                        {Object.entries(sectorExposure)
-                            .sort(([, a], [, b]) => b - a)
-                            .map(([sector, amount], idx) => {
-                                const pct = totalCapital > 0 ? (amount / totalCapital) * 100 : 0;
-                                const maxSector = config?.max_sector_exposure_pct || 25;
-                                const color = SECTOR_COLORS[sector] || SECTOR_COLORS.Other;
-
-                                return (
-                                    <div key={sector}>
-                                        <div className="flex justify-between text-xs mb-1.5">
-                                            <span className="text-sentinel-300 font-medium">{sector}</span>
-                                            <span className="font-mono text-sentinel-400">
-                                                {pct.toFixed(1)}%
-                                                {pct > maxSector && (
-                                                    <ShieldAlert className="w-3 h-3 text-red-500 inline ml-1 drop-shadow-md" />
-                                                )}
-                                            </span>
+                    <div className="flex items-center gap-6">
+                        <DonutChart
+                            segments={Object.entries(sectorExposure)
+                                .sort(([, a], [, b]) => b - a)
+                                .map(([sector, amount]) => ({
+                                    label: sector,
+                                    value: amount,
+                                    color: SECTOR_COLORS[sector] || SECTOR_COLORS.Other,
+                                }))}
+                            size={130}
+                            thickness={16}
+                            centerLabel="Total"
+                            centerValue={`${exposurePct.toFixed(0)}%`}
+                        />
+                        <div className="flex-1 space-y-2">
+                            {Object.entries(sectorExposure)
+                                .sort(([, a], [, b]) => b - a)
+                                .map(([sector, amount]) => {
+                                    const pct = totalCapital > 0 ? (amount / totalCapital) * 100 : 0;
+                                    const color = SECTOR_COLORS[sector] || SECTOR_COLORS.Other;
+                                    return (
+                                        <div key={sector} className="flex items-center gap-2 text-xs">
+                                            <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+                                            <span className="text-sentinel-300 flex-1">{sector}</span>
+                                            <span className="text-sentinel-400 font-mono">{pct.toFixed(1)}%</span>
                                         </div>
-                                        <div className="h-2 bg-sentinel-950/80 rounded-full overflow-hidden shadow-inner ring-1 ring-white/5">
-                                            <motion.div
-                                                initial={{ width: 0 }}
-                                                animate={{ width: `${Math.min(pct * 2, 100)}%` }}
-                                                transition={{ duration: 0.8, delay: idx * 0.1, ease: 'easeOut' }}
-                                                className="h-full rounded-full"
-                                                style={{
-                                                    backgroundColor: color,
-                                                    boxShadow: `0 0 10px ${color}40`
-                                                }}
-                                            />
-                                        </div>
-                                    </div>
-                                );
-                            })}
+                                    );
+                                })}
+                        </div>
                     </div>
                 </div>
             )}
 
             {/* EMPTY STATE */}
             {openPositions.length === 0 && closedPositions.length === 0 && (
-                <div className="glass-panel p-8 text-center rounded-xl">
-                    <Briefcase className="w-8 h-8 text-sentinel-600 mx-auto mb-2" />
-                    <p className="text-sm text-sentinel-400">No positions tracked yet.</p>
-                    <p className="text-xs text-sentinel-500 mt-1">Positions will appear here when you log trades.</p>
-                </div>
+                <EmptyState
+                    icon={<Briefcase className="w-8 h-8 text-blue-400" />}
+                    title="No positions tracked yet"
+                    description="Log your trades to track performance, exposure, and get AI-powered post-mortem analysis."
+                    action={
+                        <button
+                            onClick={() => navigate('/positions')}
+                            className="mt-2 px-5 py-2.5 bg-sentinel-800 hover:bg-sentinel-700 text-sentinel-100 rounded-xl text-sm font-medium transition-colors ring-1 ring-sentinel-700 hover:ring-sentinel-600 flex items-center gap-2"
+                        >
+                            <ArrowRight className="w-4 h-4 text-emerald-400" /> Go to Positions
+                        </button>
+                    }
+                />
             )}
         </div>
     );

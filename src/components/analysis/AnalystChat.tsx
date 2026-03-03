@@ -63,11 +63,30 @@ interface AnalystChatProps {
 
 export function AnalystChat({ ticker, tickerAnalysis, quote }: AnalystChatProps) {
     const [isOpen, setIsOpen] = useState(false);
-    const [messages, setMessages] = useState<ChatMessage[]>([]);
+    const [messages, setMessages] = useState<ChatMessage[]>(() => {
+        // Restore from sessionStorage on mount
+        try {
+            const stored = sessionStorage.getItem(`sentinel_chat_${ticker}`);
+            if (stored) {
+                const parsed = JSON.parse(stored);
+                return parsed.map((m: any) => ({ ...m, timestamp: new Date(m.timestamp) }));
+            }
+        } catch { /* ignore */ }
+        return [];
+    });
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
+
+    // Persist messages to sessionStorage
+    useEffect(() => {
+        if (messages.length > 0) {
+            try {
+                sessionStorage.setItem(`sentinel_chat_${ticker}`, JSON.stringify(messages));
+            } catch { /* quota exceeded — ignore */ }
+        }
+    }, [messages, ticker]);
 
     // Auto-scroll to bottom when new messages arrive
     useEffect(() => {

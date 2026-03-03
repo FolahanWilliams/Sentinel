@@ -2,12 +2,16 @@
  * Sentinel — App Layout Shell
  *
  * Main layout wrapping the sidebar, header, and page content.
+ * Also hosts global overlays: toast notifications, command palette, and onboarding.
  */
 
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { SignalToast } from '@/components/notifications/SignalToast';
+import { ToastContainer } from '@/components/notifications/ToastContainer';
+import { CommandPalette } from '@/components/shared/CommandPalette';
+import { OnboardingOverlay } from '@/components/shared/OnboardingOverlay';
 
 export function AppLayout() {
     return (
@@ -20,6 +24,9 @@ export function AppLayout() {
                 </main>
             </div>
             <SignalToast />
+            <ToastContainer />
+            <CommandPalette />
+            <OnboardingOverlay />
         </div>
     );
 }

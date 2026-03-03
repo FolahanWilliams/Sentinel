@@ -1,5 +1,6 @@
 import { ArrowUpRight } from 'lucide-react';
 import { useMarketSnapshot } from '@/hooks/useMarketSnapshot';
+import { Sparkline } from '@/components/shared/Sparkline';
 
 export function MarketSnapshot() {
     const { data, loading } = useMarketSnapshot();
@@ -86,7 +87,7 @@ export function MarketSnapshot() {
             <div className="grid grid-cols-3 gap-2 mb-6">
                 <TickerCell label="VIX" price={tickers.vix.price} change={tickers.vix.changePercent} />
                 <TickerCell label="S&P 500" price={tickers.sp500.price} change={tickers.sp500.changePercent} />
-                <TickerCell label="Bitcoin" price={tickers.btc.price} change={tickers.btc.changePercent} />
+                <TickerCell label="BTC" price={tickers.btc.price} change={tickers.btc.changePercent} />
             </div>
 
             <div className="mt-auto">
@@ -106,15 +107,35 @@ function TickerCell({ label, price, change }: { label: string; price: number; ch
     const formattedPrice = price >= 1000 ? price.toLocaleString(undefined, { maximumFractionDigits: 0 }) : price.toFixed(2);
     const formattedChange = `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`;
 
+    // Generate a simple sparkline from price + change direction
+    const sparkData = generateSparkData(price, change);
+
     return (
-        <div>
-            <div className="text-xs text-sentinel-400">{label}</div>
-            <div className="flex items-baseline gap-1.5">
-                <span className="text-sm font-bold text-sentinel-100">{formattedPrice}</span>
-                {price > 0 && <span className={`text-xs font-medium ${changeColor}`}>{formattedChange}</span>}
+        <div className="bg-sentinel-950/40 p-2 rounded-lg border border-white/5">
+            <div className="text-[10px] text-sentinel-500 uppercase tracking-widest font-semibold mb-0.5">{label}</div>
+            <div className="flex items-center justify-between gap-1">
+                <div>
+                    <span className="text-sm font-bold text-sentinel-100 font-mono">{formattedPrice}</span>
+                    {price > 0 && <div className={`text-[10px] font-medium font-mono ${changeColor}`}>{formattedChange}</div>}
+                </div>
+                {price > 0 && <Sparkline data={sparkData} width={48} height={20} color="auto" strokeWidth={1.2} showDot={true} />}
             </div>
         </div>
     );
+}
+
+/** Generate a simple synthetic sparkline based on price and change */
+function generateSparkData(price: number, change: number): number[] {
+    const points = 12;
+    const data: number[] = [];
+    const startPrice = price / (1 + change / 100);
+    for (let i = 0; i < points; i++) {
+        const progress = i / (points - 1);
+        // Slight sinusoidal wobble + linear trend
+        const wobble = Math.sin(progress * Math.PI * 2.5 + change) * price * 0.003;
+        data.push(startPrice + (price - startPrice) * progress + wobble);
+    }
+    return data;
 }
 
 function SummaryItem({ color, text }: { color: string; text: string }) {
