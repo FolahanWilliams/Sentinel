@@ -15,6 +15,7 @@ import { BiasBreakdown } from '@/components/analysis/BiasBreakdown';
 import { EventTimeline } from '@/components/analysis/EventTimeline';
 import { FundamentalSnapshot } from '@/components/analysis/FundamentalSnapshot';
 import { TradingViewChart } from '@/components/analysis/TradingViewChart';
+import { NewsFeed } from '@/components/dashboard/NewsFeed';
 import { formatPrice } from '@/utils/formatters';
 import type { Quote } from '@/types/market';
 
@@ -299,6 +300,14 @@ export function StockAnalysis() {
                                 events={[]}
                                 aiEvents={tickerAnalysis?.events}
                                 aiEventsLoading={isLoadingAnalysis}
+                            />
+
+                            {/* Ticker News Stream */}
+                            <NewsFeed
+                                ticker={activeTicker}
+                                limit={6}
+                                title={`${activeTicker} News`}
+                                showControls={false}
                             />
 
                             {/* Quick Actions */}

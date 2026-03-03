@@ -9,6 +9,7 @@ import { MarketTrends, PotentialSignals } from '@/components/dashboard/MarketTre
 import { UpcomingEvents } from '@/components/dashboard/UpcomingEvents';
 import { WeeklyDigest } from '@/components/dashboard/WeeklyDigest';
 import { PortfolioOverview } from '@/components/dashboard/PortfolioOverview';
+import { NewsFeed } from '@/components/dashboard/NewsFeed';
 import { useScannerLogs } from '@/hooks/useScannerLogs';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -225,6 +226,7 @@ export function Dashboard() {
                 <div className="xl:col-span-1 space-y-6">
                     <MarketTrends />
                     <PotentialSignals />
+                    <NewsFeed limit={8} />
                     <UpcomingEvents />
                 </div>
             </div>
