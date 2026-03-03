@@ -318,7 +318,7 @@ export class ScannerService {
                             eventsFound++;
 
                             // Save Event to DB
-                            const { data: savedEvent } = await supabase.from('market_events').insert({
+                            const { data: savedEvent } = await supabase.from('market_events').upsert({
                                 ticker: ev.ticker,
                                 event_type: ev.event_type,
                                 headline: ev.headline,
@@ -326,7 +326,7 @@ export class ScannerService {
                                 is_overreaction_candidate: ev.severity >= 7,
                                 source_urls: [],
                                 source_type: 'rss'
-                            } as any).select('id').single();
+                            } as any, { onConflict: 'ticker,headline', ignoreDuplicates: true }).select('id').single();
 
                             // 6. Trigger Deep Analysis Pipeline if severe
                             if (savedEvent && ev.severity >= 7) {
@@ -627,7 +627,7 @@ export class ScannerService {
             }
 
             // 4. Save the event
-            await supabase.from('market_events').insert({
+            await supabase.from('market_events').upsert({
                 ticker: ticker,
                 event_type: 'manual_scan',
                 headline: mockHeadline,
@@ -635,7 +635,7 @@ export class ScannerService {
                 is_overreaction_candidate: true,
                 source_urls: [],
                 source_type: 'manual'
-            } as any);
+            } as any, { onConflict: 'ticker,headline', ignoreDuplicates: true });
 
             // 5. Run Overreaction Analysis
             const analysis = await AgentService.evaluateOverreaction(
@@ -825,7 +825,7 @@ export class ScannerService {
 
             try {
                 // Save the discovery event so it shows up in event history
-                await supabase.from('market_events').insert({
+                await supabase.from('market_events').upsert({
                     ticker,
                     event_type: `discovery_${catalyst}`,
                     headline: reason,
@@ -833,7 +833,7 @@ export class ScannerService {
                     is_overreaction_candidate: true,
                     source_urls: [],
                     source_type: 'ai_discovery'
-                } as any);
+                } as any, { onConflict: 'ticker,headline', ignoreDuplicates: true });
 
                 // Run full single-ticker scan
                 const result = await this.runSingleTickerScan(ticker);
