@@ -34,14 +34,14 @@ export const RSS_FEEDS: RSSFeedConfig[] = [
     { name: 'Wired', url: 'https://www.wired.com/feed/rss', category: 'tech_ai', priority: 'medium' },
     { name: 'VentureBeat AI', url: 'https://venturebeat.com/category/ai/feed/', category: 'tech_ai', priority: 'high' },
     { name: 'MIT Tech Review', url: 'https://www.technologyreview.com/feed/', category: 'tech_ai', priority: 'medium' },
-    { name: 'The Information', url: 'https://www.theinformation.com/feed', category: 'tech_ai', priority: 'high' },
+    { name: 'SiliconANGLE', url: 'https://siliconangle.com/feed/', category: 'tech_ai', priority: 'high' },
 
     // === Biotech & Pharma ===
     { name: 'STAT News', url: 'https://www.statnews.com/feed/', category: 'biotech', priority: 'high' },
     { name: 'FierceBiotech', url: 'https://www.fiercebiotech.com/rss/xml', category: 'biotech', priority: 'high' },
     { name: 'BioPharma Dive', url: 'https://www.biopharmadive.com/feeds/news/', category: 'biotech', priority: 'high' },
     { name: 'Endpoints News', url: 'https://endpts.com/feed/', category: 'biotech', priority: 'high' },
-    { name: 'FDA News', url: 'https://www.fda.gov/about-fda/contact-fda/stay-informed/rss-feeds/press-releases/rss.xml', category: 'biotech', priority: 'high' },
+    { name: 'FDA Approvals (Google News)', url: 'https://news.google.com/rss/search?q=FDA+approval+when:7d&hl=en-US&gl=US&ceid=US:en', category: 'biotech', priority: 'high' },
 
     // === Semiconductor & Hardware ===
     { name: 'SemiAnalysis', url: 'https://www.semianalysis.com/feed', category: 'semiconductors', priority: 'high' },
