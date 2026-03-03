@@ -25,13 +25,23 @@ export class RSSReaderService {
 
             const promises = batch.map(async (feed) => {
                 try {
-                    // Use a public CORS proxy for client-side RSS fetching
-                    // Note: In prod, you'd move this to an Edge Function to avoid third-party proxy limits
-                    const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(feed.url)}`;
-                    const res = await fetch(proxyUrl);
+                    // Instead of a public CORS proxy, we use our own secure Supabase Edge Function.
+                    // We use a native fetch instead of `supabase.functions.invoke` because the edge function 
+                    // returns raw XML text ('application/xml'), and the helper tries to parse it as JSON.
+                    const session = await supabase.auth.getSession();
+                    const token = session.data.session?.access_token || '';
+                    const edgeUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/proxy-rss`;
 
-                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    const res = await fetch(edgeUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({ feedUrl: feed.url })
+                    });
 
+                    if (!res.ok) throw new Error(`HTTP ${res.status} from proxy-rss`);
                     const xmlText = await res.text();
 
                     // Very rudimentary XML regex parser (since we don't want heavy DOMParser in Edge/Workers)
