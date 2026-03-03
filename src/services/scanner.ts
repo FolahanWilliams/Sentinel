@@ -233,16 +233,59 @@ export class ScannerService {
                 .from('rss_cache')
                 .select('*')
                 .order('fetched_at', { ascending: false })
-                .limit(20);
+                .limit(30);
 
             // 5. Extract Events via Gemini Fast-Pass
             if (freshArticles && freshArticles.length > 0) {
-                const combinedText = freshArticles.map(a => `${a.title}. ${a.description}`).join(' | ');
+                // A. Semantic Deduplication
+                const uniqueArticles = [];
+                for (const article of freshArticles) {
+                    const normTitle = (article.title || '').toLowerCase().replace(/[^a-z0-9\s]/g, '');
+                    const words = new Set(normTitle.split(' ').filter(w => w.length > 3));
+                    let isDupe = false;
+                    for (const u of uniqueArticles) {
+                        const uWords = new Set((u.title || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').split(' ').filter(w => w.length > 3));
+                        const intersection = new Set([...words].filter(x => uWords.has(x)));
+                        const union = new Set([...words, ...uWords]);
+                        if (union.size > 0 && intersection.size / union.size > 0.45) {
+                            isDupe = true;
+                            // Append description to existing to keep context
+                            u.description = `${u.description} | Additional Source: ${article.description}`;
+                            break;
+                        }
+                    }
+                    if (!isDupe) uniqueArticles.push({ ...article });
+                }
+
+                console.log(`[Scanner] Semantically deduplicated ${freshArticles.length} articles to ${uniqueArticles.length} unique stories.`);
+
+                // B. Intelligent Pre-Filtering (Ask Gemini for actionable IDs)
+                const preFilterPayload = uniqueArticles.map(a => ({
+                    id: a.id,
+                    title: a.title || 'No Title',
+                    description: a.description || ''
+                }));
+                const filterRes = await AgentService.filterActionableNews(preFilterPayload);
+                let actionableArticles = uniqueArticles;
+
+                if (filterRes.success && filterRes.data?.actionable_ids) {
+                    actionableArticles = uniqueArticles.filter(a => filterRes.data!.actionable_ids.includes(a.id));
+                    console.log(`[Scanner] Pre-filter dropped ${uniqueArticles.length - actionableArticles.length} noise articles. Proceeding with ${actionableArticles.length}.`);
+                } else {
+                    console.warn(`[Scanner] Pre-filter failed or returned no IDs, falling back to all unique articles.`);
+                }
+
+                if (actionableArticles.length === 0) {
+                    console.log('[Scanner] No actionable articles found after pre-filtering. Exiting early.');
+                    return { signalsGenerated: 0, eventsFound: 0 };
+                }
+
+                const combinedText = actionableArticles.map(a => `${a.title}. ${a.description}`).join(' | ');
                 const extraction = await AgentService.extractEventsFromText(combinedText);
 
                 // Build a lookup of article descriptions by ticker for full context
                 const articleContextByTicker: Record<string, string> = {};
-                for (const article of freshArticles) {
+                for (const article of actionableArticles) {
                     const text = `${article.title || ''}. ${article.description || ''}`;
                     for (const t of tickers) {
                         if (text.toLowerCase().includes(t.toLowerCase())) {

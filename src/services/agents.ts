@@ -177,7 +177,41 @@ export class AgentService {
     }
 
     /**
-     * 6. Extraction Agent (Helper)
+     * 6. Pre-Filter Agent (Helper)
+     * Scores a raw list of news articles and returns only the IDs of those
+     * with high market-moving potential. Drastically cuts token costs.
+     */
+    static async filterActionableNews(articles: Array<{ id: string; title: string; description: string }>): Promise<AgentResult<{ actionable_ids: string[] }>> {
+        const payload = articles.map(a => `[ID: ${a.id}] ${a.title}\n${a.description}`).join('\n\n');
+        const prompt = `
+    Review the following news articles:
+    
+    ${payload}
+    
+    Identify which articles have high market-moving potential (e.g., earnings, FDA, CEO change, major macro, lawsuits).
+    Ignore generic market commentary, daily recaps, or fluff pieces.
+    Return a JSON array containing ONLY the string IDs of the actionable articles.
+    `;
+
+        return GeminiService.generate({
+            prompt,
+            systemInstruction: "You are a pre-filter. Return ONLY a JSON object with a single key 'actionable_ids' containing an array of string IDs.",
+            requireGroundedSearch: false,
+            responseSchema: {
+                type: "object",
+                properties: {
+                    actionable_ids: {
+                        type: "array",
+                        items: { type: "string" }
+                    }
+                },
+                required: ["actionable_ids"]
+            }
+        });
+    }
+
+    /**
+     * 7. Extraction Agent (Helper)
      * Converts unstructured RSS text into structured Market Events.
      */
     static async extractEventsFromText(text: string): Promise<AgentResult<any>> {

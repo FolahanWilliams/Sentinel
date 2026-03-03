@@ -14,6 +14,7 @@ const ENTRY_TYPES = ['thesis', 'learning', 'mistake', 'general'] as const;
 
 export function Journal() {
     const [entries, setEntries] = useState<any[]>([]);
+    const [macroEvents, setMacroEvents] = useState<Record<string, string>>({});
     const [loading, setLoading] = useState(true);
 
     // Storage keys for filters
@@ -85,6 +86,25 @@ export function Journal() {
         if (!error && data) {
             setEntries(data);
         }
+
+        // Fetch macro events for overlay overlay (severity >= 8)
+        const { data: eventsData, error: eventsError } = await supabase
+            .from('market_events')
+            .select('detected_at, headline, severity')
+            .gte('severity', 8)
+            .order('severity', { ascending: false });
+
+        if (!eventsError && eventsData) {
+            const eventsMap: Record<string, string> = {};
+            eventsData.forEach(e => {
+                const date = (e.detected_at || '').split('T')[0];
+                if (date && !eventsMap[date]) {
+                    eventsMap[date] = e.headline; // Keeps highest severity per day
+                }
+            });
+            setMacroEvents(eventsMap);
+        }
+
         setLoading(false);
     }
 
@@ -245,6 +265,7 @@ export function Journal() {
                     entryCounts={entryCounts}
                     onDayClick={setSelectedDate}
                     selectedDate={selectedDate}
+                    macroEvents={macroEvents}
                 />
             </div>
 

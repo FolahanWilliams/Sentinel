@@ -13,6 +13,8 @@ interface CalendarHeatmapProps {
     onDayClick: (date: string | null) => void;
     /** Currently selected date (YYYY-MM-DD) or null */
     selectedDate: string | null;
+    /** Map of YYYY-MM-DD → Macro Event Headline */
+    macroEvents?: Record<string, string>;
 }
 
 const CELL_SIZE = 13;
@@ -35,7 +37,7 @@ function toDateStr(d: Date): string {
     return d.toISOString().split('T')[0] as string;
 }
 
-export function CalendarHeatmap({ entryCounts, onDayClick, selectedDate }: CalendarHeatmapProps) {
+export function CalendarHeatmap({ entryCounts, onDayClick, selectedDate, macroEvents = {} }: CalendarHeatmapProps) {
     const { cells, monthPositions } = useMemo(() => {
         const today = new Date();
 
@@ -52,6 +54,7 @@ export function CalendarHeatmap({ entryCounts, onDayClick, selectedDate }: Calen
             y: number;
             date: string;
             count: number;
+            macroEvent?: string;
         }> = [];
 
         const monthPos: Array<{ label: string; x: number }> = [];
@@ -73,6 +76,7 @@ export function CalendarHeatmap({ entryCounts, onDayClick, selectedDate }: Calen
                     y: day * (CELL_SIZE + GAP) + 20,
                     date: dateStr,
                     count: entryCounts[dateStr] || 0,
+                    macroEvent: macroEvents[dateStr]
                 });
 
                 cursor.setDate(cursor.getDate() + 1);
@@ -80,7 +84,7 @@ export function CalendarHeatmap({ entryCounts, onDayClick, selectedDate }: Calen
         }
 
         return { cells, monthPositions: monthPos };
-    }, [entryCounts]);
+    }, [entryCounts, macroEvents]);
 
     const width = WEEKS * (CELL_SIZE + GAP) + 30;
     const height = DAYS_IN_WEEK * (CELL_SIZE + GAP) + 30;
@@ -121,21 +125,32 @@ export function CalendarHeatmap({ entryCounts, onDayClick, selectedDate }: Calen
                     const isSelected = selectedDate === cell.date;
 
                     return (
-                        <rect
-                            key={cell.date}
-                            x={cell.x}
-                            y={cell.y}
-                            width={CELL_SIZE}
-                            height={CELL_SIZE}
-                            rx={2}
-                            fill={getColor(cell.count, isSelected)}
-                            stroke={isSelected ? '#3B82F6' : 'transparent'}
-                            strokeWidth={isSelected ? 1.5 : 0}
-                            style={{ cursor: 'pointer', transition: 'fill 0.15s' }}
-                            onClick={() => onDayClick(isSelected ? null : cell.date)}
-                        >
-                            <title>{cell.date}: {cell.count} entries</title>
-                        </rect>
+                        <g key={cell.date} style={{ cursor: 'pointer' }} onClick={() => onDayClick(isSelected ? null : cell.date)}>
+                            <rect
+                                x={cell.x}
+                                y={cell.y}
+                                width={CELL_SIZE}
+                                height={CELL_SIZE}
+                                rx={2}
+                                fill={getColor(cell.count, isSelected)}
+                                stroke={isSelected ? '#3B82F6' : (cell.macroEvent ? '#EF4444' : 'transparent')}
+                                strokeWidth={isSelected ? 1.5 : (cell.macroEvent ? 1 : 0)}
+                                style={{ transition: 'fill 0.15s' }}
+                            />
+                            {cell.macroEvent && (
+                                <circle
+                                    cx={cell.x + CELL_SIZE}
+                                    cy={cell.y}
+                                    r={2.5}
+                                    fill="#EF4444"
+                                    className="animate-pulse"
+                                />
+                            )}
+                            <title>
+                                {cell.date}: {cell.count} entries
+                                {cell.macroEvent && `\n\n🚨 Major Event: ${cell.macroEvent}`}
+                            </title>
+                        </g>
                     );
                 })}
             </svg>
