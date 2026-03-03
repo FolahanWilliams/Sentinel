@@ -33,7 +33,12 @@ Deno.serve(async (req) => {
     })
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch from source: ${response.status} ${response.statusText}`)
+      console.warn(`[proxy-rss] Downstream error ${response.status} for ${feedUrl}`);
+      // Return the specific status code (e.g., 403 Forbidden) instead of throwing an internal 500
+      return new Response(JSON.stringify({ error: `Upstream returned ${response.status} ${response.statusText}` }), {
+        status: response.status,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
     }
 
     const xmlText = await response.text()

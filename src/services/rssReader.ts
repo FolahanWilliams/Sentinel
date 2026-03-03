@@ -108,7 +108,17 @@ export class RSSReaderService {
 
             // Extract pubDate
             const dateMatch = /<pubDate(?:[^>]*)>([\s\S]*?)<\/pubDate>/.exec(itemXml || '');
-            const pubDate = dateMatch && dateMatch[1] ? new Date(dateMatch[1].trim()).toISOString() : '';
+            let pubDate = '';
+            if (dateMatch && dateMatch[1]) {
+                const d = new Date(dateMatch[1].trim());
+                if (!isNaN(d.getTime())) {
+                    pubDate = d.toISOString();
+                } else {
+                    pubDate = new Date().toISOString(); // Fallback if invalid format
+                }
+            } else {
+                pubDate = new Date().toISOString(); // Default to now if missing
+            }
 
             if (title && link) {
                 // Strip HTML tags from description for cleaner DB storage
