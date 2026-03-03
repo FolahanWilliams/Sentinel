@@ -101,8 +101,8 @@ serve(async (req) => {
                 console.log(`[proxy-market-data] Alpha Vantage unavailable, falling back to Yahoo Finance JSON API`);
 
                 try {
-                    // query2 is generally more resilient to cookie checks than query1
-                    const yfUrl = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${tickerUpper}`;
+                    // query1 v8 chart endpoint is currently more resilient to crumb/cookie blocks
+                    const yfUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${tickerUpper}?interval=1d&range=1d`;
                     console.log(`[proxy-market-data] Fetching JSON from ${yfUrl}`);
 
                     const yfRes = await fetch(yfUrl, {
@@ -114,18 +114,22 @@ serve(async (req) => {
 
                     if (yfRes.ok) {
                         const yfData = await yfRes.json();
-                        const result = yfData?.quoteResponse?.result?.[0];
+                        const meta = yfData?.chart?.result?.[0]?.meta;
 
-                        if (result && result.regularMarketPrice) {
+                        if (meta && meta.regularMarketPrice) {
+                            const change = meta.regularMarketPrice - (meta.chartPreviousClose || meta.previousClose || meta.regularMarketPrice);
+                            const prevClose = meta.chartPreviousClose || meta.previousClose || meta.regularMarketPrice || 1;
+                            const changePct = (change / prevClose) * 100;
+
                             quoteResult = {
-                                price: result.regularMarketPrice || 0,
-                                change: result.regularMarketChange || 0,
-                                changePercent: result.regularMarketChangePercent || 0,
-                                volume: result.regularMarketVolume || 0,
-                                previousClose: result.regularMarketPreviousClose || 0,
-                                open: result.regularMarketOpen || 0,
-                                high: result.regularMarketDayHigh || 0,
-                                low: result.regularMarketDayLow || 0,
+                                price: meta.regularMarketPrice || 0,
+                                change: change,
+                                changePercent: changePct,
+                                volume: meta.regularMarketVolume || 0,
+                                previousClose: prevClose,
+                                open: meta.regularMarketPrice || 0, // Not perfectly accurate without history array, but good for realtime
+                                high: meta.regularMarketDayHigh || 0,
+                                low: meta.regularMarketDayLow || 0,
                             }
                             console.log(`[proxy-market-data] Yahoo Finance success: ${tickerUpper} @ $${quoteResult.price}`);
                         } else {

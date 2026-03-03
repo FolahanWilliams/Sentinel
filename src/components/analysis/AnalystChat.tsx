@@ -7,11 +7,50 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageSquare, X, Send, Loader2, Sparkles, Bot, User } from 'lucide-react';
+import { MessageSquare, X, Send, Loader2, Sparkles, Bot, User, CheckCircle2 } from 'lucide-react';
 import { GeminiService } from '@/services/gemini';
+import { supabase } from '@/config/supabase';
+
+// Schema for the chatbot response
+export const ChatbotResponseSchema = {
+    type: "object",
+    properties: {
+        message: {
+            type: "string",
+            description: "The conversational response to the user."
+        },
+        action: {
+            type: "object",
+            description: "Optional action to perform based on the user's intent. Only include if the user EXPLICITLY asks to add a position or journal entry.",
+            nullable: true,
+            properties: {
+                type: {
+                    type: "string",
+                    enum: ["add_position", "add_journal_entry"]
+                },
+                payload: {
+                    type: "object",
+                    description: "The data required for the action.",
+                    properties: {
+                        ticker: { type: "string" },
+                        entry_price: { type: "number" },
+                        shares: { type: "number" },
+                        side: { type: "string", enum: ["LONG", "SHORT"] },
+                        content: { type: "string" },
+                        entry_type: { type: "string", enum: ["TRADE_REVIEW", "MARKET_OBSERVATION", "STRATEGY_NOTE"] },
+                        mood: { type: "string", enum: ["NEUTRAL", "CONFIDENT", "UNCERTAIN", "FRUSTRATED"] },
+                        tags: { type: "array", items: { type: "string" } }
+                    }
+                }
+            },
+            required: ["type", "payload"]
+        }
+    },
+    required: ["message"]
+};
 
 interface ChatMessage {
-    role: 'user' | 'assistant';
+    role: 'user' | 'assistant' | 'system';
     content: string;
     timestamp: Date;
 }
@@ -103,7 +142,7 @@ export function AnalystChat({ ticker, tickerAnalysis, quote }: AnalystChatProps)
 
             // Build conversation history for context
             const historyBlock = messages.slice(-6).map(m =>
-                `${m.role === 'user' ? 'USER' : 'ANALYST'}: ${m.content}`
+                `${m.role === 'user' ? 'USER' : (m.role === 'assistant' ? 'ANALYST' : 'SYSTEM')}: ${m.content}`
             ).join('\n');
 
             const prompt = `
@@ -115,26 +154,84 @@ ${context}
 ${historyBlock ? `CONVERSATION HISTORY:\n${historyBlock}\n` : ''}
 USER'S QUESTION: ${trimmed}
 
-Respond conversationally but with precision. Reference specific data points from the context above when relevant. Keep responses concise (2-4 paragraphs max). If the user asks about something not in the context, say so honestly.
+INSTRUCTIONS:
+1. Respond conversationally but with precision. Reference specific data points from the context above when relevant. 
+2. Keep responses concise (2-4 paragraphs max). If the user asks about something not in the context, say so honestly.
+3. If the user explicitly asks to log a trade (e.g., "I bought NVDA at 120", "Add my TSLA short to positions"), extract the details (ticker, price, shares, side) and include an \`action\` of type \`add_position\`. Default to LONG side and 100 shares if unspecified unless the context implies otherwise.
+4. If the user explicitly asks to add a journal entry or note, include an \`action\` of type \`add_journal_entry\` with a summarized \`content\` and appropriate tags.
 `;
 
-            const result = await GeminiService.generate<string>({
+            const result = await GeminiService.generate<any>({
                 prompt,
                 requireGroundedSearch: true,
+                responseSchema: ChatbotResponseSchema
             });
+
+            if (!result.success || !result.data) {
+                throw new Error('Failed to generate response');
+            }
+
+            const parsed = result.data;
 
             const assistantMsg: ChatMessage = {
                 role: 'assistant',
-                content: result.success
-                    ? (typeof result.data === 'string' ? result.data : JSON.stringify(result.data))
-                    : 'Sorry, I encountered an error processing your question. Please try again.',
+                content: parsed.message || 'Done.',
                 timestamp: new Date(),
             };
-
             setMessages(prev => [...prev, assistantMsg]);
-        } catch {
+
+            // Execute the action if present
+            if (parsed.action && parsed.action.type) {
+                try {
+                    const actionType = parsed.action.type;
+                    const payload = parsed.action.payload || {};
+                    let successMsg = '';
+
+                    if (actionType === 'add_position') {
+                        const targetTicker = (payload.ticker || ticker).toUpperCase();
+                        await supabase.from('positions').insert({
+                            ticker: targetTicker,
+                            entry_price: typeof payload.entry_price === 'number' ? payload.entry_price : null,
+                            shares: typeof payload.shares === 'number' ? payload.shares : 100,
+                            side: payload.side === 'SHORT' ? 'SHORT' : 'LONG',
+                            status: 'OPEN',
+                            opened_at: new Date().toISOString()
+                        });
+                        successMsg = `Successfully added ${targetTicker} to your open positions.`;
+                    }
+                    else if (actionType === 'add_journal_entry') {
+                        const targetTicker = (payload.ticker || ticker).toUpperCase();
+                        await supabase.from('journal_entries').insert({
+                            ticker: targetTicker,
+                            content: payload.content || 'Added via AI Assistant',
+                            entry_type: payload.entry_type || 'MARKET_OBSERVATION',
+                            mood: payload.mood || 'NEUTRAL',
+                            tags: Array.isArray(payload.tags) ? payload.tags : ['ai_note']
+                        });
+                        successMsg = `Successfully saved journal entry for ${targetTicker}.`;
+                    }
+
+                    if (successMsg) {
+                        setMessages(prev => [...prev, {
+                            role: 'system',
+                            content: successMsg,
+                            timestamp: new Date(),
+                        }]);
+                    }
+                } catch (actionErr: any) {
+                    console.error('Failed to execute AI action:', actionErr);
+                    setMessages(prev => [...prev, {
+                        role: 'system',
+                        content: `Failed to execute action: ${actionErr.message}`,
+                        timestamp: new Date(),
+                    }]);
+                }
+            }
+
+        } catch (err) {
+            console.error('Chat error:', err);
             setMessages(prev => [...prev, {
-                role: 'assistant',
+                role: 'system',
                 content: 'An unexpected error occurred. Please try again.',
                 timestamp: new Date(),
             }]);
@@ -240,10 +337,13 @@ Respond conversationally but with precision. Reference specific data points from
                                     )}
                                     <div className={`max-w-[80%] px-3.5 py-2.5 rounded-xl text-sm leading-relaxed ${msg.role === 'user'
                                         ? 'bg-blue-600/20 text-sentinel-100 rounded-br-sm border border-blue-500/20'
-                                        : 'bg-sentinel-900/80 text-sentinel-200 rounded-bl-sm border border-sentinel-800/50'
+                                        : msg.role === 'system'
+                                            ? 'bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20 text-xs flex items-center gap-2'
+                                            : 'bg-sentinel-900/80 text-sentinel-200 rounded-bl-sm border border-sentinel-800/50'
                                         }`}
                                         style={{ whiteSpace: 'pre-wrap' }}
                                     >
+                                        {msg.role === 'system' && <CheckCircle2 className="w-3.5 h-3.5" />}
                                         {msg.content}
                                     </div>
                                     {msg.role === 'user' && (
