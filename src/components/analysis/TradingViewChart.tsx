@@ -5,7 +5,7 @@
  * Dark theme matches the Sentinel aesthetic.
  */
 
-import React, { useEffect, useRef, memo } from 'react';
+import React, { useEffect, memo } from 'react';
 
 interface TradingViewChartProps {
     ticker: string;
@@ -13,65 +13,67 @@ interface TradingViewChartProps {
 }
 
 const TradingViewChartInner: React.FC<TradingViewChartProps> = ({ ticker, height = 500 }) => {
-    const containerRef = useRef<HTMLDivElement>(null);
+    const containerId = `tv_chart_${ticker.replace(/[^a-zA-Z0-9]/g, '')}`;
 
     useEffect(() => {
-        if (!containerRef.current || !ticker) return;
+        if (!ticker) return;
 
-        // Clear previous widget
-        containerRef.current.innerHTML = '';
-
-        const script = document.createElement('script');
-        script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js';
-        script.type = 'text/javascript';
-        script.async = true;
-        script.innerHTML = JSON.stringify({
-            autosize: true,
-            symbol: ticker,
-            interval: 'D',
-            timezone: 'America/New_York',
-            theme: 'dark',
-            style: '1', // Candlestick
-            locale: 'en',
-            backgroundColor: 'rgba(10, 10, 10, 1)',
-            gridColor: 'rgba(30, 30, 50, 0.3)',
-            hide_top_toolbar: false,
-            hide_legend: false,
-            save_image: false,
-            calendar: false,
-            hide_volume: false,
-            support_host: 'https://www.tradingview.com',
-            allow_symbol_change: true,
-            studies: ['RSI@tv-basicstudies', 'MASimple@tv-basicstudies'],
-            withdateranges: true,
-        });
-
-        containerRef.current.appendChild(script);
-
-        return () => {
-            if (containerRef.current) {
-                containerRef.current.innerHTML = '';
+        const initWidget = () => {
+            if (typeof (window as any).TradingView !== 'undefined') {
+                new (window as any).TradingView.widget({
+                    autosize: true,
+                    symbol: ticker,
+                    interval: 'D',
+                    timezone: 'America/New_York',
+                    theme: 'dark',
+                    style: '1', // Candlestick
+                    locale: 'en',
+                    backgroundColor: 'rgba(10, 10, 10, 1)',
+                    gridColor: 'rgba(30, 30, 50, 0.3)',
+                    hide_top_toolbar: false,
+                    hide_legend: false,
+                    save_image: false,
+                    container_id: containerId,
+                    allow_symbol_change: true,
+                    studies: ['RSI@tv-basicstudies', 'MASimple@tv-basicstudies'],
+                });
             }
         };
-    }, [ticker]);
+
+        // Check if script already exists to avoid duplicate loads
+        let script = document.getElementById('tradingview-widget-script') as HTMLScriptElement;
+
+        if (!script) {
+            script = document.createElement('script');
+            script.id = 'tradingview-widget-script';
+            script.src = 'https://s3.tradingview.com/tv.js';
+            script.type = 'text/javascript';
+            script.async = true;
+            script.onload = initWidget;
+            document.head.appendChild(script);
+        } else {
+            // If already loaded, just initialize our widget
+            initWidget();
+        }
+
+        return () => {
+            // Cleanup on unmount (TradingView container contents)
+            const container = document.getElementById(containerId);
+            if (container) {
+                container.innerHTML = '';
+            }
+        };
+    }, [ticker, containerId]);
 
     if (!ticker) return null;
 
     return (
         <div className="glass-panel rounded-xl overflow-hidden border border-sentinel-800/50 relative w-full" style={{ height: `${height}px` }}>
-            {/* 
-              TradingView injects an iframe. We must force it to fill the container.
-              We use a style block to target the deeply injected iframe.
-            */}
-            <style dangerouslySetInnerHTML={{
-                __html: `
-                .tradingview-widget-container { height: 100% !important; width: 100% !important; }
-                .tradingview-widget-container iframe { height: 100% !important; width: 100% !important; }
-            `}} />
-
+            {/* Dark overlay for aesthetic effect */}
             <div className="absolute inset-0 bg-radial-glow opacity-10 pointer-events-none" />
+
             <div
-                ref={containerRef}
+                id={containerId}
                 className="tradingview-widget-container relative z-10 h-full w-full"
             />
         </div>
