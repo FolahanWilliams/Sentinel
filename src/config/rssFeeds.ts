@@ -1,8 +1,10 @@
 /**
  * Sentinel — RSS Feed Definitions
  *
- * Curated list of 42 RSS feeds from the sentinel-spec.
- * Organized by category for the RSS Intelligence system (Patch 8).
+ * Curated list of reliable RSS feeds that work from both residential
+ * and datacenter IPs (via the proxy-rss Edge Function).
+ * Dead/blocked feeds (Reuters, Barron's, Zacks, old SEC) have been
+ * replaced with working alternatives.
  */
 
 export interface RSSFeedConfig {
@@ -14,13 +16,16 @@ export interface RSSFeedConfig {
 
 export const RSS_FEEDS: RSSFeedConfig[] = [
     // === Market-Moving News ===
-    { name: 'Reuters Business', url: 'https://feeds.reuters.com/reuters/businessNews', category: 'market_moving', priority: 'high' },
+    // Reuters legacy feed is dead — replaced with Google News RSS for business
+    { name: 'Google News Business', url: 'https://news.google.com/rss/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx6TVdZU0FtVnVHZ0pWVXlnQVAB', category: 'market_moving', priority: 'high' },
     { name: 'Bloomberg Markets', url: 'https://feeds.bloomberg.com/markets/news.rss', category: 'market_moving', priority: 'high' },
     { name: 'CNBC Top News', url: 'https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114', category: 'market_moving', priority: 'high' },
     { name: 'MarketWatch', url: 'https://feeds.marketwatch.com/marketwatch/topstories/', category: 'market_moving', priority: 'high' },
     { name: 'WSJ Markets', url: 'https://feeds.a.dj.com/rss/RSSMarketsMain.xml', category: 'market_moving', priority: 'high' },
     { name: 'Financial Times', url: 'https://www.ft.com/rss/home', category: 'market_moving', priority: 'high' },
     { name: 'Yahoo Finance', url: 'https://finance.yahoo.com/news/rssindex', category: 'market_moving', priority: 'medium' },
+    // Google News "Stock Market" topic for additional coverage
+    { name: 'Google News Markets', url: 'https://news.google.com/rss/search?q=stock+market+when:1d&hl=en-US&gl=US&ceid=US:en', category: 'market_moving', priority: 'medium' },
 
     // === Tech & AI ===
     { name: 'TechCrunch', url: 'https://techcrunch.com/feed/', category: 'tech_ai', priority: 'high' },
@@ -40,8 +45,8 @@ export const RSS_FEEDS: RSSFeedConfig[] = [
 
     // === Semiconductor & Hardware ===
     { name: 'SemiAnalysis', url: 'https://www.semianalysis.com/feed', category: 'semiconductors', priority: 'high' },
-    { name: 'AnandTech', url: 'https://www.anandtech.com/rss/', category: 'semiconductors', priority: 'medium' },
-    { name: 'Tom\'s Hardware', url: 'https://www.tomshardware.com/feeds/all', category: 'semiconductors', priority: 'low' },
+    // AnandTech shut down in 2024 — replaced with Tom's Hardware
+    { name: 'Tom\'s Hardware', url: 'https://www.tomshardware.com/feeds/all', category: 'semiconductors', priority: 'medium' },
     { name: 'EE Times', url: 'https://www.eetimes.com/feed/', category: 'semiconductors', priority: 'medium' },
 
     // === Cybersecurity ===
@@ -63,20 +68,24 @@ export const RSS_FEEDS: RSSFeedConfig[] = [
     // === Analyst/Editorial ===
     { name: 'Seeking Alpha', url: 'https://seekingalpha.com/market_currents.xml', category: 'analyst', priority: 'medium' },
     { name: 'Motley Fool', url: 'https://www.fool.com/feeds/index.aspx', category: 'analyst', priority: 'low' },
-    { name: 'Barron\'s', url: 'https://www.barrons.com/arcio/rss/', category: 'analyst', priority: 'medium' },
+    // Barron's blocked (403) — replaced with Investor's Business Daily
+    { name: 'Investor\'s Business Daily', url: 'https://www.investors.com/feed/', category: 'analyst', priority: 'medium' },
 
     // === Social Sentiment ===
     { name: 'Reddit r/wallstreetbets', url: 'https://www.reddit.com/r/wallstreetbets/.rss', category: 'social', priority: 'low' },
     { name: 'Reddit r/stocks', url: 'https://www.reddit.com/r/stocks/.rss', category: 'social', priority: 'low' },
     { name: 'Reddit r/investing', url: 'https://www.reddit.com/r/investing/.rss', category: 'social', priority: 'low' },
 
-    // === SEC Filings ===
-    { name: 'SEC EDGAR Full-Text', url: 'https://efts.sec.gov/LATEST/search-index?q=%22material%20weakness%22&dateRange=custom&startdt=2024-01-01&forms=8-K', category: 'regulatory', priority: 'high' },
-    { name: 'SEC Press Releases', url: 'https://www.sec.gov/rss/news/press.xml', category: 'regulatory', priority: 'high' },
+    // === SEC & Regulatory ===
+    // SEC press.xml returns 403 — replaced with SEC EDGAR RSS feed for recent filings
+    { name: 'SEC EDGAR Filings', url: 'https://efts.sec.gov/LATEST/search-index?q=%228-K%22&dateRange=custom&startdt=2025-01-01&forms=8-K&from=0&size=20', category: 'regulatory', priority: 'high' },
+    // Google News "SEC" topic for regulatory news
+    { name: 'Google News SEC', url: 'https://news.google.com/rss/search?q=SEC+filing+regulation+when:7d&hl=en-US&gl=US&ceid=US:en', category: 'regulatory', priority: 'medium' },
 
     // === Earnings & Data ===
     { name: 'Earnings Whispers', url: 'https://www.earningswhispers.com/rss', category: 'earnings', priority: 'high' },
-    { name: 'Zacks Earnings', url: 'https://www.zacks.com/feeds/mergedFeed_zacks.xml', category: 'earnings', priority: 'medium' },
+    // Zacks feed is 404 — replaced with Nasdaq earnings news
+    { name: 'Nasdaq Earnings', url: 'https://www.nasdaq.com/feed/rssoutbound?category=Earnings', category: 'earnings', priority: 'medium' },
 ];
 
 export const RSS_CATEGORIES = [

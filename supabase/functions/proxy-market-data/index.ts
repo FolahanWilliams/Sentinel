@@ -38,9 +38,10 @@ serve(async (req) => {
         }
 
         // 2. Parse Request
-        const { endpoint, ticker } = await req.json()
+        const { endpoint, ticker, tickerParam } = await req.json()
         if (!endpoint) throw new Error('Missing endpoint')
-        if (!ticker) throw new Error('Missing ticker')
+        // ticker is required for 'quote' but optional for 'news_sentiment'
+        if (endpoint === 'quote' && !ticker) throw new Error('Missing ticker')
 
         // 3. Load Secrets
         const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
@@ -53,7 +54,7 @@ serve(async (req) => {
         }
 
         const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
-        console.log(`[proxy-market-data] ${endpoint} for ${ticker}`)
+        console.log(`[proxy-market-data] ${endpoint} for ${ticker || 'general'}`)
 
         const startTime = Date.now()
         let responseData: any = null
@@ -151,6 +152,24 @@ serve(async (req) => {
                     lastUpdated: new Date().toISOString()
                 } as Quote
             }
+        } else if (endpoint === 'news_sentiment') {
+            // ── Alpha Vantage NEWS_SENTIMENT endpoint ──
+            if (!ALPHA_VANTAGE_KEY) {
+                throw new Error('No Alpha Vantage API key configured for news sentiment')
+            }
+
+            // Build the API URL with optional ticker/topic parameters
+            const extraParams = tickerParam || '&topics=financial_markets,earnings,technology'
+            const newsUrl = `https://www.alphavantage.co/query?function=NEWS_SENTIMENT${extraParams}&apikey=${ALPHA_VANTAGE_KEY}&sort=LATEST&limit=50`
+            console.log(`[proxy-market-data] Fetching AV News Sentiment`)
+
+            const newsRes = await fetch(newsUrl)
+            if (!newsRes.ok) {
+                throw new Error(`Alpha Vantage NEWS_SENTIMENT returned ${newsRes.status}`)
+            }
+
+            const newsData = await newsRes.json()
+            responseData = newsData  // Return the raw AV response (contains .feed array)
         } else {
             throw new Error(`Unsupported endpoint: ${endpoint}`)
         }

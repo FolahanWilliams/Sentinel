@@ -15,6 +15,7 @@ import { MarketDataService } from './marketData';
 import { AgentService } from './agents';
 import { NotificationService } from './notifications';
 import { RSSReaderService } from './rssReader';
+import { AlphaVantageNewsService } from './alphaVantageNews';
 import { OutcomeTracker } from './outcomeTracker';
 import { PositionSizer } from './positionSizer';
 import { performanceStats } from './performanceStats';
@@ -208,8 +209,15 @@ export class ScannerService {
                 return `${t.ticker}(${t.priority}${src})`;
             }).join(', '));
 
-            // 3. Sync RSS Feeds (Feed the beast)
+            // 3. Sync RSS Feeds + Alpha Vantage News (Feed the beast)
             await RSSReaderService.syncAllFeeds();
+
+            // 3a. Also pull Alpha Vantage sentiment-tagged news for watched tickers
+            try {
+                await AlphaVantageNewsService.fetchAndCacheNews(tickers.slice(0, 5));
+            } catch (avErr) {
+                console.warn('[Scanner] Alpha Vantage news fetch failed (non-fatal):', avErr);
+            }
 
             // 3b. Build performance context from past signal outcomes
             // This gets injected into agent prompts so they learn from accuracy history
