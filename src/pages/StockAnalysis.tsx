@@ -19,6 +19,7 @@ import { NewsFeed } from '@/components/dashboard/NewsFeed';
 import { AnalystChat } from '@/components/analysis/AnalystChat';
 import { formatPrice } from '@/utils/formatters';
 import type { Quote } from '@/types/market';
+import { motion } from 'framer-motion';
 
 // Storage keys
 const STORAGE_KEYS = {
@@ -198,7 +199,13 @@ export function StockAnalysis() {
                 <div className="space-y-6">
 
                     {/* Quote Header Card */}
-                    <div className="glass-panel rounded-xl p-6">
+                    <motion.div
+                        className="glass-panel rounded-xl p-6"
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.3 }}
+                        whileHover={{ y: -2, transition: { duration: 0.2 } }}
+                    >
                         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                             <div className="flex items-center gap-4">
                                 <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-blue-600/20 to-purple-600/20 flex items-center justify-center ring-1 ring-blue-500/20">
@@ -270,7 +277,7 @@ export function StockAnalysis() {
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    </motion.div>
 
                     {/* TradingView Interactive Chart */}
                     <TradingViewChart ticker={activeTicker} height={600} />
@@ -312,7 +319,12 @@ export function StockAnalysis() {
                             />
 
                             {/* Quick Actions */}
-                            <div className="glass-panel p-5 rounded-xl">
+                            <motion.div
+                                className="glass-panel p-5 rounded-xl"
+                                initial={{ opacity: 0, scale: 0.98 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                transition={{ duration: 0.3, delay: 0.2 }}
+                            >
                                 <h3 className="text-sm font-semibold text-sentinel-300 uppercase tracking-wider mb-3">
                                     Quick Actions
                                 </h3>
@@ -332,7 +344,7 @@ export function StockAnalysis() {
                                         <ExternalLink className="w-4 h-4" /> View on Yahoo Finance
                                     </a>
                                 </div>
-                            </div>
+                            </motion.div>
                         </div>
                     </div>
                 </div>

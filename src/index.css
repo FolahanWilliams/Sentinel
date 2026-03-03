@@ -238,6 +238,75 @@ body {
   animation: signal-enter 0.5s ease-out;
 }
 
+/* Liquid Glass Animation */
+@keyframes mesh-gradient {
+  0% {
+    background-position: 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%;
+  }
+
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes float-orb-1 {
+  0% {
+    transform: scale(1) translate(0, 0);
+  }
+
+  33% {
+    transform: scale(1.1) translate(30px, -50px);
+  }
+
+  66% {
+    transform: scale(0.9) translate(-20px, 20px);
+  }
+
+  100% {
+    transform: scale(1) translate(0, 0);
+  }
+}
+
+@keyframes float-orb-2 {
+  0% {
+    transform: scale(1) translate(0, 0);
+  }
+
+  33% {
+    transform: scale(1.2) translate(-30px, 50px);
+  }
+
+  66% {
+    transform: scale(0.8) translate(20px, -20px);
+  }
+
+  100% {
+    transform: scale(1) translate(0, 0);
+  }
+}
+
+@keyframes float-orb-3 {
+  0% {
+    transform: scale(1) translate(0, 0);
+  }
+
+  33% {
+    transform: scale(0.9) translate(50px, 20px);
+  }
+
+  66% {
+    transform: scale(1.1) translate(-50px, -20px);
+  }
+
+  100% {
+    transform: scale(1) translate(0, 0);
+  }
+}
+
 /* ===========================
    UTILITY CLASSES
    =========================== */
@@ -334,42 +403,131 @@ body {
 }
 
 /* ===========================
-   ATMOSPHERIC UTILITIES
+   ATMOSPHERIC UTILITIES (LIQUID GLASS)
    =========================== */
+
+/* Base pseudo-element noise mixin */
+.glass-noise::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  opacity: 0.04;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+  border-radius: inherit;
+  z-index: -1;
+}
 
 /* Frosted glass effect for premium cards */
 .glass-panel {
-  background-color: rgba(20, 22, 32, 0.25);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.04);
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2), inset 0 1px 0 0 rgba(255, 255, 255, 0.01);
-  transition: all 0.3s ease;
+  position: relative;
+  background-color: rgba(20, 22, 32, 0.45);
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  /* Specular white/tinted top-left edge */
+  border: 1px solid transparent;
+  background-clip: padding-box;
+  box-shadow:
+    0 4px 30px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.1),
+    inset 1px 0 0 0 rgba(255, 255, 255, 0.05),
+    inset 0 -1px 0 0 rgba(255, 255, 255, 0.02);
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  z-index: 1;
+}
+
+.glass-panel::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  opacity: 0.04;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+  border-radius: inherit;
+  z-index: -1;
 }
 
 .glass-panel:hover {
-  background-color: rgba(30, 33, 48, 0.35);
-  border-color: rgba(255, 255, 255, 0.08);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25), inset 0 1px 0 0 rgba(255, 255, 255, 0.03);
+  background-color: rgba(30, 33, 48, 0.55);
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.15),
+    inset 1px 0 0 0 rgba(255, 255, 255, 0.08),
+    inset 0 -1px 0 0 rgba(255, 255, 255, 0.03);
 }
 
 .glass-panel-heavy {
-  background-color: rgba(11, 12, 16, 0.75);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3), inset 0 1px 0 0 rgba(255, 255, 255, 0.02);
+  position: relative;
+  background-color: rgba(11, 12, 16, 0.85);
+  backdrop-filter: blur(32px) saturate(180%);
+  -webkit-backdrop-filter: blur(32px) saturate(180%);
+  border: 1px solid transparent;
+  background-clip: padding-box;
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.08),
+    inset 1px 0 0 0 rgba(255, 255, 255, 0.04);
+  z-index: 1;
 }
 
-/* Ambient glows */
+.glass-panel-heavy::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  opacity: 0.05;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+  border-radius: inherit;
+  z-index: -1;
+}
+
+/* Ambient liquid glows */
 .main-ambient-background {
-  /* Dynamic glowing orbs scattered in the corners and center */
-  background:
-    radial-gradient(circle at 15% 10%, rgba(59, 130, 246, 0.08) 0%, transparent 40%),
-    radial-gradient(circle at 85% 20%, rgba(139, 92, 246, 0.08) 0%, transparent 40%),
-    radial-gradient(circle at 50% 80%, rgba(16, 185, 129, 0.05) 0%, transparent 50%),
-    var(--color-bg-primary);
-  background-attachment: fixed;
+  position: relative;
+  background-color: var(--color-bg-primary);
+  overflow: hidden;
+}
+
+.main-ambient-background::before,
+.main-ambient-background::after,
+.main-ambient-background .orb-3 {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(100px);
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+.main-ambient-background::before {
+  top: -10%;
+  left: -10%;
+  width: 50vw;
+  height: 50vw;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, transparent 60%);
+  animation: float-orb-1 20s ease-in-out infinite;
+}
+
+.main-ambient-background::after {
+  bottom: -10%;
+  right: -10%;
+  width: 60vw;
+  height: 60vw;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.12) 0%, transparent 60%);
+  animation: float-orb-2 25s ease-in-out infinite reverse;
 }
 
 /* Subtle dot grid pattern */

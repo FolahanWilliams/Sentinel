@@ -1,6 +1,7 @@
 import { ArrowUpRight, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { useMarketTrends } from '@/hooks/useMarketTrends';
 import { usePotentialSignals } from '@/hooks/usePotentialSignals';
+import { motion } from 'framer-motion';
 
 export function MarketTrends() {
     const { data, loading } = useMarketTrends();
@@ -29,7 +30,11 @@ export function MarketTrends() {
                 </div>
             ) : (
                 <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-sentinel-800/30 rounded-lg p-4">
+                    <motion.div
+                        className="bg-sentinel-800/30 rounded-lg p-4"
+                        whileHover={{ y: -2, backgroundColor: "rgba(31, 34, 51, 0.4)" }}
+                        transition={{ duration: 0.2 }}
+                    >
                         <div className="flex justify-between items-center mb-3">
                             <h3 className="text-sm font-semibold text-sentinel-100">Mid-Term</h3>
                             <span className="text-xs text-sentinel-400">1-3 mo</span>
@@ -42,9 +47,13 @@ export function MarketTrends() {
                                 </div>
                             ))}
                         </div>
-                    </div>
+                    </motion.div>
 
-                    <div className="bg-sentinel-800/30 rounded-lg p-4">
+                    <motion.div
+                        className="bg-sentinel-800/30 rounded-lg p-4"
+                        whileHover={{ y: -2, backgroundColor: "rgba(31, 34, 51, 0.4)" }}
+                        transition={{ duration: 0.2 }}
+                    >
                         <div className="flex justify-between items-center mb-3">
                             <h3 className="text-sm font-semibold text-sentinel-100">Long-Term</h3>
                             <span className="text-xs text-sentinel-400">6-12 mo</span>
@@ -57,7 +66,7 @@ export function MarketTrends() {
                                 </div>
                             ))}
                         </div>
-                    </div>
+                    </motion.div>
                 </div>
             )}
         </div>
@@ -90,7 +99,12 @@ export function PotentialSignals() {
             ) : (
                 <div className="grid grid-cols-3 gap-3">
                     {signals.map((signal, i) => (
-                        <div key={i} className="bg-sentinel-800/30 rounded-lg p-3 hover:bg-sentinel-800/50 transition-colors cursor-pointer relative group">
+                        <motion.div
+                            key={i}
+                            className="bg-sentinel-800/30 rounded-lg p-3 hover:bg-sentinel-800/50 transition-colors cursor-pointer relative group"
+                            whileHover={{ y: -2, backgroundColor: "rgba(31, 34, 51, 0.4)" }}
+                            transition={{ duration: 0.2 }}
+                        >
                             <ArrowUpRight className="w-3 h-3 text-sentinel-500 absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity" />
                             <div className="text-sm font-semibold text-sentinel-100">{signal.source}</div>
                             <div className="text-xs text-sentinel-400 mb-2">{signal.sourceLabel}</div>
@@ -100,7 +114,7 @@ export function PotentialSignals() {
                                 <span className="text-xs text-sentinel-300">{signal.detail}</span>
                             </div>
                             <div className="text-xs text-sentinel-500 mt-1">{signal.meta}</div>
-                        </div>
+                        </motion.div>
                     ))}
                 </div>
             )}
