@@ -3,6 +3,7 @@ import { X, Radar, Search, Loader2, AlertCircle, CheckCircle, Activity, Clock, C
 import { Link } from 'react-router-dom';
 import { ScannerService } from '@/services/scanner';
 import { useScannerLogs } from '@/hooks/useScannerLogs';
+import { MagneticButton } from '@/components/shared/MagneticButton';
 
 interface ScannerDrawerProps {
     isOpen: boolean;
@@ -70,11 +71,11 @@ export function ScannerDrawer({ isOpen, onClose, prefillTicker }: ScannerDrawerP
                 />
             )}
 
-            {/* Drawer Panel */}
+            {/* Drawer Panel — glass-panel-light for overlay clarity */}
             <div className={`
                 fixed top-0 right-0 h-full w-full max-w-md z-50
-                bg-sentinel-950 border-l border-sentinel-700/50
-                transform transition-transform duration-300 ease-in-out
+                glass-panel-light border-l border-sentinel-700/50
+                transform transition-all duration-300 ease-in-out
                 ${isOpen ? 'translate-x-0' : 'translate-x-full'}
                 flex flex-col
             `}>
@@ -108,14 +109,14 @@ export function ScannerDrawer({ isOpen, onClose, prefillTicker }: ScannerDrawerP
                                     type="text"
                                     value={ticker}
                                     onChange={(e) => setTicker(e.target.value)}
-                                    className="block w-full pl-9 pr-3 py-2.5 border border-sentinel-700 rounded-lg bg-sentinel-900 text-white placeholder-sentinel-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 uppercase font-mono font-medium text-sm"
+                                    className="block w-full pl-9 pr-3 py-2.5 border border-sentinel-700 rounded-lg bg-sentinel-950/60 text-white placeholder-sentinel-500 focus:outline-none uppercase font-mono font-medium text-sm glass-input-recessed glass-focus-ring"
                                     placeholder="AAPL"
                                     maxLength={5}
                                     disabled={isScanning}
                                     autoFocus={isOpen}
                                 />
                             </div>
-                            <button
+                            <MagneticButton
                                 type="submit"
                                 disabled={isScanning || !ticker.trim()}
                                 className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors border-none cursor-pointer"
@@ -125,7 +126,7 @@ export function ScannerDrawer({ isOpen, onClose, prefillTicker }: ScannerDrawerP
                                 ) : (
                                     'Scan'
                                 )}
-                            </button>
+                            </MagneticButton>
                         </form>
 
                         {error && (

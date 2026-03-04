@@ -5,11 +5,12 @@
  * Upgraded with framer-motion for fluid active-state gliding.
  */
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
 import { useScannerLogs } from '@/hooks/useScannerLogs';
 import { motion } from 'framer-motion';
+import { CursorGlow } from '@/components/shared/CursorGlow';
 import {
     LayoutDashboard,
     List,
@@ -41,6 +42,7 @@ export function Sidebar() {
     const [collapsed, setCollapsed] = useState(false);
     const { logs } = useScannerLogs(1);
     const location = useLocation();
+    const sidebarRef = useRef<HTMLElement>(null);
 
     const latestLog = logs[0];
     const isScanning = latestLog?.status === 'running';
@@ -51,9 +53,13 @@ export function Sidebar() {
 
     return (
         <aside
+            ref={sidebarRef}
             className={`flex flex-col h-screen sticky top-0 transition-all duration-300 z-50 glass-panel-heavy border-l-0 border-t-0 border-b-0 ${collapsed ? 'w-[72px]' : 'w-[240px]'
                 }`}
         >
+            {/* Cursor proximity glow */}
+            <CursorGlow containerRef={sidebarRef} color="rgba(59, 130, 246, 0.06)" size={250} />
+
             {/* Logo area */}
             <div className="flex items-center gap-3 px-5 py-6 h-20 border-b border-white/5">
                 <div className="relative flex items-center justify-center w-8 h-8 rounded-lg bg-blue-500/10 ring-1 ring-blue-500/20 shrink-0">
@@ -89,7 +95,12 @@ export function Sidebar() {
                             {isActive && (
                                 <motion.div
                                     layoutId="sidebar-active-pill"
-                                    className="absolute inset-0 bg-blue-500/10 border border-blue-500/20 rounded-xl"
+                                    className="absolute inset-0 bg-blue-500/12 border border-blue-500/20 rounded-xl"
+                                    style={{
+                                        backdropFilter: 'blur(8px)',
+                                        WebkitBackdropFilter: 'blur(8px)',
+                                        boxShadow: 'inset 0 1px 0 0 rgba(255,255,255,0.2), 0 0 12px rgba(59,130,246,0.15)',
+                                    }}
                                     transition={{ type: 'spring', stiffness: 350, damping: 30 }}
                                 />
                             )}

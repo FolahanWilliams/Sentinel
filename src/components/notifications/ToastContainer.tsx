@@ -44,8 +44,17 @@ export function ToastContainer() {
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 20, scale: 0.95 }}
                         transition={{ type: 'spring', stiffness: 350, damping: 30 }}
-                        className="bg-sentinel-950/95 rounded-xl border border-sentinel-800/60 shadow-2xl shadow-black/50 backdrop-blur-xl overflow-hidden"
+                        className="bg-sentinel-950/95 rounded-xl border border-sentinel-800/60 shadow-2xl shadow-black/50 backdrop-blur-xl overflow-hidden relative"
                     >
+                        {/* Surface ripple on entry */}
+                        <motion.div
+                            initial={{ scale: 0, opacity: 0.15 }}
+                            animate={{ scale: 4, opacity: 0 }}
+                            transition={{ duration: 0.4, ease: 'easeOut' }}
+                            className="absolute left-0 top-1/2 w-10 h-10 rounded-full pointer-events-none"
+                            style={{ background: 'rgba(255, 255, 255, 0.05)', transformOrigin: 'center' }}
+                        />
+
                         {/* Gradient stripe */}
                         <div className={`h-0.5 bg-gradient-to-r ${TOAST_BAR_COLORS[toast.type]}`} />
 
