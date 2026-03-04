@@ -1,12 +1,24 @@
-import React, { useState } from 'react';
-import { Search, Loader2, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Search, Loader2, AlertCircle, Newspaper } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { ScannerService } from '@/services/scanner';
 
-export const ManualScanForm: React.FC = () => {
-    const [ticker, setTicker] = useState('');
+interface ManualScanFormProps {
+    initialTicker?: string;
+}
+
+export const ManualScanForm: React.FC<ManualScanFormProps> = ({ initialTicker }) => {
+    const [ticker, setTicker] = useState(initialTicker || '');
     const [isScanning, setIsScanning] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
+    const [lastScannedTicker, setLastScannedTicker] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (initialTicker) {
+            setTicker(initialTicker.toUpperCase());
+        }
+    }, [initialTicker]);
 
     const handleManualScan = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -23,12 +35,14 @@ export const ManualScanForm: React.FC = () => {
             const result = await ScannerService.runSingleTickerScan(cleanTicker, true);
             if (result.success) {
                 setSuccess(result.summary || `Scan complete for ${cleanTicker}`);
+                setLastScannedTicker(cleanTicker);
                 setTicker('');
             } else {
                 setError(`Scan failed: ${result.error}`);
             }
-        } catch (err: any) {
-            setError(`Error: ${err.message}`);
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : 'Unknown error';
+            setError(`Error: ${message}`);
         } finally {
             setIsScanning(false);
         }
@@ -78,7 +92,16 @@ export const ManualScanForm: React.FC = () => {
 
             {success && (
                 <div className="mt-4 p-3 bg-green-900/40 border border-green-800 rounded text-green-300 text-sm">
-                    {success}
+                    <div>{success}</div>
+                    {lastScannedTicker && (
+                        <Link
+                            to={`/intelligence?scan=${lastScannedTicker}`}
+                            className="inline-flex items-center gap-1.5 mt-2 text-xs text-indigo-300 hover:text-indigo-200 transition-colors"
+                        >
+                            <Newspaper className="w-3 h-3" />
+                            View {lastScannedTicker} in Intelligence
+                        </Link>
+                    )}
                 </div>
             )}
         </div>

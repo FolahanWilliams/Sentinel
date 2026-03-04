@@ -1,12 +1,19 @@
 import type { ProcessedArticle } from '@/types/sentinel';
 import { CATEGORY_COLORS, SENTIMENT_COLORS, IMPACT_STYLES, formatTimeAgo } from '@/utils/sentinel-helpers';
-import { ExternalLink, Tag, TrendingUp, TrendingDown, Activity } from 'lucide-react';
+import { ExternalLink, Tag, TrendingUp, TrendingDown, Activity, Radar } from 'lucide-react';
 
 interface ArticleCardProps {
     article: ProcessedArticle;
+    onScanTicker?: (ticker: string) => void;
 }
 
-export function ArticleCard({ article }: ArticleCardProps) {
+export function ArticleCard({ article, onScanTicker }: ArticleCardProps) {
+
+    // Collect unique tickers from signals for the scan action
+    const uniqueTickers = article.signals
+        ?.filter(s => s.ticker)
+        .map(s => s.ticker!.toUpperCase())
+        .filter((t, i, arr) => arr.indexOf(t) === i) || [];
 
     return (
         <div className={`
@@ -34,7 +41,7 @@ export function ArticleCard({ article }: ArticleCardProps) {
 
                 <div className="flex items-center text-xs text-sentinel-500 space-x-3 font-mono">
                     <span>{article.source}</span>
-                    <span>•</span>
+                    <span>&bull;</span>
                     <span>{formatTimeAgo(article.pub_date)}</span>
                 </div>
             </div>
@@ -81,14 +88,14 @@ export function ArticleCard({ article }: ArticleCardProps) {
                                         {signal.direction === 'volatile' && <Activity className="h-3.5 w-3.5" />}
                                     </div>
 
-                                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                                    <div className="flex flex-wrap items-center gap-2 text-xs flex-1">
                                         {signal.ticker && (
                                             <span className="font-bold text-sentinel-200">${signal.ticker}</span>
                                         )}
                                         <span className="text-sentinel-400 font-medium uppercase tracking-wider text-[10px]">
                                             {signal.type.replace('_', ' ')}
                                         </span>
-                                        <span className="text-sentinel-300 hidden sm:inline">•</span>
+                                        <span className="text-sentinel-300 hidden sm:inline">&bull;</span>
                                         <span className="text-sentinel-300">{signal.note}</span>
                                         <span className="text-sentinel-500 font-mono ml-auto sm:ml-2 text-[10px]">
                                             {Math.round(signal.confidence * 100)}% conf
@@ -100,16 +107,36 @@ export function ArticleCard({ article }: ArticleCardProps) {
                     )}
                 </div>
 
-                {/* Read Pattern */}
-                <a
-                    href={article.link}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="shrink-0 inline-flex items-center justify-center gap-2 px-4 py-2 bg-sentinel-700/30 hover:bg-sentinel-700/60 text-sentinel-200 text-sm font-medium rounded-lg border border-sentinel-700/50 transition-colors"
-                >
-                    Read Source
-                    <ExternalLink className="h-4 w-4" />
-                </a>
+                {/* Actions */}
+                <div className="shrink-0 flex flex-col gap-2">
+                    {/* Scan Ticker Buttons */}
+                    {onScanTicker && uniqueTickers.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 justify-end">
+                            {uniqueTickers.map(t => (
+                                <button
+                                    key={t}
+                                    onClick={() => onScanTicker(t)}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600/15 hover:bg-indigo-600/30 text-indigo-300 text-xs font-medium rounded-lg border border-indigo-500/25 transition-colors cursor-pointer"
+                                    title={`Scan ${t}`}
+                                >
+                                    <Radar className="h-3 w-3" />
+                                    Scan ${t}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Read Source */}
+                    <a
+                        href={article.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-sentinel-700/30 hover:bg-sentinel-700/60 text-sentinel-200 text-sm font-medium rounded-lg border border-sentinel-700/50 transition-colors"
+                    >
+                        Read Source
+                        <ExternalLink className="h-4 w-4" />
+                    </a>
+                </div>
 
             </div>
         </div>

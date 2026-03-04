@@ -1,21 +1,42 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useSentinel } from '@/hooks/useSentinel';
 import { BriefingBar } from './BriefingBar';
 import { FilterBar } from './FilterBar';
 import { ArticleCard } from './ArticleCard';
 import { SignalsSidebar } from './SignalsSidebar';
 import { SentinelSkeleton } from './SentinelSkeleton';
+import { ScannerDrawer } from './ScannerDrawer';
 import type { ArticleCategory } from '@/types/sentinel';
-import { RefreshCw, AlertCircle } from 'lucide-react';
+import { RefreshCw, AlertCircle, Radar } from 'lucide-react';
 
 export function SentinelPanel() {
     const { data, loading, error, isRefreshing } = useSentinel();
+    const [searchParams, setSearchParams] = useSearchParams();
 
     // Filter State
     const [searchQuery, setSearchQuery] = useState('');
     const [activeCategories, setActiveCategories] = useState<Set<ArticleCategory>>(new Set());
     const [activeSentiment, setActiveSentiment] = useState<'all' | 'bullish' | 'bearish'>('all');
     const [highImpactOnly, setHighImpactOnly] = useState(false);
+
+    // Scanner Drawer State
+    const [drawerOpen, setDrawerOpen] = useState(() => !!searchParams.get('scan'));
+    const [drawerTicker, setDrawerTicker] = useState<string>(() => searchParams.get('scan') || '');
+
+    const openScanDrawer = useCallback((ticker?: string) => {
+        setDrawerTicker(ticker || '');
+        setDrawerOpen(true);
+        if (ticker) {
+            setSearchParams(prev => { prev.set('scan', ticker); return prev; }, { replace: true });
+        }
+    }, [setSearchParams]);
+
+    const closeScanDrawer = useCallback(() => {
+        setDrawerOpen(false);
+        setDrawerTicker('');
+        setSearchParams(prev => { prev.delete('scan'); return prev; }, { replace: true });
+    }, [setSearchParams]);
 
     // Derived Client-Side Filtering
     const filteredArticles = useMemo(() => {
@@ -87,17 +108,27 @@ export function SentinelPanel() {
 
                 {/* Left Column: Feed & Filters */}
                 <div className="flex-1 flex flex-col min-w-0">
-                    <div className="mb-4 shrink-0">
-                        <FilterBar
-                            searchQuery={searchQuery}
-                            setSearchQuery={setSearchQuery}
-                            activeCategories={activeCategories}
-                            setActiveCategories={setActiveCategories}
-                            activeSentiment={activeSentiment}
-                            setActiveSentiment={setActiveSentiment}
-                            highImpactOnly={highImpactOnly}
-                            setHighImpactOnly={setHighImpactOnly}
-                        />
+                    <div className="mb-4 shrink-0 flex items-center gap-3">
+                        <div className="flex-1">
+                            <FilterBar
+                                searchQuery={searchQuery}
+                                setSearchQuery={setSearchQuery}
+                                activeCategories={activeCategories}
+                                setActiveCategories={setActiveCategories}
+                                activeSentiment={activeSentiment}
+                                setActiveSentiment={setActiveSentiment}
+                                highImpactOnly={highImpactOnly}
+                                setHighImpactOnly={setHighImpactOnly}
+                            />
+                        </div>
+                        <button
+                            onClick={() => openScanDrawer()}
+                            className="shrink-0 flex items-center gap-2 px-4 py-2 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 text-sm font-medium rounded-lg border border-indigo-500/30 transition-colors cursor-pointer"
+                            title="Open Scanner"
+                        >
+                            <Radar className="w-4 h-4" />
+                            <span className="hidden xl:inline">Quick Scan</span>
+                        </button>
                     </div>
 
                     <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
@@ -107,7 +138,11 @@ export function SentinelPanel() {
                             </div>
                         ) : (
                             filteredArticles.map(article => (
-                                <ArticleCard key={article.id || article.link} article={article} />
+                                <ArticleCard
+                                    key={article.id || article.link}
+                                    article={article}
+                                    onScanTicker={openScanDrawer}
+                                />
                             ))
                         )}
                     </div>
@@ -115,9 +150,16 @@ export function SentinelPanel() {
 
                 {/* Right Column: Aggregated Signals Sidebar */}
                 <div className="w-80 shrink-0 hidden lg:block overflow-y-auto custom-scrollbar">
-                    <SignalsSidebar articles={filteredArticles} />
+                    <SignalsSidebar articles={filteredArticles} onScanTicker={openScanDrawer} />
                 </div>
             </div>
+
+            {/* Scanner Drawer */}
+            <ScannerDrawer
+                isOpen={drawerOpen}
+                onClose={closeScanDrawer}
+                prefillTicker={drawerTicker}
+            />
         </div>
     );
 }
