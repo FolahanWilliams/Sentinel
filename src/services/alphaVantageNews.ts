@@ -53,6 +53,7 @@ export class AlphaVantageNewsService {
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`,
+                    'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
                 },
                 body: JSON.stringify({
                     action: 'news_sentiment',

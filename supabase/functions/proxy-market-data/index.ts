@@ -42,7 +42,8 @@ serve(async (req) => {
         })
 
         // Check if the user is authenticated *if* the gateway let them through but we want to be sure
-        const { data: { user }, error: authError } = await supabaseAuth.auth.getUser()
+        const token = (authHeader || '').replace(/^Bearer\s+/i, '');
+        const { data: { user }, error: authError } = await supabaseAuth.auth.getUser(token)
         if (authError || !user) {
             return new Response(
                 JSON.stringify({ success: false, error: 'Unauthorized', authError: authError?.message }),
