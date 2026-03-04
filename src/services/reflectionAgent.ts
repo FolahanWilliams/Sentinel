@@ -184,7 +184,7 @@ Analyze this data and generate the Lessons Learned rules.`;
                 .from('app_settings')
                 .select('value')
                 .eq('key', 'reflection_lessons')
-                .single();
+                .maybeSingle();
 
             if (error || !data?.value) return '';
 
@@ -222,7 +222,7 @@ Analyze this data and generate the Lessons Learned rules.`;
                 .from('app_settings')
                 .select('value')
                 .eq('key', 'reflection_lessons')
-                .single();
+                .maybeSingle();
 
             if (error || !data?.value) return null;
             return data.value as unknown as ReflectionResult;

@@ -231,6 +231,8 @@ serve(async (req) => {
             }
 
             const newsData = await newsRes.json()
+            console.log(`[proxy-market-data] AV News Response snippet:`, JSON.stringify(newsData).slice(0, 200))
+
             // Phase 2 fix (Audit M11): Wrap in consistent response format
             responseData = { success: true, data: newsData }
 

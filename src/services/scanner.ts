@@ -634,7 +634,6 @@ export class ScannerService {
                 headline: mockHeadline,
                 severity: 8, // Force trigger analysis
                 is_overreaction_candidate: true,
-                source_urls: [],
                 source_type: 'manual'
             } as any, { onConflict: 'ticker,headline', ignoreDuplicates: true });
 
