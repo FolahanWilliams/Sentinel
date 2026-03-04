@@ -1,12 +1,13 @@
 import { useMemo } from 'react';
 import type { ProcessedArticle, SentinelTradingSignal } from '@/types/sentinel';
-import { Target, TrendingUp, TrendingDown, Activity } from 'lucide-react';
+import { Target, TrendingUp, TrendingDown, Activity, Radar } from 'lucide-react';
 
 interface SignalsSidebarProps {
     articles: ProcessedArticle[];
+    onScanTicker?: (ticker: string) => void;
 }
 
-export function SignalsSidebar({ articles }: SignalsSidebarProps) {
+export function SignalsSidebar({ articles, onScanTicker }: SignalsSidebarProps) {
 
     // Aggregate and sort signals from all visible articles
     const aggregatedSignals = useMemo(() => {
@@ -103,9 +104,20 @@ export function SignalsSidebar({ articles }: SignalsSidebarProps) {
                                         {signals.length} {signals.length === 1 ? 'Signal' : 'Signals'}
                                     </span>
                                 </div>
-                                <span className="text-[10px] font-mono text-sentinel-500 block text-right">
-                                    {Math.round(avgConf * 100)}% API Conf
-                                </span>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] font-mono text-sentinel-500">
+                                        {Math.round(avgConf * 100)}%
+                                    </span>
+                                    {onScanTicker && (
+                                        <button
+                                            onClick={() => onScanTicker(ticker)}
+                                            className="opacity-0 group-hover:opacity-100 p-1 rounded bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 transition-all cursor-pointer border border-indigo-500/20"
+                                            title={`Scan ${ticker}`}
+                                        >
+                                            <Radar className="h-3 w-3" />
+                                        </button>
+                                    )}
+                                </div>
                             </div>
 
                             {/* Signal Details */}
