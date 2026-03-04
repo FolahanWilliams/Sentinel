@@ -444,6 +444,13 @@ If there is genuinely no major news, return: {"events": []}`,
                                     console.warn(`[Scanner] Overreaction response failed validation for ${ev.ticker}:`, validation.warnings);
                                 }
 
+                                // Diagnostic logging — show WHY signals are accepted/rejected
+                                if (analysis.success) {
+                                    console.log(`[Scanner] Overreaction result for ${ev.ticker}: is_overreaction=${analysis.data?.is_overreaction}, confidence=${analysis.data?.confidence_score}, thesis="${(analysis.data?.thesis || '').slice(0, 80)}..."`);
+                                } else {
+                                    console.warn(`[Scanner] Overreaction agent FAILED for ${ev.ticker}: ${analysis.error}`);
+                                }
+
                                 if (analysis.success && validation.valid && analysis.data?.is_overreaction && analysis.data.confidence_score > 75) {
 
                                     // 7. SANITY CHECK (Red Team)
@@ -455,6 +462,13 @@ If there is genuinely no major news, return: {"events": []}`,
                                         'OVERREACTION_AGENT',
                                         perfContext
                                     );
+
+                                    // Log sanity check result
+                                    if (sanity.success) {
+                                        console.log(`[Scanner] Sanity check for ${ev.ticker}: passes=${sanity.data?.passes_sanity_check}, risk=${sanity.data?.risk_score}`);
+                                    } else {
+                                        console.warn(`[Scanner] Sanity check FAILED for ${ev.ticker}: ${sanity.error}`);
+                                    }
 
                                     if (sanity.success && sanity.data?.passes_sanity_check) {
                                         // 8. WINNER! WE HAVE A SIGNAL.

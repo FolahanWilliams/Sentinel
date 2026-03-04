@@ -36,12 +36,24 @@ export interface GeminiMultiTurnRequest {
 }
 
 export class GeminiService {
+    // Throttle: enforce minimum 1.5s between API calls to avoid rate limiting
+    private static lastCallTime = 0;
+    private static readonly MIN_CALL_INTERVAL_MS = 1500;
+
     /**
      * Generates content via the secure Supabase Edge Function.
      * Includes auto-retry: if JSON parsing fails and a schema was provided,
      * retries once with feedback.
      */
     static async generate<T = any>(req: GeminiRequest): Promise<AgentResult<T>> {
+        // Throttle: wait if calls are too fast
+        const now = Date.now();
+        const elapsed = now - this.lastCallTime;
+        if (elapsed < this.MIN_CALL_INTERVAL_MS) {
+            await new Promise(res => setTimeout(res, this.MIN_CALL_INTERVAL_MS - elapsed));
+        }
+        this.lastCallTime = Date.now();
+
         const startTime = Date.now();
         const modelToUse = req.model ?? GEMINI_MODEL;
         try {
