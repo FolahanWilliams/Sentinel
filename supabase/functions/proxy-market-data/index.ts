@@ -35,7 +35,7 @@ serve(async (req) => {
         const authHeader = req.headers.get('Authorization')
         if (!authHeader) {
             return new Response(
-                JSON.stringify({ success: false, error: 'Missing Authorization header' }),
+                JSON.stringify({ success: false, error: 'Missing Authorization header', headers: Object.fromEntries(req.headers.entries()) }),
                 { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 401 }
             )
         }
@@ -45,10 +45,11 @@ serve(async (req) => {
         const supabaseAuth = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
             global: { headers: { Authorization: authHeader } }
         })
-        const { data: { user }, error: authError } = await supabaseAuth.auth.getUser(authHeader.replace('Bearer ', ''))
+        const token = authHeader.replace('Bearer ', '');
+        const { data: { user }, error: authError } = await supabaseAuth.auth.getUser(token)
         if (authError || !user) {
             return new Response(
-                JSON.stringify({ success: false, error: 'Invalid or expired token' }),
+                JSON.stringify({ success: false, error: 'Invalid or expired token', authError: authError?.message, hasUser: !!user, tokenValidLength: token.length }),
                 { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 401 }
             )
         }
