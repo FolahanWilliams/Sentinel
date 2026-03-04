@@ -5,9 +5,58 @@
  */
 
 import { useLocation } from 'react-router-dom';
-import { Bell, Lock, Play, Pause, RefreshCw } from 'lucide-react';
+import { Bell, Lock } from 'lucide-react';
 import { destroySession } from '@/utils/auth';
 import { useNotifications } from '@/hooks/useNotifications';
+import { useEffect, useState } from 'react';
+
+function useMarketStatus() {
+    const [status, setStatus] = useState({ label: 'Checking...', colorClass: 'status-stopped' });
+
+    useEffect(() => {
+        const updateStatus = () => {
+            const now = new Date();
+            const formatter = new Intl.DateTimeFormat('en-US', {
+                timeZone: 'America/New_York',
+                hour12: false,
+                weekday: 'short',
+                hour: 'numeric',
+                minute: 'numeric'
+            });
+            const parts = formatter.formatToParts(now);
+            const getPart = (type: string) => parts.find(p => p.type === type)?.value || '';
+
+            const weekday = getPart('weekday');
+            const hourStr = getPart('hour');
+            let hour = parseInt(hourStr || '0', 10);
+            if (hourStr === '24') hour = 0;
+            const minute = parseInt(getPart('minute') || '0', 10);
+
+            if (weekday === 'Sat' || weekday === 'Sun') {
+                setStatus({ label: 'Market Closed', colorClass: 'status-stopped' });
+                return;
+            }
+
+            const timeAsDecimal = hour + minute / 60;
+
+            if (timeAsDecimal >= 9.5 && timeAsDecimal < 16) {
+                setStatus({ label: 'Market Open', colorClass: 'status-running' });
+            } else if (timeAsDecimal >= 4 && timeAsDecimal < 9.5) {
+                setStatus({ label: 'Pre-Market', colorClass: 'status-scanning' });
+            } else if (timeAsDecimal >= 16 && timeAsDecimal < 20) {
+                setStatus({ label: 'After Hours', colorClass: 'status-scanning' });
+            } else {
+                setStatus({ label: 'Market Closed', colorClass: 'status-stopped' });
+            }
+        };
+
+        updateStatus();
+        const interval = setInterval(updateStatus, 60000);
+        return () => clearInterval(interval);
+    }, []);
+
+    return status;
+}
 
 const PAGE_TITLES: Record<string, string> = {
     '/': 'Dashboard',
@@ -21,6 +70,7 @@ const PAGE_TITLES: Record<string, string> = {
 export function Header() {
     const location = useLocation();
     const { unreadCount, markAllRead } = useNotifications();
+    const marketInfo = useMarketStatus();
 
     // Match analysis routes
     const pageTitle = location.pathname.startsWith('/analysis/')
@@ -43,33 +93,14 @@ export function Header() {
 
             {/* Center: Market Status */}
             <div className="flex items-center gap-2">
-                <span className="status-dot status-stopped" />
+                <span className={`status-dot ${marketInfo.colorClass}`} />
                 <span className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
-                    Market Closed
+                    {marketInfo.label}
                 </span>
             </div>
 
             {/* Right: Controls */}
             <div className="flex items-center gap-2">
-                {/* Scanner Quick Controls */}
-                <button className="p-2 rounded-lg transition-colors cursor-pointer"
-                    style={{ backgroundColor: 'transparent', border: 'none', color: 'var(--color-text-secondary)' }}
-                    title="Start Scanner">
-                    <Play size={16} />
-                </button>
-                <button className="p-2 rounded-lg transition-colors cursor-pointer"
-                    style={{ backgroundColor: 'transparent', border: 'none', color: 'var(--color-text-secondary)' }}
-                    title="Pause Scanner">
-                    <Pause size={16} />
-                </button>
-                <button className="p-2 rounded-lg transition-colors cursor-pointer"
-                    style={{ backgroundColor: 'transparent', border: 'none', color: 'var(--color-text-secondary)' }}
-                    title="Manual Scan">
-                    <RefreshCw size={16} />
-                </button>
-
-                {/* Divider */}
-                <div className="w-px h-5 mx-1" style={{ backgroundColor: 'var(--color-border-default)' }} />
 
                 {/* Notification Bell */}
                 <button className="p-2 rounded-lg transition-colors cursor-pointer relative"
