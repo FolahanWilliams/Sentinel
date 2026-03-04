@@ -62,7 +62,8 @@ export class AlphaVantageNewsService {
             });
 
             if (!res.ok) {
-                console.warn(`[AVNews] Edge function returned ${res.status}`);
+                const errorText = await res.text();
+                console.warn(`[AVNews] Edge function returned ${res.status}: ${errorText}`);
                 return 0;
             }
 

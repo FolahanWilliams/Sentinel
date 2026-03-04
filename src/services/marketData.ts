@@ -47,10 +47,12 @@ export class MarketDataService {
         });
 
         if (error) {
+            console.error(`[MarketData Proxy Request] Failed to invoke proxy edge function for ${ticker}:`, error);
             throw new Error(`Market Data Proxy Error: ${error.message}`);
         }
 
         if (!data?.success || !data?.data) {
+            console.error(`[MarketData Proxy Request] Edge function returned an error for ${ticker}:`, data);
             throw new Error(data?.error || `Failed to fetch quote for ${ticker}`);
         }
 
