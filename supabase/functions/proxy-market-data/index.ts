@@ -31,25 +31,21 @@ serve(async (req) => {
     }
 
     try {
-        // 1. Phase 1 fix (Audit C4): Real JWT verification
         const authHeader = req.headers.get('Authorization')
-        if (!authHeader) {
-            return new Response(
-                JSON.stringify({ success: false, error: 'Missing Authorization header', headers: Object.fromEntries(req.headers.entries()) }),
-                { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 401 }
-            )
-        }
 
         const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
         const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') || ''
+
+        // This creates a client with the user's JWT
         const supabaseAuth = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-            global: { headers: { Authorization: authHeader } }
+            global: { headers: { Authorization: authHeader || '' } }
         })
-        const token = authHeader.replace('Bearer ', '');
-        const { data: { user }, error: authError } = await supabaseAuth.auth.getUser(token)
+
+        // Check if the user is authenticated *if* the gateway let them through but we want to be sure
+        const { data: { user }, error: authError } = await supabaseAuth.auth.getUser()
         if (authError || !user) {
             return new Response(
-                JSON.stringify({ success: false, error: 'Invalid or expired token', authError: authError?.message, hasUser: !!user, tokenValidLength: token.length }),
+                JSON.stringify({ success: false, error: 'Unauthorized', authError: authError?.message }),
                 { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 401 }
             )
         }

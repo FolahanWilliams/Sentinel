@@ -42,12 +42,12 @@ serve(async (req) => {
         const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
         const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') || ''
         const supabaseAuth = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-            global: { headers: { Authorization: authHeader } }
+            global: { headers: { Authorization: authHeader || '' } }
         })
-        const { data: { user }, error: authError } = await supabaseAuth.auth.getUser(authHeader.replace('Bearer ', ''))
+        const { data: { user }, error: authError } = await supabaseAuth.auth.getUser()
         if (authError || !user) {
             return new Response(
-                JSON.stringify({ error: 'Invalid or expired token' }),
+                JSON.stringify({ error: 'Unauthorized', authError: authError?.message }),
                 { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 401 }
             )
         }
