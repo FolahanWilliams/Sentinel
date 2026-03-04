@@ -31,26 +31,49 @@ serve(async (req) => {
     }
 
     try {
-        // 1. Verify Auth
+        // 1. Phase 1 fix (Audit C4): Real JWT verification
         const authHeader = req.headers.get('Authorization')
         if (!authHeader) {
-            throw new Error('Missing Authorization header')
+            return new Response(
+                JSON.stringify({ success: false, error: 'Missing Authorization header' }),
+                { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 401 }
+            )
+        }
+
+        const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
+        const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') || ''
+        const supabaseAuth = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+            global: { headers: { Authorization: authHeader } }
+        })
+        const { data: { user }, error: authError } = await supabaseAuth.auth.getUser()
+        if (authError || !user) {
+            return new Response(
+                JSON.stringify({ success: false, error: 'Invalid or expired token' }),
+                { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 401 }
+            )
         }
 
         // 2. Parse Request
         const { endpoint, ticker, tickerParam } = await req.json()
-        if (!endpoint) throw new Error('Missing endpoint')
-        // ticker is required for 'quote' but optional for 'news_sentiment'
-        if (endpoint === 'quote' && !ticker) throw new Error('Missing ticker')
+        if (!endpoint) {
+            return new Response(
+                JSON.stringify({ success: false, error: 'Missing endpoint' }),
+                { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+            )
+        }
+        if (endpoint === 'quote' && !ticker) {
+            return new Response(
+                JSON.stringify({ success: false, error: 'Missing ticker' }),
+                { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+            )
+        }
 
         // 3. Load Secrets
-        const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
         const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
         const ALPHA_VANTAGE_KEY = Deno.env.get('MARKET_DATA_API_KEY') || Deno.env.get('ALPHA_VANTAGE_KEY') || ''
-        const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY')
 
         if (!ALPHA_VANTAGE_KEY) {
-            console.warn('[proxy-market-data] No Alpha Vantage key found, will use Gemini scraping fallback')
+            console.warn('[proxy-market-data] No Alpha Vantage key found, will use Yahoo Finance fallback')
         }
 
         const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
@@ -63,11 +86,12 @@ serve(async (req) => {
         if (endpoint === 'quote') {
             const tickerUpper = ticker.toUpperCase()
             let quoteResult: any = null
+            let actualProvider = 'unknown'
 
-            // ── Strategy 1: Alpha Vantage GLOBAL_QUOTE (reliable JSON API) ──
+            // Strategy 1: Alpha Vantage GLOBAL_QUOTE
             if (ALPHA_VANTAGE_KEY) {
                 try {
-                    const avUrl = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${tickerUpper}&apikey=${ALPHA_VANTAGE_KEY}`
+                    const avUrl = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(tickerUpper)}&apikey=${ALPHA_VANTAGE_KEY}`
                     console.log(`[proxy-market-data] Trying Alpha Vantage GLOBAL_QUOTE for ${tickerUpper}`)
 
                     const avRes = await fetch(avUrl)
@@ -86,6 +110,7 @@ serve(async (req) => {
                                 high: parseFloat(gq['03. high']) || 0,
                                 low: parseFloat(gq['04. low']) || 0,
                             }
+                            actualProvider = 'alpha-vantage'
                             console.log(`[proxy-market-data] Alpha Vantage success: ${tickerUpper} @ $${quoteResult.price}`)
                         } else {
                             console.warn('[proxy-market-data] Alpha Vantage returned empty Global Quote:', JSON.stringify(avData).slice(0, 200))
@@ -96,30 +121,29 @@ serve(async (req) => {
                 }
             }
 
-            // ── Strategy 2: Yahoo Finance Internal JSON API (Robust Fallback) ──
+            // Strategy 2: Yahoo Finance Internal JSON API (Robust Fallback)
             if (!quoteResult) {
-                console.log(`[proxy-market-data] Alpha Vantage unavailable, falling back to Yahoo Finance JSON API`);
+                console.log(`[proxy-market-data] Alpha Vantage unavailable, falling back to Yahoo Finance JSON API`)
 
                 try {
-                    // query1 v8 chart endpoint is currently more resilient to crumb/cookie blocks
-                    const yfUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${tickerUpper}?interval=1d&range=1d`;
-                    console.log(`[proxy-market-data] Fetching JSON from ${yfUrl}`);
+                    const yfUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(tickerUpper)}?interval=1d&range=1d`
+                    console.log(`[proxy-market-data] Fetching JSON from ${yfUrl}`)
 
                     const yfRes = await fetch(yfUrl, {
                         headers: {
                             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                             'Accept': 'application/json'
                         }
-                    });
+                    })
 
                     if (yfRes.ok) {
-                        const yfData = await yfRes.json();
-                        const meta = yfData?.chart?.result?.[0]?.meta;
+                        const yfData = await yfRes.json()
+                        const meta = yfData?.chart?.result?.[0]?.meta
 
                         if (meta && meta.regularMarketPrice) {
-                            const change = meta.regularMarketPrice - (meta.chartPreviousClose || meta.previousClose || meta.regularMarketPrice);
-                            const prevClose = meta.chartPreviousClose || meta.previousClose || meta.regularMarketPrice || 1;
-                            const changePct = (change / prevClose) * 100;
+                            const change = meta.regularMarketPrice - (meta.chartPreviousClose || meta.previousClose || meta.regularMarketPrice)
+                            const prevClose = meta.chartPreviousClose || meta.previousClose || meta.regularMarketPrice || 1
+                            const changePct = (change / prevClose) * 100
 
                             quoteResult = {
                                 price: meta.regularMarketPrice || 0,
@@ -127,25 +151,29 @@ serve(async (req) => {
                                 changePercent: changePct,
                                 volume: meta.regularMarketVolume || 0,
                                 previousClose: prevClose,
-                                open: meta.regularMarketPrice || 0, // Not perfectly accurate without history array, but good for realtime
+                                open: meta.regularMarketPrice || 0,
                                 high: meta.regularMarketDayHigh || 0,
                                 low: meta.regularMarketDayLow || 0,
                             }
-                            console.log(`[proxy-market-data] Yahoo Finance success: ${tickerUpper} @ $${quoteResult.price}`);
+                            actualProvider = 'yahoo-finance'
+                            console.log(`[proxy-market-data] Yahoo Finance success: ${tickerUpper} @ $${quoteResult.price}`)
                         } else {
-                            console.warn('[proxy-market-data] Yahoo Finance returned empty or invalid result:', JSON.stringify(yfData).slice(0, 200));
+                            console.warn('[proxy-market-data] Yahoo Finance returned empty or invalid result:', JSON.stringify(yfData).slice(0, 200))
                         }
                     } else {
-                        console.warn(`[proxy-market-data] Yahoo Finance JSON API returned status ${yfRes.status}`);
+                        console.warn(`[proxy-market-data] Yahoo Finance JSON API returned status ${yfRes.status}`)
                     }
                 } catch (yfErr) {
-                    console.warn('[proxy-market-data] Yahoo Finance JSON API failed:', yfErr);
+                    console.warn('[proxy-market-data] Yahoo Finance JSON API failed:', yfErr)
                 }
             }
 
-            // Default to zeros if everything failed
+            // Phase 2 fix (Audit M12): Return success: false when all providers fail
             if (!quoteResult) {
-                quoteResult = { price: 0, change: 0, changePercent: 0, volume: 0, previousClose: 0, open: 0, high: 0, low: 0 };
+                return new Response(
+                    JSON.stringify({ success: false, error: `Unable to fetch quote for ${tickerUpper}` }),
+                    { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 502 }
+                )
             }
 
             responseData = {
@@ -156,39 +184,67 @@ serve(async (req) => {
                     lastUpdated: new Date().toISOString()
                 } as Quote
             }
+
+            const durationMs = Date.now() - startTime
+
+            // 5. Phase 2 fix (Audit M10): Log actual provider, not hardcoded 'alpha-vantage'
+            await supabaseAdmin.from('api_usage').insert({
+                provider: actualProvider,
+                endpoint,
+                ticker,
+                latency_ms: durationMs,
+                success: true,
+                estimated_cost_usd: actualProvider === 'alpha-vantage' ? 0.0001 : 0
+            })
+
         } else if (endpoint === 'news_sentiment') {
-            // ── Alpha Vantage NEWS_SENTIMENT endpoint ──
             if (!ALPHA_VANTAGE_KEY) {
-                throw new Error('No Alpha Vantage API key configured for news sentiment')
+                return new Response(
+                    JSON.stringify({ success: false, error: 'No Alpha Vantage API key configured for news sentiment' }),
+                    { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
+                )
             }
 
-            // Build the API URL with optional ticker/topic parameters
-            const extraParams = tickerParam || '&topics=financial_markets,earnings,technology'
+            // Phase 2 fix (Audit m15): Validate tickerParam — only allow &tickers= parameter
+            let extraParams = '&topics=financial_markets,earnings,technology'
+            if (tickerParam && typeof tickerParam === 'string') {
+                // Only allow alphanumeric ticker references, strip anything else
+                const sanitized = tickerParam.replace(/[^a-zA-Z0-9,&=_]/g, '')
+                if (sanitized.startsWith('&tickers=')) {
+                    extraParams = sanitized
+                }
+            }
+
             const newsUrl = `https://www.alphavantage.co/query?function=NEWS_SENTIMENT${extraParams}&apikey=${ALPHA_VANTAGE_KEY}&sort=LATEST&limit=50`
             console.log(`[proxy-market-data] Fetching AV News Sentiment`)
 
             const newsRes = await fetch(newsUrl)
             if (!newsRes.ok) {
-                throw new Error(`Alpha Vantage NEWS_SENTIMENT returned ${newsRes.status}`)
+                return new Response(
+                    JSON.stringify({ success: false, error: 'News sentiment service returned an error' }),
+                    { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 502 }
+                )
             }
 
             const newsData = await newsRes.json()
-            responseData = newsData  // Return the raw AV response (contains .feed array)
+            // Phase 2 fix (Audit M11): Wrap in consistent response format
+            responseData = { success: true, data: newsData }
+
+            const durationMs = Date.now() - startTime
+            await supabaseAdmin.from('api_usage').insert({
+                provider: 'alpha-vantage',
+                endpoint,
+                ticker: ticker || null,
+                latency_ms: durationMs,
+                success: true,
+                estimated_cost_usd: 0.0001
+            })
         } else {
-            throw new Error(`Unsupported endpoint: ${endpoint}`)
+            return new Response(
+                JSON.stringify({ success: false, error: `Unsupported endpoint: ${endpoint}` }),
+                { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+            )
         }
-
-        const durationMs = Date.now() - startTime
-
-        // 5. Log API Usage
-        await supabaseAdmin.from('api_usage').insert({
-            provider: 'alpha-vantage',
-            endpoint,
-            ticker,
-            latency_ms: durationMs,
-            success: true,
-            estimated_cost_usd: 0.0001
-        })
 
         // 6. Return Data
         return new Response(JSON.stringify(responseData), {
@@ -197,9 +253,10 @@ serve(async (req) => {
 
     } catch (error: any) {
         console.error(`[proxy-market-data] Error:`, error.message)
+        // Phase 2 fix (Audit m18): Don't leak internal error details
         return new Response(
-            JSON.stringify({ success: false, error: error.message }),
-            { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+            JSON.stringify({ success: false, error: 'Internal server error' }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
         )
     }
 })

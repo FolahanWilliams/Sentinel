@@ -1,4 +1,8 @@
-import { createContext, useContext, useState, ReactNode } from 'react';
+/**
+ * Phase 3 fix (Audit m6): Memoize context value and callback to prevent unnecessary re-renders
+ */
+
+import { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from 'react';
 
 interface ChatContextType {
     isOpen: boolean;
@@ -14,21 +18,21 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     const [isOpen, setIsOpen] = useState(false);
     const [activeTicker, setActiveTicker] = useState<string | null>(null);
 
-    const openChatWithTicker = (ticker: string) => {
+    const openChatWithTicker = useCallback((ticker: string) => {
         setActiveTicker(ticker.toUpperCase());
         setIsOpen(true);
-    };
+    }, []);
+
+    const value = useMemo(() => ({
+        isOpen,
+        setIsOpen,
+        activeTicker,
+        setActiveTicker,
+        openChatWithTicker,
+    }), [isOpen, activeTicker, openChatWithTicker]);
 
     return (
-        <ChatContext.Provider
-            value={{
-                isOpen,
-                setIsOpen,
-                activeTicker,
-                setActiveTicker,
-                openChatWithTicker
-            }}
-        >
+        <ChatContext.Provider value={value}>
             {children}
         </ChatContext.Provider>
     );

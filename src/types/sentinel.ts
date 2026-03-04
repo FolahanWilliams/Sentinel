@@ -30,7 +30,7 @@ export interface ProcessedArticle {
     sentiment: 'bullish' | 'bearish' | 'neutral';
     sentiment_score: number;
     impact: 'high' | 'medium' | 'low';
-    signals: TradingSignal[];
+    signals: SentinelTradingSignal[];
     entities: string[];
 
     processed_at: string;
@@ -49,7 +49,8 @@ export type ArticleCategory =
     | 'geopolitics'
     | 'other';
 
-export interface TradingSignal {
+// Phase 5 fix (Audit C14): Renamed to avoid collision with TradingSignal in signals.ts
+export interface SentinelTradingSignal {
     type: 'earnings' | 'funding' | 'ipo' | 'merger' | 'policy_change'
     | 'product_launch' | 'hack_breach' | 'layoffs' | 'rate_decision'
     | 'partnership' | 'legal_action' | 'supply_chain';

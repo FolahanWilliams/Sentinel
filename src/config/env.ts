@@ -19,7 +19,11 @@ function validateEnv(): EnvConfig {
     const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
     const appPasswordHash = import.meta.env.VITE_APP_PASSWORD_HASH;
 
+    // Phase 3 fix (Audit M8): Fail-closed in production when critical env vars are missing
     if (!supabaseUrl || !supabaseAnonKey) {
+        if (import.meta.env.PROD) {
+            throw new Error('[Sentinel] Missing required env vars: VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY');
+        }
         console.warn(
             '[Sentinel] Missing Supabase env vars. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env.local'
         );

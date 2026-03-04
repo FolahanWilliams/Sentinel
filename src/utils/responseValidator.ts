@@ -70,6 +70,10 @@ export class ResponseValidator {
         const entryLow = data.suggested_entry_low as number | undefined;
         const entryHigh = data.suggested_entry_high as number | undefined;
 
+        // Phase 4 fix (Audit m1): Support short trades where stop_loss > target_price
+        const signalType = data.signal_type as string | undefined;
+        const isShort = signalType === 'short' || data.side === 'short';
+
         if (stopLoss !== undefined && targetPrice !== undefined) {
             if (stopLoss <= 0) {
                 warnings.push('FATAL: stop_loss is zero or negative');
@@ -77,8 +81,16 @@ export class ResponseValidator {
             if (targetPrice <= 0) {
                 warnings.push('FATAL: target_price is zero or negative');
             }
-            if (stopLoss >= targetPrice) {
-                warnings.push(`FATAL: stop_loss ($${stopLoss}) >= target_price ($${targetPrice})`);
+            if (isShort) {
+                // Short trade: stop_loss should be ABOVE target_price
+                if (stopLoss <= targetPrice) {
+                    warnings.push(`FATAL: short trade stop_loss ($${stopLoss}) <= target_price ($${targetPrice})`);
+                }
+            } else {
+                // Long trade: stop_loss should be BELOW target_price
+                if (stopLoss >= targetPrice) {
+                    warnings.push(`FATAL: stop_loss ($${stopLoss}) >= target_price ($${targetPrice})`);
+                }
             }
         }
 
@@ -93,7 +105,8 @@ export class ResponseValidator {
     }
 
     private validateStatistics(data: Record<string, unknown>, warnings: string[]) {
-        const timeframe = data.timeframe_days as number | undefined;
+        // Phase 4 fix (Audit m2): Check both field names to match DB schema
+        const timeframe = (data.expected_timeframe_days ?? data.timeframe_days) as number | undefined;
         if (timeframe !== undefined && typeof timeframe === 'number') {
             if (timeframe <= 0) {
                 warnings.push('FATAL: timeframe_days is zero or negative');

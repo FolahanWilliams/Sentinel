@@ -8,10 +8,10 @@ dist/
 dist-ssr/
 *.local
 
-# Environment
+# Environment — Phase 6 fix (Audit M6): Cover all env file variants
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 
 # Editor
 .vscode/*

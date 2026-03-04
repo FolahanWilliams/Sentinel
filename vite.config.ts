@@ -19,6 +19,7 @@ export default defineConfig({
     },
     build: {
         target: 'esnext',
-        sourcemap: true,
+        // Phase 6 fix (Audit M9): Only enable sourcemaps in dev, not production
+        sourcemap: process.env.NODE_ENV !== 'production',
     },
 });

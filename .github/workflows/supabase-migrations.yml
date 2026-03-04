@@ -65,7 +65,8 @@ jobs:
               continue
             fi
             echo "Deploying $FUNC_NAME..."
-            if supabase functions deploy "$FUNC_NAME" --no-verify-jwt; then
+            # Phase 1 fix (Audit C5): Removed --no-verify-jwt to enforce JWT verification
+            if supabase functions deploy "$FUNC_NAME"; then
               DEPLOYED="$DEPLOYED $FUNC_NAME"
             else
               echo "::warning::Failed to deploy $FUNC_NAME"
