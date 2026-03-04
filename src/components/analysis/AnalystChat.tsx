@@ -58,7 +58,7 @@ interface ChatMessage {
 }
 
 export function AnalystChat() {
-    const { isOpen, setIsOpen, activeTicker } = useChat();
+    const { isOpen, setIsOpen, activeTicker, setActiveTicker } = useChat();
 
     const ticker = activeTicker || 'GLOBAL';
     const [tickerAnalysis, setTickerAnalysis] = useState<any>(null);
@@ -128,8 +128,34 @@ export function AnalystChat() {
     });
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [isDragging, setIsDragging] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
+
+    const handleDragOver = (e: React.DragEvent) => {
+        e.preventDefault();
+        setIsDragging(true);
+    };
+
+    const handleDragLeave = () => {
+        setIsDragging(false);
+    };
+
+    const handleDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        setIsDragging(false);
+        try {
+            const data = JSON.parse(e.dataTransfer.getData('application/json'));
+            if (data.type === 'ticker' && data.payload) {
+                const droppedTicker = data.payload.toUpperCase();
+                if (activeTicker !== droppedTicker) {
+                    setActiveTicker(droppedTicker);
+                }
+                setInput(`Run a deep-dive analysis on ${droppedTicker}`);
+                setTimeout(() => inputRef.current?.focus(), 50);
+            }
+        } catch { /* ignore */ }
+    };
 
     // Persist messages to sessionStorage
     useEffect(() => {
@@ -362,12 +388,28 @@ INSTRUCTIONS:
         }
     };
 
-    const quickQuestions = [
+    const quickQuestions = activeTicker ? [
         `What's the bull case for ${ticker}?`,
         `Why is the bias ${tickerAnalysis?.biasWeights?.overall_bias || 'unknown'}?`,
+        `Compare ${ticker} vs MSFT`,
         `What are the biggest risks?`,
-        `Should I buy at this price?`,
+    ] : [
+        `Screen for undervalued tech stocks`,
+        `What is the overall market sentiment today?`,
+        `Find contagion risks in the financial sector`,
+        `Which sectors are showing extreme overreaction?`
     ];
+
+    const availableCommands = [
+        { cmd: '/screen', desc: 'Run a custom market screen', usage: '/screen ' },
+        { cmd: '/compare', desc: 'Compare active ticker with another', usage: '/compare ' },
+        { cmd: '/risk', desc: 'Get a quick risk summary', usage: '/risk' },
+        { cmd: '/help', desc: 'Show available commands', usage: '/help' },
+        { cmd: '/clear', desc: 'Clear the chat history', usage: '/clear' },
+    ];
+
+    const showCommandPalette = input.startsWith('/');
+    const filteredCommands = availableCommands.filter(c => c.cmd.startsWith(input.split(' ')[0] || '/'));
 
     return (
         <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end">
@@ -393,12 +435,32 @@ INSTRUCTIONS:
             <AnimatePresence>
                 {isOpen && (
                     <motion.div
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop}
                         initial={{ opacity: 0, y: 20, scale: 0.95 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 20, scale: 0.95 }}
                         transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-                        className="w-[420px] h-[560px] bg-sentinel-950 rounded-2xl border border-sentinel-800/60 shadow-2xl shadow-black/50 flex flex-col overflow-hidden backdrop-blur-xl"
+                        className={`w-[420px] h-[560px] bg-sentinel-950 rounded-2xl border ${isDragging ? 'border-blue-500 ring-2 ring-blue-500/50' : 'border-sentinel-800/60'} shadow-2xl shadow-black/50 flex flex-col overflow-hidden backdrop-blur-xl relative`}
                     >
+                        {/* Drag Overlay */}
+                        <AnimatePresence>
+                            {isDragging && (
+                                <motion.div
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    className="absolute inset-0 bg-sentinel-950/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center border-2 border-dashed border-blue-500/50 rounded-2xl"
+                                >
+                                    <div className="w-16 h-16 rounded-full bg-blue-500/20 flex items-center justify-center mb-4">
+                                        <Bot className="w-8 h-8 text-blue-400" />
+                                    </div>
+                                    <h3 className="text-lg font-bold text-sentinel-100">Drop Ticker Here</h3>
+                                    <p className="text-sm text-sentinel-400 mt-2">to run a deep-dive analysis</p>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
                         {/* Header */}
                         <div className="flex items-center justify-between px-4 py-3 border-b border-sentinel-800/50 bg-gradient-to-r from-blue-600/10 to-purple-600/10">
                             <div className="flex items-center gap-2">
@@ -407,7 +469,9 @@ INSTRUCTIONS:
                                 </div>
                                 <div>
                                     <h3 className="text-sm font-semibold text-sentinel-100">AI Analyst</h3>
-                                    <p className="text-[10px] text-sentinel-500 font-mono">{ticker} Context Active</p>
+                                    <p className="text-[10px] text-sentinel-500 font-mono">
+                                        {activeTicker ? `${ticker} Context Active` : 'Global Market Mode'}
+                                    </p>
                                 </div>
                             </div>
                             <button
@@ -426,8 +490,10 @@ INSTRUCTIONS:
                                         <MessageSquare className="w-6 h-6 text-blue-400" />
                                     </div>
                                     <div>
-                                        <p className="text-sm text-sentinel-300 font-medium">Ask me anything about {ticker}</p>
-                                        <p className="text-xs text-sentinel-500 mt-1">I have full context on the current analysis, fundamentals, and recent events.</p>
+                                        <p className="text-sm text-sentinel-300 font-medium">Ask me anything about {activeTicker ? ticker : 'the market'}</p>
+                                        <p className="text-xs text-sentinel-500 mt-1">
+                                            {activeTicker ? 'I have full context on the current analysis, fundamentals, and recent events.' : 'I can help you screen stocks, compare assets, or answer general market questions.'}
+                                        </p>
                                     </div>
                                     <div className="space-y-2">
                                         {quickQuestions.map((q, i) => (
@@ -487,8 +553,34 @@ INSTRUCTIONS:
                         </div>
 
                         {/* Input */}
-                        <div className="p-3 border-t border-sentinel-800/50 bg-sentinel-950/80">
-                            <div className="flex items-center gap-2 bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 px-3 py-2 focus-within:border-blue-500/40 transition-colors">
+                        <div className="p-3 border-t border-sentinel-800/50 bg-sentinel-950/80 relative">
+                            {/* Command Palette */}
+                            <AnimatePresence>
+                                {showCommandPalette && filteredCommands.length > 0 && (
+                                    <motion.div
+                                        initial={{ opacity: 0, y: 10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        exit={{ opacity: 0, y: 10 }}
+                                        className="absolute bottom-[100%] left-3 right-3 mb-2 bg-sentinel-900 border border-sentinel-700/50 rounded-xl shadow-xl overflow-hidden z-10"
+                                    >
+                                        {filteredCommands.map(c => (
+                                            <button
+                                                key={c.cmd}
+                                                onClick={() => {
+                                                    setInput(c.usage);
+                                                    inputRef.current?.focus();
+                                                }}
+                                                className="w-full text-left px-4 py-2.5 hover:bg-sentinel-800 transition-colors border-b border-sentinel-800/50 last:border-0 flex justify-between items-center cursor-pointer"
+                                            >
+                                                <div className="font-mono text-blue-400 text-sm font-bold">{c.cmd}</div>
+                                                <div className="text-xs text-sentinel-500">{c.desc}</div>
+                                            </button>
+                                        ))}
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+
+                            <div className="flex items-center gap-2 bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 px-3 py-2 focus-within:border-blue-500/40 transition-colors relative z-20">
                                 <input
                                     ref={inputRef}
                                     type="text"
