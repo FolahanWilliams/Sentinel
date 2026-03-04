@@ -315,41 +315,43 @@ export class ScannerService {
                 console.log(`[Scanner] Running per-ticker grounded search for ${tickers.length} tickers...`);
                 for (const ticker of tickers.slice(0, 5)) { // Cap at 5 to control API cost
                     try {
-                        const tickerSearchResult = await GeminiService.generate<{ events: any[] }>({
-                            prompt: `Find the most significant news event for stock ticker ${ticker} from the last 48 hours. Focus on earnings, analyst ratings, product launches, M&A, regulatory decisions, tariffs, partnerships, or any catalyst that could move the stock price. If there is genuinely no major news, return an empty events array.`,
+                        // Use grounded search WITHOUT responseSchema to avoid Supabase timeout.
+                        // Google Search grounding + structured JSON causes double processing.
+                        const tickerSearchResult = await GeminiService.generate<any>({
+                            prompt: `Find the most significant news event for stock ticker ${ticker} from the last 48 hours. Focus on earnings, analyst ratings, product launches, M&A, regulatory decisions, tariffs, partnerships, or any catalyst that could move the stock price.
+
+Return your answer as a JSON object in this exact format (no markdown, no extra text):
+{"events": [{"ticker": "${ticker}", "event_type": "earnings_miss|analyst_upgrade|product_launch|m_and_a|regulatory|tariff|partnership|price_movement|other", "headline": "one-line headline", "severity": 5}]}
+
+If there is genuinely no major news, return: {"events": []}`,
                             requireGroundedSearch: true,
-                            responseSchema: {
-                                type: "object",
-                                properties: {
-                                    events: {
-                                        type: "array",
-                                        items: {
-                                            type: "object",
-                                            properties: {
-                                                ticker: { type: "string" },
-                                                event_type: { type: "string" },
-                                                headline: { type: "string" },
-                                                severity: { type: "integer", description: "1-10 impact scale" }
-                                            },
-                                            required: ["ticker", "event_type", "headline", "severity"]
-                                        }
-                                    }
-                                },
-                                required: ["events"]
-                            }
+                            temperature: 0.1,
+                            // NO responseSchema — let Gemini return plain text to avoid timeout
                         });
 
-                        if (tickerSearchResult.success && tickerSearchResult.data?.events && tickerSearchResult.data.events.length > 0) {
-                            // Merge grounded events into extraction results
-                            if (!extraction.data) extraction.data = { events: [] };
-                            if (!extraction.data.events) extraction.data.events = [];
-                            const gsEvents = tickerSearchResult.data.events;
-                            for (const ev of gsEvents) {
-                                // Force ticker to match the one we searched for
-                                ev.ticker = ticker;
-                                extraction.data.events.push(ev);
+                        // Parse the plain text response manually
+                        if (tickerSearchResult.success && tickerSearchResult.data) {
+                            try {
+                                const rawText = typeof tickerSearchResult.data === 'string'
+                                    ? tickerSearchResult.data
+                                    : JSON.stringify(tickerSearchResult.data);
+                                // Extract JSON from the response (handle markdown code blocks)
+                                const jsonMatch = rawText.match(/\{[\s\S]*"events"[\s\S]*\}/);
+                                if (jsonMatch) {
+                                    const parsed = JSON.parse(jsonMatch[0]);
+                                    if (parsed.events && parsed.events.length > 0) {
+                                        if (!extraction.data) extraction.data = { events: [] };
+                                        if (!extraction.data.events) extraction.data.events = [];
+                                        for (const ev of parsed.events) {
+                                            ev.ticker = ticker;
+                                            extraction.data.events.push(ev);
+                                        }
+                                        console.log(`[Scanner] Grounded search found ${parsed.events.length} events for ${ticker}`);
+                                    }
+                                }
+                            } catch (parseErr) {
+                                console.warn(`[Scanner] Grounded search parse failed for ${ticker} (non-fatal):`, parseErr);
                             }
-                            console.log(`[Scanner] Grounded search found ${gsEvents.length} events for ${ticker}`);
                         }
                     } catch (gsErr) {
                         console.warn(`[Scanner] Grounded search failed for ${ticker} (non-fatal):`, gsErr);
