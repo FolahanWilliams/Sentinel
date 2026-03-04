@@ -379,15 +379,29 @@ If there is genuinely no major news, return: {"events": []}`,
                         if (tickers.includes(ev.ticker)) {
                             eventsFound++;
 
-                            // Save Event to DB
-                            const { data: savedEvent } = await supabase.from('market_events').upsert({
+                            // Save Event to DB — use insert, fallback to select if duplicate
+                            let savedEvent: { id: string } | null = null;
+                            const { data: insertedEvent, error: insertError } = await supabase.from('market_events').insert({
                                 ticker: ev.ticker,
                                 event_type: ev.event_type,
                                 headline: ev.headline,
                                 severity: ev.severity,
                                 is_overreaction_candidate: ev.severity >= 5,
                                 source_type: 'rss'
-                            } as any, { onConflict: 'ticker,headline', ignoreDuplicates: true }).select('id').single();
+                            } as any).select('id').single();
+
+                            if (insertedEvent) {
+                                savedEvent = insertedEvent;
+                            } else if (insertError) {
+                                // Likely a duplicate — try to find the existing event
+                                const { data: existing } = await supabase.from('market_events')
+                                    .select('id')
+                                    .eq('ticker', ev.ticker)
+                                    .eq('headline', ev.headline)
+                                    .limit(1)
+                                    .maybeSingle();
+                                savedEvent = existing;
+                            }
 
                             // 6. Trigger Deep Analysis Pipeline if moderate-to-severe
                             if (savedEvent && ev.severity >= 5) {
