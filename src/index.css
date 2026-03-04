@@ -643,18 +643,18 @@ body {
 
 .glass-pressable {
   cursor: pointer;
+  transition: transform 0.15s ease-out, box-shadow 0.15s ease-out, background-color 0.15s ease-out;
 }
 
 .glass-pressable:active {
-  backdrop-filter: blur(calc((var(--glass-blur-base) - 4px) * var(--glass-blur-scale))) saturate(140%);
-  -webkit-backdrop-filter: blur(calc((var(--glass-blur-base) - 4px) * var(--glass-blur-scale))) saturate(140%);
-  background-color: rgba(20, 22, 32, 0.55);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  background-color: rgba(20, 22, 32, 0.6);
   box-shadow:
-    0 2px 8px rgba(0, 0, 0, 0.3),
-    inset 0 2px 4px rgba(0, 0, 0, 0.2),
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
-  transform: scale(0.998);
-  transition: all 0.1s ease-out;
+    0 1px 4px rgba(0, 0, 0, 0.4),
+    inset 0 3px 6px rgba(0, 0, 0, 0.25),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.03);
+  transform: scale(0.995);
 }
 
 /* ===========================
@@ -662,21 +662,27 @@ body {
    =========================== */
 
 .glass-refract {
-  transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1),
+              box-shadow 0.3s ease-out;
 }
 
 .glass-refract:hover {
-  transform: scale(1.005);
+  transform: scale(1.008);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.15),
+    inset 1px 0 0 0 rgba(255, 255, 255, 0.08);
 }
 
 .glass-refract:hover::before {
-  opacity: 0.07;
+  opacity: 0.08;
   background-position: 10px 10px;
   transition: opacity 0.3s ease-out, background-position 0.3s ease-out;
 }
 
 /* ===========================
    SPECULAR HIGHLIGHT — Slow-moving light sweep across top edge
+   Uses box-shadow animation (not ::after) to avoid pseudo-element conflicts
    =========================== */
 
 @keyframes specular-sweep {
@@ -686,51 +692,47 @@ body {
 
 .glass-specular {
   position: relative;
-  overflow: hidden;
 }
 
+/* Specular uses ::before (noise already on glass-panel::before, so this only
+   applies to non-glass-panel elements, or stacks when both are present) */
 .glass-specular::after {
   content: '';
   position: absolute;
   top: 0; left: 0; right: 0;
-  height: 1px;
+  height: 2px;
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(255, 255, 255, 0.08) 45%,
-    rgba(255, 255, 255, 0.15) 50%,
-    rgba(255, 255, 255, 0.08) 55%,
+    rgba(255, 255, 255, 0.12) 40%,
+    rgba(255, 255, 255, 0.25) 50%,
+    rgba(255, 255, 255, 0.12) 60%,
     transparent 100%
   );
   background-size: 50% 100%;
   animation: specular-sweep 45s linear infinite;
   pointer-events: none;
   border-radius: inherit;
-  z-index: 2;
+  z-index: 3;
 }
 
 /* ===========================
    CHROMATIC ABERRATION — Iridescent RGB split at glass edges
+   Uses inset box-shadow instead of ::after to avoid conflict with specular
    =========================== */
 
 .glass-chromatic {
   position: relative;
+  box-shadow:
+    inset 2px 2px 0 0 rgba(255, 100, 100, 0.06),
+    inset -2px -2px 0 0 rgba(100, 100, 255, 0.06);
 }
 
-.glass-chromatic::after {
-  content: '';
-  position: absolute;
-  inset: -1px;
-  border-radius: inherit;
-  background: linear-gradient(
-    135deg,
-    rgba(255, 100, 100, 0.03) 0%,
-    transparent 30%,
-    transparent 70%,
-    rgba(100, 100, 255, 0.03) 100%
-  );
-  pointer-events: none;
-  z-index: 2;
+/* Stronger chromatic on hover */
+.glass-chromatic:hover {
+  box-shadow:
+    inset 2px 2px 0 0 rgba(255, 100, 100, 0.1),
+    inset -2px -2px 0 0 rgba(100, 100, 255, 0.1);
 }
 
 /* ===========================
@@ -836,17 +838,20 @@ body {
 
 .glass-input-recessed {
   box-shadow:
-    inset 0 2px 4px rgba(0, 0, 0, 0.3),
-    inset 0 0 0 1px rgba(0, 0, 0, 0.1);
-  background-color: rgba(11, 12, 16, 0.6);
+    inset 0 3px 6px rgba(0, 0, 0, 0.4),
+    inset 0 1px 2px rgba(0, 0, 0, 0.3),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.15);
+  background-color: rgba(8, 9, 14, 0.7) !important;
+  border-color: rgba(255, 255, 255, 0.04) !important;
 }
 
 .glass-input-recessed:focus {
   box-shadow:
-    inset 0 2px 4px rgba(0, 0, 0, 0.3),
-    inset 0 0 0 1px rgba(0, 0, 0, 0.1),
-    0 0 0 2px rgba(59, 130, 246, 0.3),
-    0 0 20px rgba(59, 130, 246, 0.1);
+    inset 0 3px 6px rgba(0, 0, 0, 0.3),
+    inset 0 1px 2px rgba(0, 0, 0, 0.2),
+    0 0 0 2px rgba(59, 130, 246, 0.35),
+    0 0 24px rgba(59, 130, 246, 0.15);
+  border-color: rgba(59, 130, 246, 0.3) !important;
 }
 
 /* ===========================
