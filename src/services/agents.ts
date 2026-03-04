@@ -2,7 +2,8 @@
  * Sentinel — Agent Pipeline Service
  * 
  * Orchestrates the execution of the 5 specialized AI Agents.
- * Each agent uses the GeminiService with specific schemas and prompts.
+ * Each agent uses the GeminiService with specific schemas, prompts,
+ * temperature, and model selection tuned for its task.
  */
 
 import { GeminiService } from './gemini';
@@ -19,19 +20,45 @@ import {
     SANITY_CHECK_SCHEMA,
     SATELLITE_DISCOVERY_SCHEMA
 } from './schemas';
+import { GEMINI_MODEL, GEMINI_MODEL_LITE } from '@/config/constants';
 import type { AgentResult } from '@/types/agents';
+
+/**
+ * Extended market context for richer agent analysis.
+ */
+export interface MarketContext {
+    fiftyTwoWeekHigh?: number;
+    fiftyTwoWeekLow?: number;
+    avgVolume?: number;
+    currentVolume?: number;
+    sectorPerformance?: string; // e.g., "XLK -1.2% today"
+}
 
 export class AgentService {
 
     /**
      * 1. Overreaction Agent
      * Analyzes an event to determine if a price drop is an irrational overreaction.
-     * Receives historical performance context so the agent can calibrate confidence
-     * based on past signal accuracy for this bias type and sector.
+     * Uses temperature 0.4 for creative hypothesis generation.
      */
-    static async evaluateOverreaction(ticker: string, eventHeadline: string, eventDesc: string, currentPrice: number, priceDropPct: number, performanceContext?: string): Promise<AgentResult<any>> {
+    static async evaluateOverreaction(
+        ticker: string,
+        eventHeadline: string,
+        eventDesc: string,
+        currentPrice: number,
+        priceDropPct: number,
+        performanceContext?: string,
+        marketContext?: MarketContext
+    ): Promise<AgentResult<any>> {
         const perfBlock = performanceContext
             ? `\n\n${performanceContext}\n\nUse the performance data above to calibrate your confidence. If this bias type or sector historically underperforms, lower your confidence. If it outperforms, you may raise it slightly.`
+            : '';
+
+        const marketBlock = marketContext
+            ? `\n\nMARKET CONTEXT:
+    52-Week High: $${marketContext.fiftyTwoWeekHigh?.toFixed(2) ?? 'N/A'} | 52-Week Low: $${marketContext.fiftyTwoWeekLow?.toFixed(2) ?? 'N/A'}
+    Average Volume: ${marketContext.avgVolume?.toLocaleString() ?? 'N/A'} | Current Volume: ${marketContext.currentVolume?.toLocaleString() ?? 'N/A'}
+    Sector Performance: ${marketContext.sectorPerformance ?? 'N/A'}`
             : '';
 
         const prompt = `
@@ -39,8 +66,9 @@ export class AgentService {
     CURRENT PRICE: $${currentPrice.toFixed(2)} (Down ${priceDropPct.toFixed(2)}%)
     EVENT HEADLINE: ${eventHeadline}
     EVENT DESCRIPTION: ${eventDesc}
-    ${perfBlock}
+    ${marketBlock}${perfBlock}
     Evaluate if this drop is an irrational overreaction presenting a mean-reversion buying opportunity.
+    Think step-by-step in your reasoning before reaching your verdict.
     Return JSON perfectly matching the expected schema.
     `;
 
@@ -48,18 +76,34 @@ export class AgentService {
             prompt,
             systemInstruction: OVERREACTION_AGENT_PROMPT,
             requireGroundedSearch: true,
-            responseSchema: OVERREACTION_SCHEMA
+            responseSchema: OVERREACTION_SCHEMA,
+            temperature: 0.4,
+            model: GEMINI_MODEL,
         });
     }
 
     /**
      * 2. Sector Contagion Agent
      * Evaluates if a satellite ticker is dropping unfairly due to an epicenter ticker's news.
-     * Receives historical performance context for confidence calibration.
+     * Uses temperature 0.4 for creative analysis of exposure.
      */
-    static async evaluateContagion(epicenterTicker: string, satelliteTicker: string, epicenterNews: string, satelliteDropPct: number, performanceContext?: string): Promise<AgentResult<any>> {
+    static async evaluateContagion(
+        epicenterTicker: string,
+        satelliteTicker: string,
+        epicenterNews: string,
+        satelliteDropPct: number,
+        performanceContext?: string,
+        marketContext?: MarketContext
+    ): Promise<AgentResult<any>> {
         const perfBlock = performanceContext
             ? `\n\n${performanceContext}\n\nUse the performance data above to calibrate your confidence. If sector contagion signals historically underperform, be more skeptical. If they outperform, you may be slightly more confident.`
+            : '';
+
+        const marketBlock = marketContext
+            ? `\n\nMARKET CONTEXT:
+    52-Week High: $${marketContext.fiftyTwoWeekHigh?.toFixed(2) ?? 'N/A'} | 52-Week Low: $${marketContext.fiftyTwoWeekLow?.toFixed(2) ?? 'N/A'}
+    Average Volume: ${marketContext.avgVolume?.toLocaleString() ?? 'N/A'} | Current Volume: ${marketContext.currentVolume?.toLocaleString() ?? 'N/A'}
+    Sector Performance: ${marketContext.sectorPerformance ?? 'N/A'}`
             : '';
 
         const prompt = `
@@ -68,8 +112,9 @@ export class AgentService {
 
     SATELLITE TICKER: ${satelliteTicker}
     SATELLITE DROP: ${satelliteDropPct.toFixed(2)}%
-    ${perfBlock}
+    ${marketBlock}${perfBlock}
     Evaluate if ${satelliteTicker} is dropping purely in sympathy and lacks real exposure to the Epicenter's core issue.
+    Think step-by-step in your reasoning before reaching your verdict.
     Return JSON perfectly matching the expected schema.
     `;
 
@@ -77,18 +122,37 @@ export class AgentService {
             prompt,
             systemInstruction: CONTAGION_AGENT_PROMPT,
             requireGroundedSearch: true,
-            responseSchema: CONTAGION_SCHEMA
+            responseSchema: CONTAGION_SCHEMA,
+            temperature: 0.4,
+            model: GEMINI_MODEL,
         });
     }
 
     /**
      * 3. Earnings Overreaction Agent
      * Parses earnings misses against forward guidance.
-     * Receives historical performance context for confidence calibration.
+     * Uses temperature 0.3 for moderate creativity in guidance analysis.
      */
-    static async evaluateEarnings(ticker: string, epsEstimate: number, epsActual: number, revenueEstimate: number, revenueActual: number, guidanceDetails: string, priceDropPct: number, performanceContext?: string): Promise<AgentResult<any>> {
+    static async evaluateEarnings(
+        ticker: string,
+        epsEstimate: number,
+        epsActual: number,
+        revenueEstimate: number,
+        revenueActual: number,
+        guidanceDetails: string,
+        priceDropPct: number,
+        performanceContext?: string,
+        marketContext?: MarketContext
+    ): Promise<AgentResult<any>> {
         const perfBlock = performanceContext
             ? `\n\n${performanceContext}\n\nUse the performance data above to calibrate your confidence. If earnings overreaction signals historically underperform in this sector, lower your confidence. If they outperform, you may raise it slightly.`
+            : '';
+
+        const marketBlock = marketContext
+            ? `\n\nMARKET CONTEXT:
+    52-Week High: $${marketContext.fiftyTwoWeekHigh?.toFixed(2) ?? 'N/A'} | 52-Week Low: $${marketContext.fiftyTwoWeekLow?.toFixed(2) ?? 'N/A'}
+    Average Volume: ${marketContext.avgVolume?.toLocaleString() ?? 'N/A'} | Current Volume: ${marketContext.currentVolume?.toLocaleString() ?? 'N/A'}
+    Sector Performance: ${marketContext.sectorPerformance ?? 'N/A'}`
             : '';
 
         const prompt = `
@@ -98,8 +162,9 @@ export class AgentService {
     EPS EXPECTED: ${epsEstimate} | EPS ACTUAL: ${epsActual}
     REV EXPECTED: ${revenueEstimate} | REV ACTUAL: ${revenueActual}
     FORWARD GUIDANCE CONTEXT: ${guidanceDetails}
-    ${perfBlock}
+    ${marketBlock}${perfBlock}
     Evaluate if this post-earnings drop is a mispricing because forward guidance outweighs the backward-looking miss.
+    Think step-by-step in your reasoning before reaching your verdict.
     Return JSON perfectly matching the expected schema.
     `;
 
@@ -107,17 +172,25 @@ export class AgentService {
             prompt,
             systemInstruction: EARNINGS_AGENT_PROMPT,
             requireGroundedSearch: true,
-            responseSchema: EARNINGS_SCHEMA
+            responseSchema: EARNINGS_SCHEMA,
+            temperature: 0.3,
+            model: GEMINI_MODEL,
         });
     }
 
     /**
      * 4. Sanity Check / Red Team Agent
      * Attacks a proposed trade thesis.
-     * Receives historical performance context so it knows which bias types and
-     * sectors have been underperforming and should be scrutinized harder.
+     * Uses temperature 0.5 — devil's advocate needs to explore unlikely scenarios.
      */
-    static async runSanityCheck(ticker: string, originalThesis: string, targetPrice: number, stopLoss: number, agentType: string, performanceContext?: string): Promise<AgentResult<any>> {
+    static async runSanityCheck(
+        ticker: string,
+        originalThesis: string,
+        targetPrice: number,
+        stopLoss: number,
+        agentType: string,
+        performanceContext?: string
+    ): Promise<AgentResult<any>> {
         const perfBlock = performanceContext
             ? `\n\n${performanceContext}\n\nAs the Red Team, use this performance history to identify systemic weaknesses. If the originating agent type or sector has a poor track record, be EXTRA skeptical and demand stronger evidence.`
             : '';
@@ -131,14 +204,17 @@ export class AgentService {
     ${perfBlock}
     You are the RED TEAM. Tear this thesis apart. Find the fatal flaw.
     Research macro conditions, pending lawsuits, or sector rot.
+    Think step-by-step in your reasoning — explore multiple counterarguments.
     If it's a terrible trade, fail it. Return JSON.
     `;
 
         return GeminiService.generate({
             prompt,
             systemInstruction: SANITY_CHECK_AGENT_PROMPT,
-            requireGroundedSearch: true, // Needs up-to-the-minute macro/legal context
-            responseSchema: SANITY_CHECK_SCHEMA
+            requireGroundedSearch: true,
+            responseSchema: SANITY_CHECK_SCHEMA,
+            temperature: 0.5,
+            model: GEMINI_MODEL,
         });
     }
 
@@ -146,6 +222,7 @@ export class AgentService {
      * 5. Satellite Discovery Agent
      * Given an epicenter event, identifies sector peers / supply chain tickers
      * that may be dropping in sympathy and are contagion candidates.
+     * Uses temperature 0.4 for creative sector relationship analysis.
      */
     static async discoverSatellites(
         epicenterTicker: string,
@@ -165,6 +242,7 @@ export class AgentService {
     1. Why the market might sell it (the fear)
     2. Whether the exposure is real or imagined
 
+    Think step-by-step in your reasoning before listing satellites.
     Only include tickers from the provided watchlist. Return JSON.
     `;
 
@@ -172,7 +250,9 @@ export class AgentService {
             prompt,
             systemInstruction: CONTAGION_AGENT_PROMPT,
             requireGroundedSearch: true,
-            responseSchema: SATELLITE_DISCOVERY_SCHEMA
+            responseSchema: SATELLITE_DISCOVERY_SCHEMA,
+            temperature: 0.4,
+            model: GEMINI_MODEL,
         });
     }
 
@@ -180,6 +260,7 @@ export class AgentService {
      * 6. Pre-Filter Agent (Helper)
      * Scores a raw list of news articles and returns only the IDs of those
      * with market-moving potential. Inclusive to avoid dropping actionable articles.
+     * Uses Flash-Lite (cheap, fast) and temperature 0.1 (deterministic classification).
      */
     static async filterActionableNews(articles: Array<{ id: string; title: string; description: string }>): Promise<AgentResult<{ actionable_ids: string[] }>> {
         const payload = articles.map(a => `[ID: ${a.id}] ${a.title}\n${a.description}`).join('\n\n');
@@ -220,14 +301,16 @@ export class AgentService {
                     }
                 },
                 required: ["actionable_ids"]
-            }
+            },
+            temperature: 0.1,
+            model: GEMINI_MODEL_LITE,
         });
     }
 
     /**
      * 7. Extraction Agent (Helper)
      * Converts unstructured RSS text into structured Market Events.
-     * Broadened to capture more event types beyond just extreme events.
+     * Uses Flash-Lite (cheap, fast) and temperature 0.1 (factual extraction).
      */
     static async extractEventsFromText(text: string): Promise<AgentResult<any>> {
         const prompt = `
@@ -277,7 +360,9 @@ export class AgentService {
                     }
                 },
                 required: ["events"]
-            }
+            },
+            temperature: 0.1,
+            model: GEMINI_MODEL_LITE,
         });
     }
 }

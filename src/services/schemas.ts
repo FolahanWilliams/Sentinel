@@ -3,11 +3,16 @@
  *
  * Defines the strict JSON structures we demand from Gemini's Structured Outputs.
  * These map directly to our TypeScript definitions in src/types/agents.ts
+ *
+ * IMPORTANT: `reasoning` is the FIRST property in every schema.
+ * Gemini generates structured output fields in order — forcing reasoning first
+ * means the model thinks step-by-step before committing to verdicts.
  */
 
 export const OVERREACTION_SCHEMA = {
     type: "object",
     properties: {
+        reasoning: { type: "string", description: "Think step-by-step. Analyze the news event, its actual financial impact, the magnitude of the price drop, historical precedents for similar events, and whether cognitive biases are at play. Then reach your conclusion." },
         is_overreaction: { type: "boolean", description: "True if the price drop is an irrational overreaction." },
         confidence_score: { type: "integer", description: "0-100 confidence score." },
         identified_biases: {
@@ -23,12 +28,13 @@ export const OVERREACTION_SCHEMA = {
         target_price: { type: "number", description: "Target price for the reversion." },
         timeframe_days: { type: "integer", description: "Expected days for the setup to play out." }
     },
-    required: ["is_overreaction", "confidence_score", "identified_biases", "thesis", "financial_impact_assessment", "stop_loss", "target_price"]
+    required: ["reasoning", "is_overreaction", "confidence_score", "identified_biases", "thesis", "financial_impact_assessment", "stop_loss", "target_price"]
 };
 
 export const CONTAGION_SCHEMA = {
     type: "object",
     properties: {
+        reasoning: { type: "string", description: "Think step-by-step. Analyze what caused the epicenter to drop, whether the satellite has real fundamental exposure to the same issue, and whether the sympathy sell-off is justified or irrational." },
         is_contagion: { type: "boolean", description: "True if the ticker dropped purely in sympathy without actual exposure." },
         confidence_score: { type: "integer", description: "0-100 confidence score." },
         epicenter_ticker: { type: "string", description: "The ticker that originally caused the sector drop." },
@@ -40,12 +46,13 @@ export const CONTAGION_SCHEMA = {
         target_price: { type: "number" },
         timeframe_days: { type: "integer" }
     },
-    required: ["is_contagion", "confidence_score", "epicenter_ticker", "thesis", "exposure_analysis", "stop_loss", "target_price"]
+    required: ["reasoning", "is_contagion", "confidence_score", "epicenter_ticker", "thesis", "exposure_analysis", "stop_loss", "target_price"]
 };
 
 export const EARNINGS_SCHEMA = {
     type: "object",
     properties: {
+        reasoning: { type: "string", description: "Think step-by-step. Analyze the earnings numbers (EPS, revenue), compare actual vs estimates, evaluate forward guidance quality, identify any one-time items, and determine if the market reaction is proportional to the fundamental reality." },
         is_mispriced: { type: "boolean" },
         confidence_score: { type: "integer" },
         thesis: { type: "string" },
@@ -56,12 +63,13 @@ export const EARNINGS_SCHEMA = {
         stop_loss: { type: "number" },
         target_price: { type: "number" }
     },
-    required: ["is_mispriced", "confidence_score", "thesis", "forward_guidance_analysis", "stop_loss", "target_price"]
+    required: ["reasoning", "is_mispriced", "confidence_score", "thesis", "forward_guidance_analysis", "stop_loss", "target_price"]
 };
 
 export const SATELLITE_DISCOVERY_SCHEMA = {
     type: "object",
     properties: {
+        reasoning: { type: "string", description: "Think step-by-step. Analyze the epicenter's problem, map out sector relationships and supply chains, and determine which watchlist tickers could be unfairly sold in sympathy." },
         satellites: {
             type: "array",
             items: {
@@ -76,12 +84,13 @@ export const SATELLITE_DISCOVERY_SCHEMA = {
             description: "Tickers from the watchlist that are likely contagion candidates."
         }
     },
-    required: ["satellites"]
+    required: ["reasoning", "satellites"]
 };
 
 export const SANITY_CHECK_SCHEMA = {
     type: "object",
     properties: {
+        reasoning: { type: "string", description: "Think step-by-step. Identify the strongest argument against this trade, check for macro headwinds, pending legal/regulatory risks, debt maturities, and any fatal flaws the other agents missed. Then reach your verdict." },
         passes_sanity_check: { type: "boolean", description: "True if the trade survives the red team attack." },
         risk_score: { type: "integer", description: "0-100 risk score (higher is safer)." },
         fatal_flaws: {
@@ -92,5 +101,5 @@ export const SANITY_CHECK_SCHEMA = {
         macro_obstacles: { type: "string", description: "How the broader market environment hurts this trade." },
         counter_thesis: { type: "string", description: "The absolute best argument for why this trade will lose money." }
     },
-    required: ["passes_sanity_check", "risk_score", "fatal_flaws", "counter_thesis"]
+    required: ["reasoning", "passes_sanity_check", "risk_score", "fatal_flaws", "counter_thesis"]
 };

@@ -12,7 +12,7 @@
 
 import { supabase } from '@/config/supabase';
 import { MarketDataService } from './marketData';
-import { AgentService } from './agents';
+import { AgentService, type MarketContext } from './agents';
 import { GeminiService } from './gemini';
 import { NotificationService } from './notifications';
 import { RSSReaderService } from './rssReader';
@@ -231,8 +231,14 @@ export class ScannerService {
             let perfContext = '';
             try {
                 perfContext = await performanceStats.buildPerformanceContext();
-                console.log('[Scanner] Performance context loaded for agent feedback loop.');
-            } catch { /* non-fatal — agents run without historical context */ }
+                if (perfContext) {
+                    console.log('[Scanner] Performance context loaded for agent feedback loop.');
+                } else {
+                    console.warn('[Scanner] Performance context is empty — agents running without historical calibration.');
+                }
+            } catch (perfErr) {
+                console.warn('[Scanner] Failed to load performance context (non-fatal):', perfErr);
+            }
 
             // 3c. Append self-learned lessons from Reflection Agent (RAG loop)
             try {
@@ -240,8 +246,12 @@ export class ScannerService {
                 if (lessons) {
                     perfContext += lessons;
                     console.log('[Scanner] Reflection lessons injected into agent context.');
+                } else {
+                    console.log('[Scanner] No reflection lessons available yet — run Reflection Agent after accumulating signal outcomes.');
                 }
-            } catch { /* non-fatal — agents run without reflection lessons */ }
+            } catch (reflErr) {
+                console.warn('[Scanner] Failed to load reflection lessons (non-fatal):', reflErr);
+            }
 
             // 4. Find fresh unparsed articles from the cache
             // In a real flow, we'd only grab articles from the last hour
@@ -381,12 +391,21 @@ export class ScannerService {
                             if (savedEvent && ev.severity >= 5) {
                                 console.log(`[Scanner] Deep analysis triggered for ${ev.ticker} (severity=${ev.severity}): ${ev.headline}`);
                                 // Fetch live quote for context
-                                let quote;
+                                let quote: any;
                                 try {
                                     quote = await MarketDataService.getQuote(ev.ticker);
                                 } catch (e) { /* ignore */ }
 
                                 const priceDrop = quote ? quote.changePercent : -10; // Mocked if api fails
+
+                                // Build enriched market context for the agent
+                                const marketContext: MarketContext = {
+                                    fiftyTwoWeekHigh: quote?.fiftyTwoWeekHigh,
+                                    fiftyTwoWeekLow: quote?.fiftyTwoWeekLow,
+                                    avgVolume: quote?.avgVolume,
+                                    currentVolume: quote?.volume,
+                                    sectorPerformance: quote?.sectorPerformance,
+                                };
 
                                 // Gather real article context for this ticker
                                 const eventContext = articleContextByTicker[ev.ticker]
@@ -399,7 +418,8 @@ export class ScannerService {
                                     eventContext,
                                     quote?.price || 100,
                                     priceDrop,
-                                    perfContext
+                                    perfContext,
+                                    marketContext
                                 );
 
                                 // Validate agent response before acting on it

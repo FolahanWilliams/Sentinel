@@ -109,6 +109,7 @@ function buildPrompt(articles: RawArticle[]): string {
 
   For EACH article, return a JSON object with these fields:
   - index: the article number [0], [1], etc.
+  - reasoning: 1-2 sentences explaining your thought process — why you assigned this sentiment, impact level, and signals. This helps with audit trails.
   - summary: 1-2 sentence briefing of why this matters to traders/investors. Be specific and actionable, not generic.
   - category: one of: ai_ml, crypto_web3, macro_economy, tech_earnings, startups_vc, cybersecurity, regulation_policy, semiconductors, markets_trading, geopolitics, other
   - sentiment: "bullish", "bearish", or "neutral" — from a MARKET perspective, not general positivity
@@ -119,7 +120,7 @@ function buildPrompt(articles: RawArticle[]): string {
     - ticker: stock/crypto ticker if identifiable (e.g. "NVDA", "BTC", "AAPL"). null if none.
     - direction: "up", "down", or "volatile" — expected market impact
     - confidence: 0.0 to 1.0
-    - note: 1-line explanation
+    - note: 1-line explanation of why this signal was identified
     If no trading signal, use empty array [].
   - entities: array of mentioned tickers, company names, or key people. e.g. ["NVDA", "Jensen Huang", "TSMC"]
 
@@ -130,6 +131,7 @@ function buildPrompt(articles: RawArticle[]): string {
   - signalCount: { bullish: number, bearish: number, neutral: number }
 
   IMPORTANT RULES:
+  - Think step-by-step for each article before assigning sentiment and signals.
   - Be concise. Summaries should be 1-2 sentences max.
   - Sentiment is about MARKET IMPACT. A company getting hacked is bearish for that stock even if the article tone is neutral.
   - Only flag "high" impact for genuinely market-moving events (earnings, policy, breaches, rate decisions, M&A).
@@ -139,7 +141,7 @@ function buildPrompt(articles: RawArticle[]): string {
 
   Return valid JSON in this exact structure matching the articles passed in:
   {
-    "articles": [ { "index": 0, "summary": "...", "category": "...", "sentiment": "...", "sentimentScore": 0, "impact": "...", "signals": [], "entities": [] } ],
+    "articles": [ { "index": 0, "reasoning": "...", "summary": "...", "category": "...", "sentiment": "...", "sentimentScore": 0, "impact": "...", "signals": [], "entities": [] } ],
     "briefing": { "topStories": [], "marketMood": "mixed", "trendingTopics": [], "signalCount": { "bullish": 0, "bearish": 0, "neutral": 0 } }
   }`
 }
@@ -262,7 +264,7 @@ serve(async (req) => {
                         contents: [{ parts: [{ text: prompt }] }],
                         generationConfig: {
                             responseMimeType: 'application/json',
-                            temperature: 0.1,
+                            temperature: 0.15,
                         }
                     })
                 }

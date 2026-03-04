@@ -14,6 +14,45 @@ const ALLOWED_MODELS = new Set([
     'gemini-3-flash',
 ])
 
+/**
+ * Call the Gemini API with the given payload.
+ * Returns { data, inputTokens, outputTokens } on success, or throws on failure.
+ */
+async function callGemini(
+    model: string,
+    payload: any,
+    apiKey: string
+): Promise<{ data: any; text: string; inputTokens: number; outputTokens: number }> {
+    const geminiRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+        {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-goog-api-key': apiKey,
+            },
+            body: JSON.stringify(payload)
+        }
+    )
+
+    if (!geminiRes.ok) {
+        const errorText = await geminiRes.text()
+        throw new Error(`Gemini API ${geminiRes.status}: ${errorText}`)
+    }
+
+    const data = await geminiRes.json()
+
+    let text = ''
+    if (data.candidates && data.candidates.length > 0) {
+        text = data.candidates[0].content.parts[0].text
+    }
+
+    const inputTokens = data.usageMetadata?.promptTokenCount || 0
+    const outputTokens = data.usageMetadata?.candidatesTokenCount || 0
+
+    return { data, text, inputTokens, outputTokens }
+}
+
 serve(async (req) => {
     // 1. Handle CORS preflight
     if (req.method === 'OPTIONS') {
@@ -48,14 +87,17 @@ serve(async (req) => {
         const {
             systemInstruction,
             prompt,
+            messages,
             model = 'gemini-3-flash-preview',
             requireGroundedSearch = false,
-            responseSchema
+            responseSchema,
+            temperature,
+            enableThinking = false
         } = await req.json()
 
-        if (!prompt) {
+        if (!prompt && (!messages || messages.length === 0)) {
             return new Response(
-                JSON.stringify({ success: false, error: 'Missing prompt' }),
+                JSON.stringify({ success: false, error: 'Missing prompt or messages' }),
                 { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
             )
         }
@@ -83,15 +125,23 @@ serve(async (req) => {
         const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
         // 5. Construct Gemini API call
-        console.log(`[proxy-gemini] Calling ${model} (Grounded Search: ${requireGroundedSearch})`)
+        // Clamp temperature to valid range (0.0-2.0), default 0.2
+        const effectiveTemp = typeof temperature === 'number'
+            ? Math.max(0.0, Math.min(2.0, temperature))
+            : 0.2
+
+        console.log(`[proxy-gemini] Calling ${model} (temp=${effectiveTemp}, grounded=${requireGroundedSearch}, thinking=${enableThinking})`)
         const startTime = Date.now()
 
+        // Support both single-turn (prompt) and multi-turn (messages) calls
+        const contents = messages && Array.isArray(messages) && messages.length > 0
+            ? messages.map((m: any) => ({ role: m.role, parts: [{ text: m.text }] }))
+            : [{ role: 'user', parts: [{ text: prompt }] }]
+
         const payload: any = {
-            contents: [
-                { role: 'user', parts: [{ text: prompt }] }
-            ],
+            contents,
             generationConfig: {
-                temperature: 0.2,
+                temperature: effectiveTemp,
             }
         }
 
@@ -107,27 +157,49 @@ serve(async (req) => {
             ]
         }
 
+        // Enable Gemini's native thinking mode for deeper reasoning
+        if (enableThinking) {
+            payload.generationConfig.thinkingConfig = {
+                thinkingBudget: 2048
+            }
+        }
+
         if (responseSchema) {
             payload.generationConfig.responseMimeType = 'application/json'
             payload.generationConfig.responseSchema = responseSchema
         }
 
-        // 6. Phase 1 fix (Audit C7): Move API key from URL query param to request header
-        const geminiRes = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-            {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-goog-api-key': GEMINI_API_KEY,
-                },
-                body: JSON.stringify(payload)
-            }
-        )
+        // 6. Call Gemini with auto-retry on JSON parse failure
+        let result: { data: any; text: string; inputTokens: number; outputTokens: number }
+        let totalInputTokens = 0
+        let totalOutputTokens = 0
 
-        if (!geminiRes.ok) {
-            const errorText = await geminiRes.text()
-            console.error(`Gemini API Error: ${geminiRes.status} ${errorText}`)
+        try {
+            result = await callGemini(model, payload, GEMINI_API_KEY)
+            totalInputTokens += result.inputTokens
+            totalOutputTokens += result.outputTokens
+
+            // If JSON is expected, verify it parses. If not, retry once.
+            if (responseSchema && result.text) {
+                try {
+                    JSON.parse(result.text)
+                } catch (_parseErr) {
+                    console.warn('[proxy-gemini] JSON parse failed, retrying with feedback...')
+                    // Append a correction message and retry
+                    const retryContents = [
+                        ...contents,
+                        { role: 'model', parts: [{ text: result.text }] },
+                        { role: 'user', parts: [{ text: 'Your previous response was not valid JSON. Return ONLY valid JSON matching the required schema, with no markdown formatting or extra text.' }] }
+                    ]
+                    const retryPayload = { ...payload, contents: retryContents }
+                    result = await callGemini(model, retryPayload, GEMINI_API_KEY)
+                    totalInputTokens += result.inputTokens
+                    totalOutputTokens += result.outputTokens
+                    console.log('[proxy-gemini] Retry succeeded')
+                }
+            }
+        } catch (geminiError: any) {
+            console.error(`Gemini API Error: ${geminiError.message}`)
             // Phase 2 fix (Audit m17): Use 502 for upstream errors
             return new Response(
                 JSON.stringify({ success: false, error: 'AI service returned an error' }),
@@ -135,27 +207,18 @@ serve(async (req) => {
             )
         }
 
-        const data = await geminiRes.json()
         const durationMs = Date.now() - startTime
-
-        let text = ''
-        if (data.candidates && data.candidates.length > 0) {
-            text = data.candidates[0].content.parts[0].text
-        }
-
-        const inputTokens = data.usageMetadata?.promptTokenCount || 0
-        const outputTokens = data.usageMetadata?.candidatesTokenCount || 0
 
         // 7. Phase 2 fix (Audit M3 detailed): Await the usage log insert instead of fire-and-forget
         const { error: logError } = await supabaseAdmin.from('api_usage').insert({
             provider: model,
             endpoint: 'generateContent',
-            input_tokens: inputTokens,
-            output_tokens: outputTokens,
+            input_tokens: totalInputTokens,
+            output_tokens: totalOutputTokens,
             grounded_search_used: requireGroundedSearch,
             latency_ms: durationMs,
             success: true,
-            estimated_cost_usd: (inputTokens / 1_000_000 * 0.075) + (outputTokens / 1_000_000 * 0.30)
+            estimated_cost_usd: (totalInputTokens / 1_000_000 * 0.075) + (totalOutputTokens / 1_000_000 * 0.30)
         })
         if (logError) console.error('[proxy-gemini] Failed to log usage:', logError)
 
@@ -163,10 +226,10 @@ serve(async (req) => {
         return new Response(
             JSON.stringify({
                 success: true,
-                text,
+                text: result.text,
                 metadata: {
-                    inputTokens,
-                    outputTokens,
+                    inputTokens: totalInputTokens,
+                    outputTokens: totalOutputTokens,
                     durationMs
                 }
             }),

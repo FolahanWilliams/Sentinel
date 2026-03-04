@@ -2,7 +2,8 @@
  * Sentinel — Response Validator / Hallucination Guardrails
  *
  * Validates Gemini agent responses before they're acted upon.
- * Catches impossible numbers, missing required fields, and logical inconsistencies.
+ * Catches impossible numbers, missing required fields, logical inconsistencies,
+ * and lazy/empty reasoning.
  */
 
 interface ValidationResult {
@@ -26,6 +27,9 @@ export class ResponseValidator {
         const warnings: string[] = [];
         const data = response as Record<string, unknown>;
 
+        // Validate reasoning quality (chain-of-thought)
+        this.validateReasoning(data, warnings);
+
         // Validate confidence scores are within bounds
         this.validateConfidence(data, warnings);
 
@@ -42,6 +46,23 @@ export class ResponseValidator {
             valid: warnings.filter(w => w.startsWith('FATAL:')).length === 0,
             warnings
         };
+    }
+
+    /**
+     * Validate that the reasoning field is present and substantive.
+     * A lazy or empty reasoning indicates the model didn't actually think.
+     */
+    private validateReasoning(data: Record<string, unknown>, warnings: string[]) {
+        if ('reasoning' in data) {
+            const reasoning = data.reasoning;
+            if (!reasoning || typeof reasoning !== 'string') {
+                warnings.push('FATAL: reasoning field is missing or not a string');
+            } else if (reasoning.trim().length < 50) {
+                warnings.push('FATAL: reasoning is too short (<50 chars) — model did not think step-by-step');
+            } else if (reasoning.trim().length < 100) {
+                warnings.push('reasoning is suspiciously brief (<100 chars) — may lack depth');
+            }
+        }
     }
 
     private validateConfidence(data: Record<string, unknown>, warnings: string[]) {
@@ -92,6 +113,14 @@ export class ResponseValidator {
                     warnings.push(`FATAL: stop_loss ($${stopLoss}) >= target_price ($${targetPrice})`);
                 }
             }
+
+            // Stop-loss proximity warning: too-tight stops get blown out by noise
+            if (entryLow !== undefined && !isShort) {
+                const stopPct = Math.abs((entryLow - stopLoss) / entryLow) * 100;
+                if (stopPct < 1.0) {
+                    warnings.push(`stop_loss is only ${stopPct.toFixed(1)}% below entry — dangerously tight`);
+                }
+            }
         }
 
         if (entryLow !== undefined && entryHigh !== undefined) {
@@ -114,6 +143,14 @@ export class ResponseValidator {
             if (timeframe > 365) {
                 warnings.push('timeframe_days exceeds 1 year — unusually long');
             }
+            // Overreaction setups that take > 90 days are suspicious
+            if (timeframe > 90) {
+                const signalType = data.signal_type as string | undefined;
+                const isOverreaction = data.is_overreaction;
+                if (isOverreaction || signalType === 'long_overreaction') {
+                    warnings.push(`timeframe_days (${timeframe}) exceeds 90 for overreaction setup — unusually long`);
+                }
+            }
         }
     }
 
@@ -123,6 +160,9 @@ export class ResponseValidator {
         }
         if ('exposure_analysis' in data && (!data.exposure_analysis || (typeof data.exposure_analysis === 'string' && data.exposure_analysis.trim().length < 10))) {
             warnings.push('FATAL: exposure_analysis is empty or too short');
+        }
+        if ('counter_thesis' in data && (!data.counter_thesis || (typeof data.counter_thesis === 'string' && data.counter_thesis.trim().length < 10))) {
+            warnings.push('counter_thesis is empty or too short — Red Team may not be rigorous');
         }
     }
 }
