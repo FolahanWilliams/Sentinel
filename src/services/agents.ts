@@ -20,7 +20,7 @@ import {
     SANITY_CHECK_SCHEMA,
     SATELLITE_DISCOVERY_SCHEMA
 } from './schemas';
-import { GEMINI_MODEL, GEMINI_MODEL_LITE } from '@/config/constants';
+import { GEMINI_MODEL } from '@/config/constants';
 import type { AgentResult } from '@/types/agents';
 
 /**
@@ -303,7 +303,7 @@ export class AgentService {
                 required: ["actionable_ids"]
             },
             temperature: 0.1,
-            model: GEMINI_MODEL_LITE,
+            model: GEMINI_MODEL,
         });
     }
 
@@ -362,7 +362,7 @@ export class AgentService {
                 required: ["events"]
             },
             temperature: 0.1,
-            model: GEMINI_MODEL_LITE,
+            model: GEMINI_MODEL,
         });
     }
 }

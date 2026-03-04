@@ -199,10 +199,10 @@ serve(async (req) => {
                 }
             }
         } catch (geminiError: any) {
-            console.error(`Gemini API Error: ${geminiError.message}`)
+            console.error(`[proxy-gemini] Gemini API Error for model ${model}: ${geminiError.message}`)
             // Phase 2 fix (Audit m17): Use 502 for upstream errors
             return new Response(
-                JSON.stringify({ success: false, error: 'AI service returned an error' }),
+                JSON.stringify({ success: false, error: 'AI service returned an error', detail: geminiError.message }),
                 { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 502 }
             )
         }
