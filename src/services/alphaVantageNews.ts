@@ -56,7 +56,7 @@ export class AlphaVantageNewsService {
                     'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
                 },
                 body: JSON.stringify({
-                    action: 'news_sentiment',
+                    endpoint: 'news_sentiment',
                     tickerParam,
                 }),
             });
