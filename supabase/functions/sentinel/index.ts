@@ -80,7 +80,7 @@ const ALL_FEEDS = [...TIER_1_FEEDS, ...TIER_2_FEEDS, ...TIER_3_FEEDS]
 function normalizeUrl(url: string): string {
     try {
         const u = new URL(url)
-        ;['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'ref', 'source', 'ncid', 'sr_share'].forEach(p => u.searchParams.delete(p))
+            ;['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'ref', 'source', 'ncid', 'sr_share'].forEach(p => u.searchParams.delete(p))
         u.pathname = u.pathname.replace(/\/+$/, '') || '/'
         return u.toString()
     } catch {
@@ -162,7 +162,7 @@ serve(async (req) => {
         const supabaseAuth = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
             global: { headers: { Authorization: authHeader } }
         })
-        const { data: { user }, error: authError } = await supabaseAuth.auth.getUser()
+        const { data: { user }, error: authError } = await supabaseAuth.auth.getUser(authHeader.replace('Bearer ', ''))
         if (authError || !user) {
             return new Response(
                 JSON.stringify({ error: 'Invalid or expired token' }),

@@ -35,7 +35,7 @@ serve(async (req) => {
         const supabaseAuth = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
             global: { headers: { Authorization: authHeader } }
         })
-        const { data: { user }, error: authError } = await supabaseAuth.auth.getUser()
+        const { data: { user }, error: authError } = await supabaseAuth.auth.getUser(authHeader.replace('Bearer ', ''))
         if (authError || !user) {
             return new Response(
                 JSON.stringify({ success: false, error: 'Invalid or expired token' }),
