@@ -13,9 +13,10 @@
 import { supabase } from '@/config/supabase';
 import { MarketDataService } from './marketData';
 import { AgentService } from './agents';
+import { GeminiService } from './gemini';
 import { NotificationService } from './notifications';
 import { RSSReaderService } from './rssReader';
-import { AlphaVantageNewsService } from './alphaVantageNews';
+import { GoogleNewsService } from './googleNews';
 import { RedditSentimentService } from './redditSentiment';
 import { OutcomeTracker } from './outcomeTracker';
 import { PositionSizer } from './positionSizer';
@@ -218,7 +219,7 @@ export class ScannerService {
             try {
                 const headTickers = tickers.slice(0, 5);
                 await Promise.allSettled([
-                    AlphaVantageNewsService.fetchAndCacheNews(headTickers),
+                    GoogleNewsService.fetchAndCacheNews(headTickers),
                     RedditSentimentService.fetchAndCacheSentiment(headTickers)
                 ]);
             } catch (extErr) {
@@ -291,12 +292,59 @@ export class ScannerService {
                 }
 
                 if (actionableArticles.length === 0) {
-                    console.log('[Scanner] No actionable articles found after pre-filtering. Exiting early.');
-                    return { signalsGenerated: 0, eventsFound: 0 };
+                    console.log('[Scanner] No actionable articles found after pre-filtering.');
                 }
 
                 const combinedText = actionableArticles.map(a => `${a.title}. ${a.description}`).join(' | ');
-                const extraction = await AgentService.extractEventsFromText(combinedText);
+                const extraction = actionableArticles.length > 0
+                    ? await AgentService.extractEventsFromText(combinedText)
+                    : { success: true, data: { events: [] } };
+
+                // 5b. Per-Ticker Grounded Search — supplement RSS with Gemini Google Search
+                // This ensures we always have fresh context, even when RSS lacks ticker-specific news.
+                console.log(`[Scanner] Running per-ticker grounded search for ${tickers.length} tickers...`);
+                for (const ticker of tickers.slice(0, 5)) { // Cap at 5 to control API cost
+                    try {
+                        const tickerSearchResult = await GeminiService.generate<{ events: any[] }>({
+                            prompt: `Find the most significant news event for stock ticker ${ticker} from the last 48 hours. Focus on earnings, analyst ratings, product launches, M&A, regulatory decisions, tariffs, partnerships, or any catalyst that could move the stock price. If there is genuinely no major news, return an empty events array.`,
+                            requireGroundedSearch: true,
+                            responseSchema: {
+                                type: "object",
+                                properties: {
+                                    events: {
+                                        type: "array",
+                                        items: {
+                                            type: "object",
+                                            properties: {
+                                                ticker: { type: "string" },
+                                                event_type: { type: "string" },
+                                                headline: { type: "string" },
+                                                severity: { type: "integer", description: "1-10 impact scale" }
+                                            },
+                                            required: ["ticker", "event_type", "headline", "severity"]
+                                        }
+                                    }
+                                },
+                                required: ["events"]
+                            }
+                        });
+
+                        if (tickerSearchResult.success && tickerSearchResult.data?.events && tickerSearchResult.data.events.length > 0) {
+                            // Merge grounded events into extraction results
+                            if (!extraction.data) extraction.data = { events: [] };
+                            if (!extraction.data.events) extraction.data.events = [];
+                            const gsEvents = tickerSearchResult.data.events;
+                            for (const ev of gsEvents) {
+                                // Force ticker to match the one we searched for
+                                ev.ticker = ticker;
+                                extraction.data.events.push(ev);
+                            }
+                            console.log(`[Scanner] Grounded search found ${gsEvents.length} events for ${ticker}`);
+                        }
+                    } catch (gsErr) {
+                        console.warn(`[Scanner] Grounded search failed for ${ticker} (non-fatal):`, gsErr);
+                    }
+                }
 
                 // Build a lookup of article descriptions by ticker for full context
                 const articleContextByTicker: Record<string, string> = {};
@@ -312,6 +360,8 @@ export class ScannerService {
                 }
 
                 if (extraction.success && extraction.data?.events) {
+                    console.log(`[Scanner] Extracted ${extraction.data.events.length} events:`, extraction.data.events.map((e: any) => `${e.ticker}(${e.event_type}, sev=${e.severity})`).join(', '));
+
                     for (const ev of extraction.data.events) {
                         // Only care about events concerning our watchlist
                         if (tickers.includes(ev.ticker)) {
@@ -323,13 +373,13 @@ export class ScannerService {
                                 event_type: ev.event_type,
                                 headline: ev.headline,
                                 severity: ev.severity,
-                                is_overreaction_candidate: ev.severity >= 7,
-                                source_urls: [],
+                                is_overreaction_candidate: ev.severity >= 5,
                                 source_type: 'rss'
                             } as any, { onConflict: 'ticker,headline', ignoreDuplicates: true }).select('id').single();
 
-                            // 6. Trigger Deep Analysis Pipeline if severe
-                            if (savedEvent && ev.severity >= 7) {
+                            // 6. Trigger Deep Analysis Pipeline if moderate-to-severe
+                            if (savedEvent && ev.severity >= 5) {
+                                console.log(`[Scanner] Deep analysis triggered for ${ev.ticker} (severity=${ev.severity}): ${ev.headline}`);
                                 // Fetch live quote for context
                                 let quote;
                                 try {

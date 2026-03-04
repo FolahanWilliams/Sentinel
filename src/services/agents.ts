@@ -179,7 +179,7 @@ export class AgentService {
     /**
      * 6. Pre-Filter Agent (Helper)
      * Scores a raw list of news articles and returns only the IDs of those
-     * with high market-moving potential. Drastically cuts token costs.
+     * with market-moving potential. Inclusive to avoid dropping actionable articles.
      */
     static async filterActionableNews(articles: Array<{ id: string; title: string; description: string }>): Promise<AgentResult<{ actionable_ids: string[] }>> {
         const payload = articles.map(a => `[ID: ${a.id}] ${a.title}\n${a.description}`).join('\n\n');
@@ -188,14 +188,28 @@ export class AgentService {
     
     ${payload}
     
-    Identify which articles have high market-moving potential (e.g., earnings, FDA, CEO change, major macro, lawsuits).
-    Ignore generic market commentary, daily recaps, or fluff pieces.
-    Return a JSON array containing ONLY the string IDs of the actionable articles.
+    Identify which articles are potentially actionable for stock traders. Include articles about:
+    - Earnings reports (beats, misses, guidance changes)
+    - Analyst upgrades, downgrades, or price target changes
+    - FDA decisions, drug approvals, clinical trial results
+    - Executive changes (CEO, CFO, board members)
+    - Mergers, acquisitions, divestitures, or activist investors
+    - Product launches, partnerships, or major contracts
+    - Government regulations, tariffs, sanctions, or antitrust actions
+    - Supply chain disruptions or major operational news
+    - Significant price movements or unusual trading volume
+    - Lawsuits, SEC investigations, or compliance issues
+    - Macroeconomic news that impacts specific sectors or companies
+    
+    Be INCLUSIVE. If an article mentions a specific publicly traded company 
+    with a concrete event or catalyst, include it. Only exclude truly generic
+    market commentary, opinion pieces with no actionable content, or daily recaps.
+    Return a JSON object with the IDs of actionable articles.
     `;
 
         return GeminiService.generate({
             prompt,
-            systemInstruction: "You are a pre-filter. Return ONLY a JSON object with a single key 'actionable_ids' containing an array of string IDs.",
+            systemInstruction: "You are a pre-filter for a trading scanner. Be inclusive — when in doubt, INCLUDE the article. Return ONLY a JSON object with a single key 'actionable_ids' containing an array of string IDs.",
             requireGroundedSearch: false,
             responseSchema: {
                 type: "object",
@@ -213,11 +227,30 @@ export class AgentService {
     /**
      * 7. Extraction Agent (Helper)
      * Converts unstructured RSS text into structured Market Events.
+     * Broadened to capture more event types beyond just extreme events.
      */
     static async extractEventsFromText(text: string): Promise<AgentResult<any>> {
         const prompt = `
-    Extract notable market events (earnings misses, FDA decisions, extreme analyst downgrades, CEO departures) from the following text.
-    Only return events that historically cause high volatility. Ignore fluff.
+    Extract notable market events from the following text. Look for:
+    - Earnings beats or misses, revenue surprises, guidance changes
+    - Analyst upgrades, downgrades, price target changes
+    - FDA decisions, drug approvals or rejections, clinical trial results
+    - Executive departures, CEO/CFO changes, board shakeups
+    - Mergers, acquisitions, divestitures, activist investor involvement
+    - Product launches, major partnerships, government contracts
+    - Tariffs, sanctions, regulatory actions, antitrust rulings
+    - Supply chain disruptions or major operational problems
+    - Significant stock price movements (>3% moves)
+    - Lawsuits, SEC investigations, compliance issues
+    - Sector-wide catalysts (interest rate decisions, policy changes)
+    
+    For each event, assign a severity from 1-10:
+    - 1-4: Minor news, unlikely to move stock significantly
+    - 5-6: Moderate news, could cause 2-5% price movement
+    - 7-8: Major news, likely to cause 5-10% price movement
+    - 9-10: Extreme event (earnings disaster, FDA rejection, fraud)
+    
+    Be inclusive — extract ANY event that could reasonably affect a stock price.
     
     TEXT TO ANALYZE:
     ${text}
@@ -225,8 +258,7 @@ export class AgentService {
 
         return GeminiService.generate({
             prompt,
-            // No specific system prompt needed, master is enough
-            requireGroundedSearch: false, // Just text parsing, no web search needed
+            requireGroundedSearch: false,
             responseSchema: {
                 type: "object",
                 properties: {
@@ -236,7 +268,7 @@ export class AgentService {
                             type: "object",
                             properties: {
                                 ticker: { type: "string" },
-                                event_type: { type: "string", description: "e.g., earnings_miss, guidance_cut, fda_decision" },
+                                event_type: { type: "string", description: "e.g., earnings_miss, guidance_cut, fda_decision, analyst_upgrade, product_launch, m_and_a, tariff, price_movement" },
                                 headline: { type: "string" },
                                 severity: { type: "integer", description: "1-10 impact scale" }
                             },
