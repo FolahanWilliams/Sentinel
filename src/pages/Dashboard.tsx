@@ -10,6 +10,7 @@ import { UpcomingEvents } from '@/components/dashboard/UpcomingEvents';
 import { WeeklyDigest } from '@/components/dashboard/WeeklyDigest';
 import { PortfolioOverview } from '@/components/dashboard/PortfolioOverview';
 import { NewsFeed } from '@/components/dashboard/NewsFeed';
+import { GlassMaterialize } from '@/components/shared/GlassMaterialize';
 import { useScannerLogs } from '@/hooks/useScannerLogs';
 import { SkeletonSignalFeed } from '@/components/shared/SkeletonPrimitives';
 import { EmptyState } from '@/components/shared/EmptyState';
@@ -152,9 +153,9 @@ export function Dashboard() {
 
                 {/* LEFT COLUMN: Market Snapshot & Portfolio */}
                 <div className="xl:col-span-1 space-y-6 flex flex-col min-h-[600px]">
-                    <MarketSnapshot />
-                    <PortfolioOverview />
-                    <WeeklyDigest />
+                    <GlassMaterialize delay={0}><MarketSnapshot /></GlassMaterialize>
+                    <GlassMaterialize delay={50}><PortfolioOverview /></GlassMaterialize>
+                    <GlassMaterialize delay={100}><WeeklyDigest /></GlassMaterialize>
                 </div>
 
                 {/* MIDDLE COLUMN: Signal Feed */}
@@ -271,10 +272,10 @@ export function Dashboard() {
 
                 {/* RIGHT COLUMN: Trends & Events*/}
                 <div className="xl:col-span-1 space-y-6 flex flex-col min-h-[600px]">
-                    <MarketTrends />
-                    <PotentialSignals />
-                    <NewsFeed limit={8} />
-                    <UpcomingEvents />
+                    <GlassMaterialize delay={50}><MarketTrends /></GlassMaterialize>
+                    <GlassMaterialize delay={100}><PotentialSignals /></GlassMaterialize>
+                    <GlassMaterialize delay={150}><NewsFeed limit={8} /></GlassMaterialize>
+                    <GlassMaterialize delay={200}><UpcomingEvents /></GlassMaterialize>
                 </div>
             </div>
         </div>

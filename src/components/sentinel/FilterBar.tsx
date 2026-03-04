@@ -1,4 +1,5 @@
 import { Search, Filter, AlertTriangle } from 'lucide-react';
+import { motion } from 'framer-motion';
 import type { ArticleCategory } from '@/types/sentinel';
 import { CATEGORY_COLORS } from '@/utils/sentinel-helpers';
 
@@ -42,7 +43,7 @@ export function FilterBar({
                         placeholder="Search briefings, entities, tickers..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full bg-sentinel-900/50 border border-sentinel-700/50 rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sentinel-500 transition-shadow text-white placeholder-sentinel-500"
+                        className="w-full bg-sentinel-950/60 border border-sentinel-700/50 rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none transition-shadow text-white placeholder-sentinel-500 glass-input-recessed glass-focus-ring"
                     />
                 </div>
 
@@ -51,23 +52,25 @@ export function FilterBar({
                     <select
                         value={activeSentiment}
                         onChange={(e) => setActiveSentiment(e.target.value as any)}
-                        className="bg-sentinel-900/50 border border-sentinel-700/50 rounded-lg px-3 py-2 text-sm text-sentinel-300 focus:outline-none focus:ring-2 focus:ring-sentinel-500 appearance-none flex-1 sm:flex-none cursor-pointer"
+                        className="bg-sentinel-950/60 border border-sentinel-700/50 rounded-lg px-3 py-2 text-sm text-sentinel-300 focus:outline-none appearance-none flex-1 sm:flex-none cursor-pointer glass-input-recessed glass-focus-ring"
                     >
                         <option value="all">All Sentiment</option>
                         <option value="bullish">🟢 Bullish Only</option>
                         <option value="bearish">🔴 Bearish Only</option>
                     </select>
 
-                    <button
+                    <motion.button
                         onClick={() => setHighImpactOnly(!highImpactOnly)}
-                        className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-colors flex-1 sm:flex-none ${highImpactOnly
+                        whileTap={{ scale: 0.985 }}
+                        transition={{ type: 'spring', stiffness: 600, damping: 15, duration: 0.15 }}
+                        className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-colors flex-1 sm:flex-none glass-pressable ${highImpactOnly
                                 ? 'bg-amber-500/20 text-amber-400 border-amber-500/50'
                                 : 'bg-sentinel-900/50 text-sentinel-400 border-sentinel-700/50 hover:bg-sentinel-800'
                             }`}
                     >
                         <AlertTriangle className="h-4 w-4" />
                         High Impact
-                    </button>
+                    </motion.button>
                 </div>
             </div>
 

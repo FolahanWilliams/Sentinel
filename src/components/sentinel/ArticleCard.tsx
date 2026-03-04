@@ -17,7 +17,7 @@ export function ArticleCard({ article, onScanTicker }: ArticleCardProps) {
 
     return (
         <div className={`
-            p-5 rounded-xl border bg-sentinel-800/40 backdrop-blur-sm transition-colors hover:bg-sentinel-800/60
+            p-5 rounded-xl border bg-sentinel-800/40 backdrop-blur-sm transition-colors hover:bg-sentinel-800/60 glass-refract glass-specular glass-pressable
             ${article.impact === 'high' ? 'border-amber-500/30 shadow-[0_0_15px_rgba(245,158,11,0.05)]' : 'border-sentinel-700/50'}
         `}>
             {/* Top Metadata Row */}

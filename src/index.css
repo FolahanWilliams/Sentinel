@@ -87,6 +87,30 @@
   --shadow-glow-purple: 0 0 20px #8b5cf633;
   --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.4);
   --shadow-elevated: 0 8px 24px rgba(0, 0, 0, 0.6);
+
+  /* Glass elevation blur scale (set to 0.5 on low-end devices via JS) */
+  --glass-blur-scale: 1;
+  --glass-blur-base: 24px;
+  --glass-blur-light: 16px;
+  --glass-blur-heavy: 32px;
+
+  /* Graduated elevation shadows with ambient tint */
+  --shadow-tint: rgba(59, 130, 246, 0.05);
+  --shadow-level-1: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-level-2: 0 4px 16px rgba(0, 0, 0, 0.35);
+  --shadow-level-3: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --shadow-level-4: 0 12px 32px rgba(0, 0, 0, 0.45);
+  --shadow-level-5: 0 16px 40px rgba(0, 0, 0, 0.5);
+
+  /* Ambient orb reactivity */
+  --ambient-orb-speed: 1;
+  --ambient-hue-shift: 0deg;
+
+  /* Noise intensity (adaptive — increased for empty states, decreased for dense content) */
+  --noise-opacity: 0.04;
+
+  /* Specular highlight sweep position */
+  --specular-x: -100%;
 }
 
 /* ===========================
@@ -445,8 +469,8 @@ body {
 .glass-panel {
   position: relative;
   background-color: rgba(20, 22, 32, 0.45);
-  backdrop-filter: blur(24px) saturate(150%);
-  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  backdrop-filter: blur(calc(var(--glass-blur-base) * var(--glass-blur-scale))) saturate(150%);
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur-base) * var(--glass-blur-scale))) saturate(150%);
   /* Specular white/tinted top-left edge */
   border: 1px solid transparent;
   background-clip: padding-box;
@@ -486,8 +510,8 @@ body {
 .glass-panel-heavy {
   position: relative;
   background-color: rgba(11, 12, 16, 0.85);
-  backdrop-filter: blur(32px) saturate(180%);
-  -webkit-backdrop-filter: blur(32px) saturate(180%);
+  backdrop-filter: blur(calc(var(--glass-blur-heavy) * var(--glass-blur-scale))) saturate(180%);
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur-heavy) * var(--glass-blur-scale))) saturate(180%);
   border: 1px solid transparent;
   background-clip: padding-box;
   box-shadow:
@@ -537,7 +561,7 @@ body {
   width: 50vw;
   height: 50vw;
   background: radial-gradient(circle, rgba(59, 130, 246, 0.15) 0%, transparent 60%);
-  animation: float-orb-1 20s ease-in-out infinite;
+  animation: float-orb-1 calc(20s / var(--ambient-orb-speed)) ease-in-out infinite;
 }
 
 .main-ambient-background::after {
@@ -546,11 +570,363 @@ body {
   width: 60vw;
   height: 60vw;
   background: radial-gradient(circle, rgba(139, 92, 246, 0.12) 0%, transparent 60%);
-  animation: float-orb-2 25s ease-in-out infinite reverse;
+  animation: float-orb-2 calc(25s / var(--ambient-orb-speed)) ease-in-out infinite reverse;
 }
 
 /* Subtle dot grid pattern */
 .bg-grid-pattern {
   background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
   background-size: 24px 24px;
+}
+
+/* ===========================
+   GLASS ELEVATION SYSTEM
+   Z-axis blur gradient — lighter blur for overlays (closer to camera),
+   heavier blur for background panels (deeper layer).
+   =========================== */
+
+/* Light glass — overlays, modals, drawers (16px blur, more transparent) */
+.glass-panel-light {
+  position: relative;
+  background-color: rgba(20, 22, 32, 0.35);
+  backdrop-filter: blur(calc(var(--glass-blur-light) * var(--glass-blur-scale))) saturate(140%);
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur-light) * var(--glass-blur-scale))) saturate(140%);
+  border: 1px solid transparent;
+  background-clip: padding-box;
+  box-shadow:
+    0 4px 30px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.12),
+    inset 1px 0 0 0 rgba(255, 255, 255, 0.06),
+    inset 0 -1px 0 0 rgba(255, 255, 255, 0.02);
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  z-index: 1;
+}
+
+.glass-panel-light::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  opacity: 0.03;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+  border-radius: inherit;
+  z-index: -1;
+}
+
+/* ===========================
+   GRADUATED ELEVATION SHADOWS
+   Smooth 5-level shadow scale with ambient tint
+   =========================== */
+
+.shadow-elevation-1 { box-shadow: var(--shadow-level-1), 0 0 0 1px var(--shadow-tint); }
+.shadow-elevation-2 { box-shadow: var(--shadow-level-2), 0 0 8px var(--shadow-tint); }
+.shadow-elevation-3 { box-shadow: var(--shadow-level-3), 0 0 12px var(--shadow-tint); }
+.shadow-elevation-4 { box-shadow: var(--shadow-level-4), 0 0 16px var(--shadow-tint); }
+.shadow-elevation-5 { box-shadow: var(--shadow-level-5), 0 0 20px var(--shadow-tint); }
+
+/* ===========================
+   GLASS FOCUS RING — Luminous glow through frosted glass
+   =========================== */
+
+.glass-focus-ring:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px rgba(59, 130, 246, 0.3),
+    0 0 20px rgba(59, 130, 246, 0.15),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.15);
+}
+
+/* ===========================
+   GLASS PRESS / ACTIVE STATE — Compression feel
+   =========================== */
+
+.glass-pressable {
+  cursor: pointer;
+}
+
+.glass-pressable:active {
+  backdrop-filter: blur(calc((var(--glass-blur-base) - 4px) * var(--glass-blur-scale))) saturate(140%);
+  -webkit-backdrop-filter: blur(calc((var(--glass-blur-base) - 4px) * var(--glass-blur-scale))) saturate(140%);
+  background-color: rgba(20, 22, 32, 0.55);
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.3),
+    inset 0 2px 4px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
+  transform: scale(0.998);
+  transition: all 0.1s ease-out;
+}
+
+/* ===========================
+   HOVER REFRACTION — Subtle scale + noise shift
+   =========================== */
+
+.glass-refract {
+  transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+.glass-refract:hover {
+  transform: scale(1.005);
+}
+
+.glass-refract:hover::before {
+  opacity: 0.07;
+  background-position: 10px 10px;
+  transition: opacity 0.3s ease-out, background-position 0.3s ease-out;
+}
+
+/* ===========================
+   SPECULAR HIGHLIGHT — Slow-moving light sweep across top edge
+   =========================== */
+
+@keyframes specular-sweep {
+  0%   { background-position: -50% 0; }
+  100% { background-position: 150% 0; }
+}
+
+.glass-specular {
+  position: relative;
+  overflow: hidden;
+}
+
+.glass-specular::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.08) 45%,
+    rgba(255, 255, 255, 0.15) 50%,
+    rgba(255, 255, 255, 0.08) 55%,
+    transparent 100%
+  );
+  background-size: 50% 100%;
+  animation: specular-sweep 45s linear infinite;
+  pointer-events: none;
+  border-radius: inherit;
+  z-index: 2;
+}
+
+/* ===========================
+   CHROMATIC ABERRATION — Iridescent RGB split at glass edges
+   =========================== */
+
+.glass-chromatic {
+  position: relative;
+}
+
+.glass-chromatic::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 100, 100, 0.03) 0%,
+    transparent 30%,
+    transparent 70%,
+    rgba(100, 100, 255, 0.03) 100%
+  );
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* ===========================
+   GLASS CONDENSATION — Loading fog-then-clear effect
+   =========================== */
+
+@keyframes glass-condense {
+  0% {
+    backdrop-filter: blur(40px) saturate(120%);
+    -webkit-backdrop-filter: blur(40px) saturate(120%);
+    opacity: 0.6;
+  }
+  100% {
+    backdrop-filter: blur(24px) saturate(150%);
+    -webkit-backdrop-filter: blur(24px) saturate(150%);
+    opacity: 1;
+  }
+}
+
+.glass-condensing {
+  animation: glass-condense 0.8s ease-out forwards;
+}
+
+/* ===========================
+   FROSTED EDGE FEATHERING — Soft gradient edges
+   =========================== */
+
+.glass-feathered {
+  mask-image: radial-gradient(
+    ellipse 98% 98% at center,
+    black 85%,
+    transparent 100%
+  );
+  -webkit-mask-image: radial-gradient(
+    ellipse 98% 98% at center,
+    black 85%,
+    transparent 100%
+  );
+}
+
+/* ===========================
+   FINGERPRINT SMUDGE — Click interaction effect
+   =========================== */
+
+@keyframes smudge-fade {
+  from { opacity: 0.08; transform: scale(0.5); }
+  20%  { opacity: 0.06; transform: scale(1); }
+  to   { opacity: 0; transform: scale(1.5); }
+}
+
+.glass-smudge {
+  position: absolute;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.15), transparent 70%);
+  pointer-events: none;
+  animation: smudge-fade 2.5s ease-out forwards;
+  z-index: 3;
+}
+
+/* ===========================
+   GLASS MATERIALIZE — Blur-to-clear entrance animation
+   =========================== */
+
+@keyframes glass-materialize {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+    filter: blur(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0px);
+  }
+}
+
+.animate-glass-materialize {
+  animation: glass-materialize 0.4s ease-out forwards;
+}
+
+/* ===========================
+   GLASS DIVIDER — Internal glass-like separators
+   =========================== */
+
+.glass-divider {
+  width: 1px;
+  background: linear-gradient(to bottom, transparent, rgba(255, 255, 255, 0.1), transparent);
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.03);
+}
+
+.glass-divider-horizontal {
+  height: 1px;
+  width: 100%;
+  background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.1), transparent);
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.03);
+}
+
+/* ===========================
+   RECESSED INPUT — Embedded into glass surface
+   =========================== */
+
+.glass-input-recessed {
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.3),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.1);
+  background-color: rgba(11, 12, 16, 0.6);
+}
+
+.glass-input-recessed:focus {
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.3),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.1),
+    0 0 0 2px rgba(59, 130, 246, 0.3),
+    0 0 20px rgba(59, 130, 246, 0.1);
+}
+
+/* ===========================
+   TOAST SURFACE RIPPLE
+   =========================== */
+
+@keyframes toast-ripple {
+  from {
+    transform: scale(0);
+    opacity: 0.15;
+  }
+  to {
+    transform: scale(4);
+    opacity: 0;
+  }
+}
+
+.toast-ripple {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05);
+  pointer-events: none;
+  animation: toast-ripple 0.4s ease-out forwards;
+  z-index: 0;
+}
+
+/* ===========================
+   GPU COMPOSITING HINTS
+   =========================== */
+
+.glass-animated {
+  will-change: transform, opacity, backdrop-filter;
+}
+
+.glass-animated.animation-complete {
+  will-change: auto;
+}
+
+/* ===========================
+   REDUCED MOTION OVERRIDES
+   =========================== */
+
+@media (prefers-reduced-motion: reduce) {
+  .main-ambient-background::before,
+  .main-ambient-background::after {
+    animation: none !important;
+  }
+
+  .ambient-orb {
+    animation: none !important;
+  }
+
+  .glass-specular::after {
+    animation: none !important;
+  }
+
+  .glass-panel,
+  .glass-panel-heavy,
+  .glass-panel-light {
+    transition: background-color 0.15s ease-out, border-color 0.15s ease-out !important;
+  }
+
+  .glass-refract:hover {
+    transform: none !important;
+  }
+
+  .animate-glass-materialize {
+    animation: none !important;
+    opacity: 1;
+    filter: none;
+    transform: none;
+  }
+
+  [data-parallax] {
+    transform: none !important;
+  }
+
+  .glass-smudge {
+    display: none !important;
+  }
 }

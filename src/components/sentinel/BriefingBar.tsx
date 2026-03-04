@@ -19,9 +19,9 @@ export function BriefingBar({ briefing, meta }: BriefingBarProps) {
     const MoodIcon = moodMatch.icon;
 
     return (
-        <div className="bg-sentinel-800/40 border border-sentinel-700/50 rounded-xl overflow-hidden backdrop-blur-md">
+        <div className="bg-sentinel-800/40 border border-sentinel-700/50 rounded-xl overflow-hidden backdrop-blur-md glass-specular glass-chromatic">
             {/* Top Stats Row */}
-            <div className="flex flex-wrap items-center justify-between p-4 border-b border-sentinel-700/30 bg-sentinel-900/20">
+            <div className="flex flex-wrap items-center justify-between p-4 bg-sentinel-900/20" style={{ boxShadow: 'inset 0 -1px 0 0 rgba(255,255,255,0.03)' }}>
                 <div className="flex items-center space-x-4">
                     <div className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg border ${moodMatch.color}`}>
                         <MoodIcon className="h-4 w-4" />
@@ -54,7 +54,9 @@ export function BriefingBar({ briefing, meta }: BriefingBarProps) {
             </div>
 
             {/* Bottom Content Row */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-0 divide-y md:divide-y-0 md:divide-x divide-sentinel-700/30">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-0 divide-y md:divide-y-0 divide-sentinel-700/30 md:[&>*+*]:border-l-0 relative">
+                {/* Glass divider between columns */}
+                <div className="hidden md:block absolute top-0 bottom-0 left-1/2 glass-divider" />
                 {/* Top Stories */}
                 <div className="p-4 bg-gradient-to-br from-transparent to-sentinel-900/10">
                     <h3 className="text-xs font-semibold text-sentinel-400 uppercase tracking-widest mb-3 flex items-center">

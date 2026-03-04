@@ -94,8 +94,15 @@ export function SignalsSidebar({ articles, onScanTicker }: SignalsSidebarProps) 
                     // Average confidence
                     const avgConf = signals.reduce((sum, s) => sum + s.confidence, 0) / signals.length;
 
+                    // Consensus-tinted hover background
+                    const hoverBg = ups > downs
+                        ? 'hover:bg-emerald-500/5'
+                        : downs > ups
+                            ? 'hover:bg-red-500/5'
+                            : 'hover:bg-sentinel-800/50';
+
                     return (
-                        <div key={ticker} className="bg-sentinel-900/40 rounded-lg p-3 border border-sentinel-700/40 group hover:border-sentinel-600 transition-colors">
+                        <div key={ticker} className={`bg-sentinel-900/40 rounded-lg p-3 border border-sentinel-700/40 group hover:border-sentinel-600 transition-colors hover:bg-sentinel-800/50 ${hoverBg}`}>
                             <div className="flex justify-between items-start mb-2">
                                 <div className="flex items-center gap-2">
                                     <span className="font-bold text-sentinel-100 tracking-wide">${ticker}</span>

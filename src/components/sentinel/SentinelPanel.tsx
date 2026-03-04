@@ -9,6 +9,7 @@ import { SentinelSkeleton } from './SentinelSkeleton';
 import { ScannerDrawer } from './ScannerDrawer';
 import type { ArticleCategory } from '@/types/sentinel';
 import { RefreshCw, AlertCircle, Radar } from 'lucide-react';
+import { GlassMaterialize } from '@/components/shared/GlassMaterialize';
 
 export function SentinelPanel() {
     const { data, loading, error, isRefreshing } = useSentinel();
@@ -137,12 +138,15 @@ export function SentinelPanel() {
                                 No intelligence briefing matches your current filters.
                             </div>
                         ) : (
-                            filteredArticles.map(article => (
-                                <ArticleCard
-                                    key={article.id || article.link}
-                                    article={article}
-                                    onScanTicker={openScanDrawer}
-                                />
+                            filteredArticles.map((article, index) => (
+                                <div key={article.id || article.link}>
+                                    <GlassMaterialize delay={Math.min(index, 10) * 50}>
+                                        <ArticleCard
+                                            article={article}
+                                            onScanTicker={openScanDrawer}
+                                        />
+                                    </GlassMaterialize>
+                                </div>
                             ))
                         )}
                     </div>
