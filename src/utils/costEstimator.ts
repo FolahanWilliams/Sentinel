@@ -8,11 +8,15 @@
 import { supabase } from '@/config/supabase';
 import { DEFAULT_DAILY_BUDGET, DEFAULT_MONTHLY_BUDGET } from '@/config/constants';
 
-// Gemini pricing (USD per 1M tokens — approximate)
+// Phase 4 fix (Audit m7): Pricing keys now match actual logged provider names
+const GEMINI_FLASH_RATES = { inputPer1M: 0.075, outputPer1M: 0.30, groundedPer1M: 0.50 };
 const PRICING: Record<string, { inputPer1M: number; outputPer1M: number; groundedPer1M: number }> = {
-    'gemini-3-flash': { inputPer1M: 0.075, outputPer1M: 0.30, groundedPer1M: 0.50 },
-    'gemini-2.0-flash': { inputPer1M: 0.075, outputPer1M: 0.30, groundedPer1M: 0.50 },
-    'ai-scraper': { inputPer1M: 0.075, outputPer1M: 0.30, groundedPer1M: 0.50 },
+    'gemini-3-flash-preview': GEMINI_FLASH_RATES,  // default model logged by proxy-gemini
+    'gemini-3-flash': GEMINI_FLASH_RATES,
+    'gemini-2.0-flash': GEMINI_FLASH_RATES,
+    'ai-scraper': GEMINI_FLASH_RATES,
+    'alpha-vantage': { inputPer1M: 0, outputPer1M: 0, groundedPer1M: 0 },  // market data has per-call cost, not per-token
+    'yahoo-finance': { inputPer1M: 0, outputPer1M: 0, groundedPer1M: 0 },  // free
 };
 
 /**

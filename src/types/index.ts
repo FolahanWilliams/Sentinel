@@ -9,3 +9,5 @@ export type { MarketEvent, EventType, DetectionResult, TickerContext } from './e
 export type { Quote, PriceBar, MarketSnapshot, CompanyInfo } from './market';
 export type { AgentResult, AgentOutputs, AnalysisResult, ScanResult, ScannerStatus } from './agents';
 export type { Database } from './database';
+// Phase 5 fix (Audit C14): Add sentinel types to barrel exports
+export type { ProcessedArticle, ArticleCategory, SentinelTradingSignal, SentinelResponse, DailyBriefing, FeedCategory } from './sentinel';

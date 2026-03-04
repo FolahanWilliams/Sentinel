@@ -6,6 +6,13 @@ const corsHeaders = {
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// Phase 1 fix (Audit C8): Model name allowlist
+const ALLOWED_MODELS = new Set([
+    'gemini-3-flash-preview',
+    'gemini-2.0-flash',
+    'gemini-3-flash',
+])
+
 serve(async (req) => {
     // 1. Handle CORS preflight
     if (req.method === 'OPTIONS') {
@@ -13,13 +20,26 @@ serve(async (req) => {
     }
 
     try {
-        // 2. Validate Authentication (Supabase Auth vs Internal Password Gate)
-        // For now we assume the client is passing a valid JWT if using Supabase Auth,
-        // or we are just validating the custom password hash header if passing through the gate.
-        // For simplicity in this demo, we'll verify the supabase anon key was used.
+        // 2. Phase 1 fix (Audit C4): Real JWT verification
         const authHeader = req.headers.get('Authorization')
         if (!authHeader) {
-            throw new Error('Missing Authorization header')
+            return new Response(
+                JSON.stringify({ success: false, error: 'Missing Authorization header' }),
+                { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 401 }
+            )
+        }
+
+        const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
+        const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') || ''
+        const supabaseAuth = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+            global: { headers: { Authorization: authHeader } }
+        })
+        const { data: { user }, error: authError } = await supabaseAuth.auth.getUser()
+        if (authError || !user) {
+            return new Response(
+                JSON.stringify({ success: false, error: 'Invalid or expired token' }),
+                { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 401 }
+            )
         }
 
         // 3. Parse Request Body
@@ -31,15 +51,32 @@ serve(async (req) => {
             responseSchema
         } = await req.json()
 
-        if (!prompt) throw new Error('Missing prompt')
+        if (!prompt) {
+            return new Response(
+                JSON.stringify({ success: false, error: 'Missing prompt' }),
+                { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+            )
+        }
+
+        // Phase 1 fix (Audit C8): Validate model name against allowlist
+        if (!ALLOWED_MODELS.has(model)) {
+            return new Response(
+                JSON.stringify({ success: false, error: 'Invalid model name' }),
+                { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+            )
+        }
 
         // 4. Initialize clients
-        // Get secrets: API keys are securely stored in Supabase Edge Function Secrets
-        const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
         const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
         const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY')
 
-        if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY secret is not set')
+        if (!GEMINI_API_KEY) {
+            console.error('[proxy-gemini] GEMINI_API_KEY secret is not set')
+            return new Response(
+                JSON.stringify({ success: false, error: 'Server configuration error' }),
+                { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
+            )
+        }
 
         const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
@@ -47,7 +84,6 @@ serve(async (req) => {
         console.log(`[proxy-gemini] Calling ${model} (Grounded Search: ${requireGroundedSearch})`)
         const startTime = Date.now()
 
-        // Build the payload per Gemini REST API spec
         const payload: any = {
             contents: [
                 { role: 'user', parts: [{ text: prompt }] }
@@ -57,32 +93,32 @@ serve(async (req) => {
             }
         }
 
-        // Add system instruction if provided
         if (systemInstruction) {
             payload.systemInstruction = {
                 parts: [{ text: systemInstruction }]
             }
         }
 
-        // Add grounded search tool if requested
         if (requireGroundedSearch) {
             payload.tools = [
-                { googleSearch: {} } // Enables Google Search grounding
+                { googleSearch: {} }
             ]
         }
 
-        // Add structured output schema if requested
         if (responseSchema) {
             payload.generationConfig.responseMimeType = 'application/json'
             payload.generationConfig.responseSchema = responseSchema
         }
 
-        // 6. Execute Gemini API call
+        // 6. Phase 1 fix (Audit C7): Move API key from URL query param to request header
         const geminiRes = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`,
+            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
             {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-goog-api-key': GEMINI_API_KEY,
+                },
                 body: JSON.stringify(payload)
             }
         )
@@ -90,26 +126,26 @@ serve(async (req) => {
         if (!geminiRes.ok) {
             const errorText = await geminiRes.text()
             console.error(`Gemini API Error: ${geminiRes.status} ${errorText}`)
-            throw new Error(`Gemini API Error: ${geminiRes.status}`)
+            // Phase 2 fix (Audit m17): Use 502 for upstream errors
+            return new Response(
+                JSON.stringify({ success: false, error: 'AI service returned an error' }),
+                { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 502 }
+            )
         }
 
         const data = await geminiRes.json()
         const durationMs = Date.now() - startTime
 
-        // Parse response
         let text = ''
         if (data.candidates && data.candidates.length > 0) {
             text = data.candidates[0].content.parts[0].text
         }
 
-        // Count usage tokens
         const inputTokens = data.usageMetadata?.promptTokenCount || 0
         const outputTokens = data.usageMetadata?.candidatesTokenCount || 0
 
-        // 7. Log Usage to Database (Bypass RLS using Service Role)
-        // In Stage 2 we created the `api_usage` table.
-        // We log it asynchronously so we don't block the response
-        supabaseAdmin.from('api_usage').insert({
+        // 7. Phase 2 fix (Audit M3 detailed): Await the usage log insert instead of fire-and-forget
+        const { error: logError } = await supabaseAdmin.from('api_usage').insert({
             provider: model,
             endpoint: 'generateContent',
             input_tokens: inputTokens,
@@ -117,11 +153,9 @@ serve(async (req) => {
             grounded_search_used: requireGroundedSearch,
             latency_ms: durationMs,
             success: true,
-            // Calculate ultra-rough cost (Flash pricing: ~$0.075 / 1M input, $0.30 / 1M output)
             estimated_cost_usd: (inputTokens / 1_000_000 * 0.075) + (outputTokens / 1_000_000 * 0.30)
-        }).then(({ error }) => {
-            if (error) console.error('[proxy-gemini] Failed to log usage:', error)
         })
+        if (logError) console.error('[proxy-gemini] Failed to log usage:', logError)
 
         // 8. Return successful response
         return new Response(
@@ -139,10 +173,10 @@ serve(async (req) => {
 
     } catch (error: any) {
         console.error('[proxy-gemini] Error:', error.message)
-
+        // Phase 2 fix (Audit m18): Don't leak internal error details to client
         return new Response(
-            JSON.stringify({ success: false, error: error.message }),
-            { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+            JSON.stringify({ success: false, error: 'Internal server error' }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
         )
     }
 })

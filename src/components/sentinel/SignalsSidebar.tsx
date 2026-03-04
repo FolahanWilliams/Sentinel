@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { ProcessedArticle, TradingSignal } from '@/types/sentinel';
+import type { ProcessedArticle, SentinelTradingSignal } from '@/types/sentinel';
 import { Target, TrendingUp, TrendingDown, Activity } from 'lucide-react';
 
 interface SignalsSidebarProps {
@@ -10,7 +10,7 @@ export function SignalsSidebar({ articles }: SignalsSidebarProps) {
 
     // Aggregate and sort signals from all visible articles
     const aggregatedSignals = useMemo(() => {
-        const allSignals: (TradingSignal & { sourceTitle: string, sourceLink: string, pubDate: Date })[] = [];
+        const allSignals: (SentinelTradingSignal & { sourceTitle: string, sourceLink: string, pubDate: Date })[] = [];
 
         articles.forEach(article => {
             if (!article.signals || article.signals.length === 0) return;
