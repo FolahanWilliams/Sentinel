@@ -67,10 +67,13 @@ export class AlphaVantageNewsService {
                 return 0;
             }
 
-            const data = await res.json();
+            const responseData = await res.json();
+
+            // The edge function wraps the AV response in { success: true, data: { ... } }
+            const data = responseData.data || responseData;
 
             if (!data?.feed || !Array.isArray(data.feed)) {
-                console.warn('[AVNews] No news feed returned from Alpha Vantage');
+                console.warn('[AVNews] No news feed returned from Alpha Vantage. Response was:', JSON.stringify(data).slice(0, 200));
                 return 0;
             }
 
