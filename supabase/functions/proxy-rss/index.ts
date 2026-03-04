@@ -8,8 +8,8 @@ const corsHeaders = {
 
 // Phase 1 fix (Audit C2): URL allowlist to prevent SSRF
 const ALLOWED_DOMAINS = new Set([
-  'www.cnbc.com', 'finance.yahoo.com', 'seekingalpha.com',
-  'www.federalreserve.gov', 'www.sec.gov', 'techcrunch.com',
+  'www.cnbc.com', 'search.cnbc.com', 'finance.yahoo.com', 'seekingalpha.com',
+  'www.federalreserve.gov', 'www.sec.gov', 'efts.sec.gov', 'techcrunch.com',
   'hnrss.org', 'www.techmeme.com', 'venturebeat.com',
   'export.arxiv.org', 'news.crunchbase.com', 'www.coindesk.com',
   'krebsonsecurity.com', 'feeds.feedburner.com', 'www.theverge.com',
@@ -18,6 +18,14 @@ const ALLOWED_DOMAINS = new Set([
   'www.semianalysis.com', 'feed.infoq.com', 'cointelegraph.com',
   'rss.politico.com', 'www.cbinsights.com', 'www.darkreading.com',
   'news.google.com', 'www.reddit.com',
+  'feeds.bloomberg.com', 'feeds.marketwatch.com', 'feeds.a.dj.com', 'www.ft.com',
+  'www.wired.com', 'siliconangle.com',
+  'www.statnews.com', 'www.fiercebiotech.com', 'www.biopharmadive.com', 'endpts.com',
+  'www.tomshardware.com', 'www.eetimes.com',
+  'www.securityweek.com', 'www.finextra.com', 'www.pymnts.com', 'www.americanbanker.com',
+  'www.calculatedriskblog.com', 'wolfstreet.com',
+  'www.fool.com', 'www.investors.com',
+  'www.earningswhispers.com', 'www.nasdaq.com'
 ])
 
 function isAllowedUrl(urlString: string): boolean {
