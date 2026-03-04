@@ -23,34 +23,44 @@ async function callGemini(
     payload: any,
     apiKey: string
 ): Promise<{ data: any; text: string; inputTokens: number; outputTokens: number }> {
-    const geminiRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-        {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-goog-api-key': apiKey,
-            },
-            body: JSON.stringify(payload)
+    // 25s timeout — fail fast before Supabase's 60s gateway timeout kills us
+    // (gateway timeout strips CORS headers, causing client-side CORS errors)
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 25_000)
+
+    try {
+        const geminiRes = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-goog-api-key': apiKey,
+                },
+                body: JSON.stringify(payload),
+                signal: controller.signal,
+            }
+        )
+
+        if (!geminiRes.ok) {
+            const errorText = await geminiRes.text()
+            throw new Error(`Gemini API ${geminiRes.status}: ${errorText}`)
         }
-    )
 
-    if (!geminiRes.ok) {
-        const errorText = await geminiRes.text()
-        throw new Error(`Gemini API ${geminiRes.status}: ${errorText}`)
+        const data = await geminiRes.json()
+
+        let text = ''
+        if (data.candidates && data.candidates.length > 0) {
+            text = data.candidates[0].content?.parts?.[0]?.text || ''
+        }
+
+        const inputTokens = data.usageMetadata?.promptTokenCount || 0
+        const outputTokens = data.usageMetadata?.candidatesTokenCount || 0
+
+        return { data, text, inputTokens, outputTokens }
+    } finally {
+        clearTimeout(timeoutId)
     }
-
-    const data = await geminiRes.json()
-
-    let text = ''
-    if (data.candidates && data.candidates.length > 0) {
-        text = data.candidates[0].content.parts[0].text
-    }
-
-    const inputTokens = data.usageMetadata?.promptTokenCount || 0
-    const outputTokens = data.usageMetadata?.candidatesTokenCount || 0
-
-    return { data, text, inputTokens, outputTokens }
 }
 
 serve(async (req) => {
