@@ -65,8 +65,9 @@ jobs:
               continue
             fi
             echo "Deploying $FUNC_NAME..."
-            # Phase 1 fix (Audit C5): Removed --no-verify-jwt to enforce JWT verification
-            if supabase functions deploy "$FUNC_NAME"; then
+            # Phase 1 fix (Audit C5): We handle JWT verification INSIDE the function.
+            # We must use --no-verify-jwt so the API Gateway doesn't block requests prematurely.
+            if supabase functions deploy "$FUNC_NAME" --no-verify-jwt; then
               DEPLOYED="$DEPLOYED $FUNC_NAME"
             else
               echo "::warning::Failed to deploy $FUNC_NAME"
