@@ -417,9 +417,6 @@ export class ScannerService {
                                             const sizing = await PositionSizer.calculateSize(0.6, 0.10, 0.05);
                                             console.log(`[Scanner] Position size for ${ev.ticker}: ${sizing.recommendedPct}% ($${sizing.usdValue})`);
                                         } catch { /* non-fatal */ }
-
-                                        // 10. Dispatch Email Notification
-                                        await NotificationService.sendSignalAlert(ev.ticker, 'overreaction');
                                     }
 
                                     // ─── 10. CONTAGION PIPELINE ───
@@ -519,7 +516,6 @@ export class ScannerService {
                                                                 } as any);
                                                             }
 
-                                                            await NotificationService.sendSignalAlert(sat.ticker, 'contagion');
                                                             console.log(`[Scanner] Contagion signal: ${sat.ticker} (sympathy drop from ${ev.ticker})`);
                                                         }
                                                     }
@@ -690,10 +686,6 @@ export class ScannerService {
 
                     if (savedSignal) {
                         NotificationService.checkAndDispatchAlerts(savedSignal);
-                    }
-
-                    if (!isPaper) {
-                        await NotificationService.sendSignalAlert(ticker, 'manual_scan');
                     }
                 }
             }
