@@ -64,11 +64,7 @@ export class GeminiService {
             });
 
             if (error) {
-                // Try to extract detail from the error response body
-                const detail = (error as any)?.context?.body
-                    ? JSON.parse((error as any).context.body)?.detail
-                    : null;
-                throw new Error(`Edge Function Error: ${error.message}${detail ? ` — ${detail}` : ''}`);
+                throw new Error(`Edge Function Error: ${error.message}`);
             }
 
             if (!data?.success) {

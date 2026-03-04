@@ -18,31 +18,8 @@ interface GoogleNewsArticle {
     tickers_mentioned: string[];
 }
 
-const GOOGLE_NEWS_SCHEMA = {
-    type: "object",
-    properties: {
-        articles: {
-            type: "array",
-            items: {
-                type: "object",
-                properties: {
-                    title: { type: "string", description: "Article headline" },
-                    url: { type: "string", description: "Source URL" },
-                    summary: { type: "string", description: "2-3 sentence summary of the article" },
-                    source: { type: "string", description: "Publication name (e.g. Reuters, CNBC)" },
-                    sentiment: { type: "string", enum: ["bullish", "bearish", "neutral"], description: "Overall market sentiment" },
-                    tickers_mentioned: {
-                        type: "array",
-                        items: { type: "string" },
-                        description: "Stock tickers mentioned (e.g. AAPL, NVDA)"
-                    }
-                },
-                required: ["title", "url", "summary", "source", "sentiment", "tickers_mentioned"]
-            }
-        }
-    },
-    required: ["articles"]
-};
+
+
 
 export class GoogleNewsService {
     /**
@@ -68,21 +45,44 @@ ${tickerFocus}
 
 For each article, provide the title, source URL, a 2-3 sentence summary, the publication name, 
 overall market sentiment (bullish/bearish/neutral), and any stock tickers mentioned.
-Exclude generic market commentary, daily recaps, and opinion pieces.`;
+Exclude generic market commentary, daily recaps, and opinion pieces.
 
-            const result = await GeminiService.generate<{ articles: GoogleNewsArticle[] }>({
+Return your answer as a JSON object in this exact format (no markdown, no extra text):
+{"articles": [{"title": "headline", "url": "https://...", "summary": "2-3 sentences", "source": "Publisher", "sentiment": "bullish|bearish|neutral", "tickers_mentioned": ["AAPL"]}]}`;
+
+            // Use grounded search WITHOUT responseSchema to avoid Supabase timeout.
+            // Google Search grounding + structured JSON causes double processing.
+            const result = await GeminiService.generate<any>({
                 prompt,
-                systemInstruction: 'You are a financial news aggregator. Return structured JSON with the latest market-moving news articles. Be specific and factual.',
+                systemInstruction: 'You are a financial news aggregator. Return structured JSON with the latest market-moving news articles. Be specific and factual. Return ONLY the JSON, no markdown.',
                 requireGroundedSearch: true,
-                responseSchema: GOOGLE_NEWS_SCHEMA,
+                temperature: 0.1,
+                // NO responseSchema — prevents timeout with grounded search
             });
 
-            if (!result.success || !result.data?.articles || !Array.isArray(result.data.articles)) {
+            // Parse plain text response manually
+            let articles: GoogleNewsArticle[] = [];
+            if (result.success && result.data) {
+                try {
+                    const rawText = typeof result.data === 'string'
+                        ? result.data
+                        : JSON.stringify(result.data);
+                    const jsonMatch = rawText.match(/\{[\s\S]*"articles"[\s\S]*\}/);
+                    if (jsonMatch) {
+                        const parsed = JSON.parse(jsonMatch[0]);
+                        if (Array.isArray(parsed.articles)) {
+                            articles = parsed.articles;
+                        }
+                    }
+                } catch (parseErr) {
+                    console.warn('[GoogleNews] Failed to parse response:', parseErr);
+                }
+            }
+
+            if (articles.length === 0) {
                 console.warn('[GoogleNews] No news articles returned. Error:', result.error);
                 return 0;
             }
-
-            const articles = result.data.articles;
 
             // Transform to rss_cache format and upsert
             const rows = articles.map((article) => {
