@@ -71,7 +71,7 @@ export class ConfidenceCalibrator {
             .filter(([, v]) => v.total > 0)
             .map(([range, v]) => ({
                 range,
-                predicted: parseInt(range.split('-')[0]) + 5,
+                predicted: parseInt(range.split('-')[0] ?? '0') + 5,
                 actualWinRate: Math.round((v.wins / v.total) * 100 * 10) / 10,
                 sampleSize: v.total,
             }));

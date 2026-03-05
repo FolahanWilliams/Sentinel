@@ -27,7 +27,7 @@ export function useSignals(filter?: { status?: string; ticker?: string }) {
         if (err) {
             setError(err.message);
         } else {
-            setSignals((data || []) as Signal[]);
+            setSignals((data || []) as unknown as Signal[]);
             setError(null);
         }
         setLoading(false);

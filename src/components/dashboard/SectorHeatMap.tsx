@@ -6,7 +6,7 @@
  * Color-coded: green = strong win rate, red = poor, neutral = mixed.
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/config/supabase';
 import { Grid3X3, Loader2 } from 'lucide-react';
 
