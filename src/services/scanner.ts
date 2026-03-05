@@ -909,8 +909,8 @@ If there is genuinely no major news, return: {"events": []}`,
                 mockDesc = `Event Type: ${e.event_type} | Severity: ${e.severity}`;
             }
 
-            // 4. Save the event
-            await supabase.from('market_events').upsert({
+            // 4. Save the event (upsert, fallback to insert if constraint missing)
+            const { error: upsertErr } = await supabase.from('market_events').upsert({
                 ticker: ticker,
                 event_type: 'manual_scan',
                 headline: mockHeadline,
@@ -918,6 +918,17 @@ If there is genuinely no major news, return: {"events": []}`,
                 is_overreaction_candidate: true,
                 source_type: 'manual'
             } as any, { onConflict: 'ticker,headline', ignoreDuplicates: true });
+            if (upsertErr) {
+                console.warn('[Scanner] Upsert failed, falling back to insert:', upsertErr.message);
+                await supabase.from('market_events').insert({
+                    ticker: ticker,
+                    event_type: 'manual_scan',
+                    headline: mockHeadline,
+                    severity: 8,
+                    is_overreaction_candidate: true,
+                    source_type: 'manual'
+                } as any);
+            }
 
             // 5. Run Overreaction Analysis
             const analysis = await AgentService.evaluateOverreaction(
@@ -1115,7 +1126,7 @@ If there is genuinely no major news, return: {"events": []}`,
 
             try {
                 // Save the discovery event so it shows up in event history
-                await supabase.from('market_events').upsert({
+                const { error: discUpsertErr } = await supabase.from('market_events').upsert({
                     ticker,
                     event_type: `discovery_${catalyst}`,
                     headline: reason,
@@ -1124,6 +1135,18 @@ If there is genuinely no major news, return: {"events": []}`,
                     source_urls: [],
                     source_type: 'ai_discovery'
                 } as any, { onConflict: 'ticker,headline', ignoreDuplicates: true });
+                if (discUpsertErr) {
+                    console.warn('[Scanner] Discovery upsert failed, falling back to insert:', discUpsertErr.message);
+                    await supabase.from('market_events').insert({
+                        ticker,
+                        event_type: `discovery_${catalyst}`,
+                        headline: reason,
+                        severity: 7,
+                        is_overreaction_candidate: true,
+                        source_urls: [],
+                        source_type: 'ai_discovery'
+                    } as any);
+                }
 
                 // Run full single-ticker scan
                 const result = await this.runSingleTickerScan(ticker);
