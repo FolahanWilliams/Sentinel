@@ -11,3 +11,4 @@ export type { AgentResult, AgentOutputs, AnalysisResult, ScanResult, ScannerStat
 export type { Database } from './database';
 // Phase 5 fix (Audit C14): Add sentinel types to barrel exports
 export type { ProcessedArticle, ArticleCategory, SentinelTradingSignal, SentinelResponse, DailyBriefing, FeedCategory } from './sentinel';
+export type { UnifiedSignal, PortfolioSummary, SectorAllocation, PerformanceDataPoint, CategoryWinRate, DashboardTab } from './dashboard';
