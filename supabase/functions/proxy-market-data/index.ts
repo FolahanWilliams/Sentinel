@@ -93,16 +93,22 @@ serve(async (req) => {
             let actualProvider = 'unknown'
 
             // Strategy 1: Yahoo Finance JSON API (Primary)
+            // Note: Yahoo Finance often blocks cloud/datacenter IPs, so this may fail
             try {
                 const yfUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(tickerUpper)}?interval=1d&range=1d`
                 console.log(`[proxy-market-data] Trying Yahoo Finance for ${tickerUpper}`)
+
+                const yfController = new AbortController()
+                const yfTimeout = setTimeout(() => yfController.abort(), 8000)
 
                 const yfRes = await fetch(yfUrl, {
                     headers: {
                         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                         'Accept': 'application/json'
-                    }
+                    },
+                    signal: yfController.signal,
                 })
+                clearTimeout(yfTimeout)
 
                 if (yfRes.ok) {
                     const yfData = await yfRes.json()
@@ -141,7 +147,10 @@ serve(async (req) => {
                 try {
                     const avUrl = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(tickerUpper)}&apikey=${ALPHA_VANTAGE_KEY}`
 
-                    const avRes = await fetch(avUrl)
+                    const avController = new AbortController()
+                    const avTimeout = setTimeout(() => avController.abort(), 10000)
+                    const avRes = await fetch(avUrl, { signal: avController.signal })
+                    clearTimeout(avTimeout)
                     if (avRes.ok) {
                         const avData = await avRes.json()
                         const gq = avData['Global Quote']
@@ -255,12 +264,16 @@ serve(async (req) => {
 
             try {
                 const yfUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(tickerUpper)}?range=1y&interval=1d`
+                const histController = new AbortController()
+                const histTimeout = setTimeout(() => histController.abort(), 10000)
                 const yfRes = await fetch(yfUrl, {
                     headers: {
                         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                         'Accept': 'application/json'
-                    }
+                    },
+                    signal: histController.signal,
                 })
+                clearTimeout(histTimeout)
 
                 if (!yfRes.ok) {
                     return new Response(
