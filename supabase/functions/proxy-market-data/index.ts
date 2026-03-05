@@ -84,55 +84,62 @@ serve(async (req) => {
             let quoteResult: any = null
             let actualProvider = 'unknown'
 
-            // Strategy 1a: Yahoo Finance v7 quote API (query2 — more resilient to cloud IP blocks)
-            try {
-                const yf2Url = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(tickerUpper)}`
-                console.log(`[proxy-market-data] Trying Yahoo Finance query2/v7 for ${tickerUpper}`)
+            // International suffix retry: if the bare ticker fails, try common
+            // exchange suffixes so AI-surfaced global stocks (e.g. FRES → FRES.L) resolve.
+            const alreadyHasSuffix = /\.[A-Z]{1,3}$/.test(tickerUpper)
+            const suffixes = alreadyHasSuffix ? [''] : ['', '.L', '.TO', '.V', '.DE', '.AX', '.PA']
 
-                const yf2Controller = new AbortController()
-                const yf2Timeout = setTimeout(() => yf2Controller.abort(), 8000)
-
-                const yf2Res = await fetch(yf2Url, {
-                    headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                        'Accept': 'application/json'
-                    },
-                    signal: yf2Controller.signal,
-                })
-                clearTimeout(yf2Timeout)
-
-                if (yf2Res.ok) {
-                    const yf2Data = await yf2Res.json()
-                    const result = yf2Data?.quoteResponse?.result?.[0]
-
-                    if (result && result.regularMarketPrice) {
-                        quoteResult = {
-                            price: result.regularMarketPrice || 0,
-                            change: result.regularMarketChange || 0,
-                            changePercent: result.regularMarketChangePercent || 0,
-                            volume: result.regularMarketVolume || 0,
-                            previousClose: result.regularMarketPreviousClose || 0,
-                            open: result.regularMarketOpen || 0,
-                            high: result.regularMarketDayHigh || 0,
-                            low: result.regularMarketDayLow || 0,
-                        }
-                        actualProvider = 'yahoo-finance-v7'
-                        console.log(`[proxy-market-data] Yahoo Finance v7 success: ${tickerUpper} @ $${quoteResult.price}`)
-                    } else {
-                        console.warn('[proxy-market-data] Yahoo Finance v7 returned empty result:', JSON.stringify(yf2Data).slice(0, 200))
-                    }
-                } else {
-                    console.warn(`[proxy-market-data] Yahoo Finance v7 returned status ${yf2Res.status}`)
+            for (const suffix of suffixes) {
+                const testTicker = tickerUpper + suffix
+                if (suffix) {
+                    console.log(`[proxy-market-data] Retrying with international suffix: ${testTicker}`)
                 }
-            } catch (yf2Err) {
-                console.warn('[proxy-market-data] Yahoo Finance v7 failed:', yf2Err)
-            }
 
-            // Strategy 1b: Yahoo Finance v8 chart API (query1 — fallback if v7 is down)
-            if (!quoteResult) {
+                // Strategy 1a: Yahoo Finance v7 quote API (query2 — more resilient to cloud IP blocks)
                 try {
-                    const yfUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(tickerUpper)}?interval=1d&range=1d`
-                    console.log(`[proxy-market-data] Trying Yahoo Finance query1/v8 for ${tickerUpper}`)
+                    const yf2Url = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(testTicker)}`
+                    if (!suffix) console.log(`[proxy-market-data] Trying Yahoo Finance query2/v7 for ${testTicker}`)
+
+                    const yf2Controller = new AbortController()
+                    const yf2Timeout = setTimeout(() => yf2Controller.abort(), 8000)
+
+                    const yf2Res = await fetch(yf2Url, {
+                        headers: {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                            'Accept': 'application/json'
+                        },
+                        signal: yf2Controller.signal,
+                    })
+                    clearTimeout(yf2Timeout)
+
+                    if (yf2Res.ok) {
+                        const yf2Data = await yf2Res.json()
+                        const result = yf2Data?.quoteResponse?.result?.[0]
+
+                        if (result && result.regularMarketPrice) {
+                            quoteResult = {
+                                price: result.regularMarketPrice || 0,
+                                change: result.regularMarketChange || 0,
+                                changePercent: result.regularMarketChangePercent || 0,
+                                volume: result.regularMarketVolume || 0,
+                                previousClose: result.regularMarketPreviousClose || 0,
+                                open: result.regularMarketOpen || 0,
+                                high: result.regularMarketDayHigh || 0,
+                                low: result.regularMarketDayLow || 0,
+                            }
+                            actualProvider = 'yahoo-finance-v7'
+                            console.log(`[proxy-market-data] Yahoo Finance v7 success: ${testTicker} @ $${quoteResult.price}`)
+                            break
+                        }
+                    }
+                } catch (yf2Err) {
+                    if (!suffix) console.warn('[proxy-market-data] Yahoo Finance v7 failed:', yf2Err)
+                }
+
+                // Strategy 1b: Yahoo Finance v8 chart API (query1 — fallback if v7 is down)
+                try {
+                    const yfUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(testTicker)}?interval=1d&range=1d`
+                    if (!suffix) console.log(`[proxy-market-data] Trying Yahoo Finance query1/v8 for ${testTicker}`)
 
                     const yfController = new AbortController()
                     const yfTimeout = setTimeout(() => yfController.abort(), 8000)
@@ -166,58 +173,55 @@ serve(async (req) => {
                                 low: meta.regularMarketDayLow || 0,
                             }
                             actualProvider = 'yahoo-finance-v8'
-                            console.log(`[proxy-market-data] Yahoo Finance v8 success: ${tickerUpper} @ $${quoteResult.price}`)
-                        } else {
-                            console.warn('[proxy-market-data] Yahoo Finance v8 returned empty result:', JSON.stringify(yfData).slice(0, 200))
+                            console.log(`[proxy-market-data] Yahoo Finance v8 success: ${testTicker} @ $${quoteResult.price}`)
+                            break
                         }
-                    } else {
-                        console.warn(`[proxy-market-data] Yahoo Finance v8 returned status ${yfRes.status}`)
                     }
                 } catch (yfErr) {
-                    console.warn('[proxy-market-data] Yahoo Finance v8 failed:', yfErr)
+                    if (!suffix) console.warn('[proxy-market-data] Yahoo Finance v8 failed:', yfErr)
                 }
-            }
 
-            // Strategy 2: Alpha Vantage GLOBAL_QUOTE (Fallback)
-            if (!quoteResult && ALPHA_VANTAGE_KEY) {
-                console.log(`[proxy-market-data] Yahoo Finance unavailable, falling back to Alpha Vantage`)
-                try {
-                    const avUrl = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(tickerUpper)}&apikey=${ALPHA_VANTAGE_KEY}`
+                // Strategy 2: Alpha Vantage GLOBAL_QUOTE (Fallback)
+                if (ALPHA_VANTAGE_KEY) {
+                    try {
+                        if (!suffix) console.log(`[proxy-market-data] Falling back to Alpha Vantage for ${testTicker}`)
+                        const avUrl = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(testTicker)}&apikey=${ALPHA_VANTAGE_KEY}`
 
-                    const avController = new AbortController()
-                    const avTimeout = setTimeout(() => avController.abort(), 10000)
-                    const avRes = await fetch(avUrl, { signal: avController.signal })
-                    clearTimeout(avTimeout)
-                    if (avRes.ok) {
-                        const avData = await avRes.json()
-                        const gq = avData['Global Quote']
+                        const avController = new AbortController()
+                        const avTimeout = setTimeout(() => avController.abort(), 10000)
+                        const avRes = await fetch(avUrl, { signal: avController.signal })
+                        clearTimeout(avTimeout)
+                        if (avRes.ok) {
+                            const avData = await avRes.json()
+                            const gq = avData['Global Quote']
 
-                        if (gq && gq['05. price']) {
-                            quoteResult = {
-                                price: parseFloat(gq['05. price']) || 0,
-                                change: parseFloat(gq['09. change']) || 0,
-                                changePercent: parseFloat((gq['10. change percent'] || '').replace('%', '')) || 0,
-                                volume: parseInt(gq['06. volume']) || 0,
-                                previousClose: parseFloat(gq['08. previous close']) || 0,
-                                open: parseFloat(gq['02. open']) || 0,
-                                high: parseFloat(gq['03. high']) || 0,
-                                low: parseFloat(gq['04. low']) || 0,
+                            if (gq && gq['05. price']) {
+                                quoteResult = {
+                                    price: parseFloat(gq['05. price']) || 0,
+                                    change: parseFloat(gq['09. change']) || 0,
+                                    changePercent: parseFloat((gq['10. change percent'] || '').replace('%', '')) || 0,
+                                    volume: parseInt(gq['06. volume']) || 0,
+                                    previousClose: parseFloat(gq['08. previous close']) || 0,
+                                    open: parseFloat(gq['02. open']) || 0,
+                                    high: parseFloat(gq['03. high']) || 0,
+                                    low: parseFloat(gq['04. low']) || 0,
+                                }
+                                actualProvider = 'alpha-vantage'
+                                console.log(`[proxy-market-data] Alpha Vantage success: ${testTicker} @ $${quoteResult.price}`)
+                                break
                             }
-                            actualProvider = 'alpha-vantage'
-                            console.log(`[proxy-market-data] Alpha Vantage success: ${tickerUpper} @ $${quoteResult.price}`)
-                        } else {
-                            console.warn('[proxy-market-data] Alpha Vantage returned empty Global Quote:', JSON.stringify(avData).slice(0, 200))
                         }
+                    } catch (avErr) {
+                        if (!suffix) console.warn('[proxy-market-data] Alpha Vantage failed:', avErr)
                     }
-                } catch (avErr) {
-                    console.warn('[proxy-market-data] Alpha Vantage failed:', avErr)
                 }
-            }
+            } // end suffix loop
 
             // Phase 2 fix (Audit M12): Return success: false when all providers fail
             if (!quoteResult) {
+                const triedSuffixes = suffixes.length > 1 ? ' (tried international suffixes)' : ''
                 return new Response(
-                    JSON.stringify({ success: false, error: `Unable to fetch quote for ${tickerUpper}` }),
+                    JSON.stringify({ success: false, error: `Unable to fetch quote for ${tickerUpper}${triedSuffixes}` }),
                     { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 502 }
                 )
             }
