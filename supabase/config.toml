@@ -387,6 +387,13 @@ s3_access_key = "env(S3_ACCESS_KEY)"
 # Configures AWS_SECRET_ACCESS_KEY for S3 bucket
 s3_secret_key = "env(S3_SECRET_KEY)"
 
+[functions.proxy-market-data]
+enabled = true
+# JWT verification disabled at gateway — function handles auth internally
+# and makes auth optional (market data is public, no user-specific data exposed)
+verify_jwt = false
+entrypoint = "./functions/proxy-market-data/index.ts"
+
 [functions.proxy-rss]
 enabled = true
 verify_jwt = true

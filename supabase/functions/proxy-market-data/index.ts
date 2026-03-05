@@ -32,29 +32,21 @@ serve(async (req) => {
 
     try {
         const authHeader = req.headers.get('Authorization')
-        if (!authHeader) {
-            return new Response(
-                JSON.stringify({ success: false, error: 'Missing Authorization header' }),
-                { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 401 }
-            )
-        }
 
         const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
         const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') || ''
 
-        // This creates a client with the user's JWT
-        const supabaseAuth = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-            global: { headers: { Authorization: authHeader } }
-        })
-
-        // Check if the user is authenticated *if* the gateway let them through but we want to be sure
-        const token = authHeader.replace(/^Bearer\s+/i, '');
-        const { data: { user }, error: authError } = await supabaseAuth.auth.getUser(token)
-        if (authError || !user) {
-            return new Response(
-                JSON.stringify({ success: false, error: 'Unauthorized', authError: authError?.message }),
-                { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 401 }
-            )
+        // Auth is optional for market data (public info, no user-specific data).
+        // When a valid JWT is present we log the user for audit trail;
+        // when absent we still serve quotes so MarketSnapshot works pre-login.
+        let _userId: string | null = null
+        if (authHeader) {
+            const supabaseAuth = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+                global: { headers: { Authorization: authHeader } }
+            })
+            const token = authHeader.replace(/^Bearer\s+/i, '')
+            const { data: { user } } = await supabaseAuth.auth.getUser(token)
+            _userId = user?.id ?? null
         }
 
         // 2. Parse Request
