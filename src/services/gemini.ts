@@ -76,11 +76,15 @@ export class GeminiService {
             });
 
             if (error) {
-                throw new Error(`Edge Function Error: ${error.message}`);
+                const detail = (data as any)?.detail || (data as any)?.error || error.message;
+                console.error(`[GeminiService] Edge Function error:`, { message: error.message, detail });
+                throw new Error(`Edge Function Error: ${detail}`);
             }
 
             if (!data?.success) {
-                throw new Error(data?.error || 'Unknown Gemini API error');
+                const errorMsg = data?.detail || data?.error || 'Unknown Gemini API error';
+                console.error(`[GeminiService] API error:`, errorMsg);
+                throw new Error(errorMsg);
             }
 
             // 3. Parse strongly-typed JSON if a schema was provided
@@ -145,11 +149,15 @@ export class GeminiService {
             });
 
             if (error) {
-                throw new Error(`Edge Function Error: ${error.message}`);
+                const detail = (data as any)?.detail || (data as any)?.error || error.message;
+                console.error(`[GeminiService] Multi-turn Edge Function error:`, { message: error.message, detail });
+                throw new Error(`Edge Function Error: ${detail}`);
             }
 
             if (!data?.success) {
-                throw new Error(data?.error || 'Unknown Gemini API error');
+                const errorMsg = data?.detail || data?.error || 'Unknown Gemini API error';
+                console.error(`[GeminiService] Multi-turn API error:`, errorMsg);
+                throw new Error(errorMsg);
             }
 
             let parsedData: T | null = null;
