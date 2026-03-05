@@ -285,10 +285,15 @@ serve(async (req) => {
         const failedFeeds: string[] = []
 
         async function fetchFeedWithTimeout(feed: Feed): Promise<RawArticle[]> {
-            const controller = new AbortController()
-            const timeout = setTimeout(() => controller.abort(), 4000)
             try {
-                const res = await parser.parseURL(feed.url)
+                // Race the parser against a hard 5s timeout (parser has its own 4s timeout
+                // but it doesn't always fire reliably for DNS/TLS hangs)
+                const res = await Promise.race([
+                    parser.parseURL(feed.url),
+                    new Promise<never>((_, reject) =>
+                        setTimeout(() => reject(new Error('Feed timeout')), 5000)
+                    )
+                ])
                 return (res.items || []).slice(0, 10).map(item => ({
                     title: item.title?.trim() || '',
                     link: normalizeUrl(item.link || ''),
@@ -300,8 +305,6 @@ serve(async (req) => {
             } catch (e) {
                 failedFeeds.push(feed.name)
                 return []
-            } finally {
-                clearTimeout(timeout)
             }
         }
 

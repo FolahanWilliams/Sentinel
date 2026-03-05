@@ -129,6 +129,14 @@ export class GeminiService {
      * Used for agent debates (e.g., Overreaction ↔ Red Team).
      */
     static async generateMultiTurn<T = any>(req: GeminiMultiTurnRequest): Promise<AgentResult<T>> {
+        // Throttle: same as single-turn to avoid rate limiting
+        const now = Date.now();
+        const elapsed = now - this.lastCallTime;
+        if (elapsed < this.MIN_CALL_INTERVAL_MS) {
+            await new Promise(res => setTimeout(res, this.MIN_CALL_INTERVAL_MS - elapsed));
+        }
+        this.lastCallTime = Date.now();
+
         const startTime = Date.now();
         const modelToUse = req.model ?? GEMINI_MODEL;
         try {

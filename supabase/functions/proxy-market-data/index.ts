@@ -327,7 +327,10 @@ serve(async (req) => {
             const newsUrl = `https://www.alphavantage.co/query?function=NEWS_SENTIMENT${extraParams}&apikey=${ALPHA_VANTAGE_KEY}&sort=LATEST&limit=50`
             console.log(`[proxy-market-data] Fetching AV News Sentiment`)
 
-            const newsRes = await fetch(newsUrl)
+            const newsController = new AbortController()
+            const newsTimeout = setTimeout(() => newsController.abort(), 10000)
+            const newsRes = await fetch(newsUrl, { signal: newsController.signal })
+            clearTimeout(newsTimeout)
             if (!newsRes.ok) {
                 return new Response(
                     JSON.stringify({ success: false, error: 'News sentiment service returned an error' }),
