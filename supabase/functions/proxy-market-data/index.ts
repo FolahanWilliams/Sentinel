@@ -92,53 +92,98 @@ serve(async (req) => {
             let quoteResult: any = null
             let actualProvider = 'unknown'
 
-            // Strategy 1: Yahoo Finance JSON API (Primary)
-            // Note: Yahoo Finance often blocks cloud/datacenter IPs, so this may fail
+            // Strategy 1a: Yahoo Finance v7 quote API (query2 — more resilient to cloud IP blocks)
             try {
-                const yfUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(tickerUpper)}?interval=1d&range=1d`
-                console.log(`[proxy-market-data] Trying Yahoo Finance for ${tickerUpper}`)
+                const yf2Url = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(tickerUpper)}`
+                console.log(`[proxy-market-data] Trying Yahoo Finance query2/v7 for ${tickerUpper}`)
 
-                const yfController = new AbortController()
-                const yfTimeout = setTimeout(() => yfController.abort(), 8000)
+                const yf2Controller = new AbortController()
+                const yf2Timeout = setTimeout(() => yf2Controller.abort(), 8000)
 
-                const yfRes = await fetch(yfUrl, {
+                const yf2Res = await fetch(yf2Url, {
                     headers: {
                         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                         'Accept': 'application/json'
                     },
-                    signal: yfController.signal,
+                    signal: yf2Controller.signal,
                 })
-                clearTimeout(yfTimeout)
+                clearTimeout(yf2Timeout)
 
-                if (yfRes.ok) {
-                    const yfData = await yfRes.json()
-                    const meta = yfData?.chart?.result?.[0]?.meta
+                if (yf2Res.ok) {
+                    const yf2Data = await yf2Res.json()
+                    const result = yf2Data?.quoteResponse?.result?.[0]
 
-                    if (meta && meta.regularMarketPrice) {
-                        const change = meta.regularMarketPrice - (meta.chartPreviousClose || meta.previousClose || meta.regularMarketPrice)
-                        const prevClose = meta.chartPreviousClose || meta.previousClose || meta.regularMarketPrice || 1
-                        const changePct = (change / prevClose) * 100
-
+                    if (result && result.regularMarketPrice) {
                         quoteResult = {
-                            price: meta.regularMarketPrice || 0,
-                            change: change,
-                            changePercent: changePct,
-                            volume: meta.regularMarketVolume || 0,
-                            previousClose: prevClose,
-                            open: meta.regularMarketPrice || 0,
-                            high: meta.regularMarketDayHigh || 0,
-                            low: meta.regularMarketDayLow || 0,
+                            price: result.regularMarketPrice || 0,
+                            change: result.regularMarketChange || 0,
+                            changePercent: result.regularMarketChangePercent || 0,
+                            volume: result.regularMarketVolume || 0,
+                            previousClose: result.regularMarketPreviousClose || 0,
+                            open: result.regularMarketOpen || 0,
+                            high: result.regularMarketDayHigh || 0,
+                            low: result.regularMarketDayLow || 0,
                         }
-                        actualProvider = 'yahoo-finance'
-                        console.log(`[proxy-market-data] Yahoo Finance success: ${tickerUpper} @ $${quoteResult.price}`)
+                        actualProvider = 'yahoo-finance-v7'
+                        console.log(`[proxy-market-data] Yahoo Finance v7 success: ${tickerUpper} @ $${quoteResult.price}`)
                     } else {
-                        console.warn('[proxy-market-data] Yahoo Finance returned empty or invalid result:', JSON.stringify(yfData).slice(0, 200))
+                        console.warn('[proxy-market-data] Yahoo Finance v7 returned empty result:', JSON.stringify(yf2Data).slice(0, 200))
                     }
                 } else {
-                    console.warn(`[proxy-market-data] Yahoo Finance returned status ${yfRes.status}`)
+                    console.warn(`[proxy-market-data] Yahoo Finance v7 returned status ${yf2Res.status}`)
                 }
-            } catch (yfErr) {
-                console.warn('[proxy-market-data] Yahoo Finance failed:', yfErr)
+            } catch (yf2Err) {
+                console.warn('[proxy-market-data] Yahoo Finance v7 failed:', yf2Err)
+            }
+
+            // Strategy 1b: Yahoo Finance v8 chart API (query1 — fallback if v7 is down)
+            if (!quoteResult) {
+                try {
+                    const yfUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(tickerUpper)}?interval=1d&range=1d`
+                    console.log(`[proxy-market-data] Trying Yahoo Finance query1/v8 for ${tickerUpper}`)
+
+                    const yfController = new AbortController()
+                    const yfTimeout = setTimeout(() => yfController.abort(), 8000)
+
+                    const yfRes = await fetch(yfUrl, {
+                        headers: {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                            'Accept': 'application/json'
+                        },
+                        signal: yfController.signal,
+                    })
+                    clearTimeout(yfTimeout)
+
+                    if (yfRes.ok) {
+                        const yfData = await yfRes.json()
+                        const meta = yfData?.chart?.result?.[0]?.meta
+
+                        if (meta && meta.regularMarketPrice) {
+                            const change = meta.regularMarketPrice - (meta.chartPreviousClose || meta.previousClose || meta.regularMarketPrice)
+                            const prevClose = meta.chartPreviousClose || meta.previousClose || meta.regularMarketPrice || 1
+                            const changePct = (change / prevClose) * 100
+
+                            quoteResult = {
+                                price: meta.regularMarketPrice || 0,
+                                change: change,
+                                changePercent: changePct,
+                                volume: meta.regularMarketVolume || 0,
+                                previousClose: prevClose,
+                                open: meta.regularMarketPrice || 0,
+                                high: meta.regularMarketDayHigh || 0,
+                                low: meta.regularMarketDayLow || 0,
+                            }
+                            actualProvider = 'yahoo-finance-v8'
+                            console.log(`[proxy-market-data] Yahoo Finance v8 success: ${tickerUpper} @ $${quoteResult.price}`)
+                        } else {
+                            console.warn('[proxy-market-data] Yahoo Finance v8 returned empty result:', JSON.stringify(yfData).slice(0, 200))
+                        }
+                    } else {
+                        console.warn(`[proxy-market-data] Yahoo Finance v8 returned status ${yfRes.status}`)
+                    }
+                } catch (yfErr) {
+                    console.warn('[proxy-market-data] Yahoo Finance v8 failed:', yfErr)
+                }
             }
 
             // Strategy 2: Alpha Vantage GLOBAL_QUOTE (Fallback)
