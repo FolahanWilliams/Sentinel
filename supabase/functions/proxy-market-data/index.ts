@@ -517,7 +517,7 @@ Deno.serve(async (req) => {
             if (!quoteResult) {
                 return new Response(
                     JSON.stringify({ success: false, error: `Unable to fetch quote for ${tickerUpper}` }),
-                    { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 502 }
+                    { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 } // Return 200 so Supabase client gets the JSON instead of throwing FunctionsHttpError
                 )
             }
 
@@ -541,7 +541,7 @@ Deno.serve(async (req) => {
                 estimated_cost_usd: actualProvider === 'apify-yahoo-finance' ? 0.005 : (actualProvider === 'alpha-vantage' ? 0.0001 : 0)
             })
 
-        // ─── NEWS endpoint (NEW — powered by Apify) ─────────────────────
+            // ─── NEWS endpoint (NEW — powered by Apify) ─────────────────────
         } else if (endpoint === 'news') {
             // Accept single ticker or array of tickers
             const newsTickers: string[] = tickersParam
@@ -605,7 +605,7 @@ Deno.serve(async (req) => {
                 )
             }
 
-        // ─── NEWS_SENTIMENT endpoint (legacy Alpha Vantage) ──────────────
+            // ─── NEWS_SENTIMENT endpoint (legacy Alpha Vantage) ──────────────
         } else if (endpoint === 'news_sentiment') {
             if (!ALPHA_VANTAGE_KEY) {
                 return new Response(
@@ -634,7 +634,7 @@ Deno.serve(async (req) => {
             if (!newsRes.ok) {
                 return new Response(
                     JSON.stringify({ success: false, error: 'News sentiment service returned an error' }),
-                    { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 502 }
+                    { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
                 )
             }
 
@@ -653,7 +653,7 @@ Deno.serve(async (req) => {
                 estimated_cost_usd: 0.0001
             })
 
-        // ─── HISTORICAL endpoint ─────────────────────────────────────────
+            // ─── HISTORICAL endpoint ─────────────────────────────────────────
         } else if (endpoint === 'historical') {
             if (!ticker) {
                 return new Response(
@@ -681,7 +681,7 @@ Deno.serve(async (req) => {
                 if (!yfRes.ok) {
                     return new Response(
                         JSON.stringify({ success: false, error: `Yahoo Finance returned ${yfRes.status}` }),
-                        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 502 }
+                        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
                     )
                 }
 
@@ -716,7 +716,7 @@ Deno.serve(async (req) => {
                 console.error('[proxy-market-data] Historical fetch failed:', histErr.message)
                 return new Response(
                     JSON.stringify({ success: false, error: 'Failed to fetch historical data' }),
-                    { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 502 }
+                    { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
                 )
             }
 
