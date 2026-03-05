@@ -273,17 +273,23 @@ serve(async (req) => {
         const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
         const startTime = Date.now()
 
-        // 1. Fetch Feeds in Parallel
+        // 1. Fetch Feeds in Parallel with strict per-feed timeout
         const parser = new Parser({
-            timeout: 5000,
+            timeout: 4000,
             headers: { 'User-Agent': 'KeystoneAnalytics/1.0 (RSS Reader)', 'Accept': 'application/rss+xml, application/xml, text/xml' }
         })
 
+        // Global deadline: abort all remaining work at 45s to leave time for Gemini + DB
+        const FUNCTION_DEADLINE = startTime + 45_000
+
         const failedFeeds: string[] = []
-        const rawResults = await Promise.allSettled(ALL_FEEDS.map(async (feed) => {
+
+        async function fetchFeedWithTimeout(feed: Feed): Promise<RawArticle[]> {
+            const controller = new AbortController()
+            const timeout = setTimeout(() => controller.abort(), 4000)
             try {
                 const res = await parser.parseURL(feed.url)
-                return (res.items || []).slice(0, 15).map(item => ({
+                return (res.items || []).slice(0, 10).map(item => ({
                     title: item.title?.trim() || '',
                     link: normalizeUrl(item.link || ''),
                     pubDate: item.pubDate || item.isoDate || new Date().toISOString(),
@@ -294,12 +300,31 @@ serve(async (req) => {
             } catch (e) {
                 failedFeeds.push(feed.name)
                 return []
+            } finally {
+                clearTimeout(timeout)
             }
-        }))
+        }
 
-        let allRawArticles: RawArticle[] = rawResults
-            .filter((r): r is PromiseFulfilledResult<RawArticle[]> => r.status === 'fulfilled')
-            .flatMap(r => r.value)
+        // Fetch feeds in batches of 10 to avoid overwhelming connections
+        let allFeedResults: RawArticle[][] = []
+        const BATCH_SIZE = 10
+        for (let i = 0; i < ALL_FEEDS.length; i += BATCH_SIZE) {
+            if (Date.now() > FUNCTION_DEADLINE) {
+                console.warn(`[Sentinel] Hit deadline at feed batch ${i}, stopping feed fetches`)
+                break
+            }
+            const batch = ALL_FEEDS.slice(i, i + BATCH_SIZE)
+            const results = await Promise.allSettled(batch.map(fetchFeedWithTimeout))
+            allFeedResults.push(
+                ...results
+                    .filter((r): r is PromiseFulfilledResult<RawArticle[]> => r.status === 'fulfilled')
+                    .map(r => r.value)
+            )
+        }
+
+        const rawResults = allFeedResults
+
+        let allRawArticles: RawArticle[] = rawResults.flat()
 
         // 2. Normalize & Deduplicate
         const uniqueLinks = new Set<string>()
@@ -328,7 +353,7 @@ serve(async (req) => {
 
         const cachedLinks = new Set(cachedRows?.map(r => r.link) || [])
 
-        const newArticles = dedupedArticles.filter(a => !cachedLinks.has(a.link)).slice(0, 40)
+        const newArticles = dedupedArticles.filter(a => !cachedLinks.has(a.link)).slice(0, 25)
 
         console.log(`[Sentinel] Fetched ${allRawArticles.length} raw -> ${dedupedArticles.length} deduped -> ${newArticles.length} brand new`)
 
@@ -340,23 +365,31 @@ serve(async (req) => {
             const prompt = buildPrompt(newArticles)
 
             // Phase 1 fix (Audit C7): Move API key from URL query param to request header
-            const geminiRes = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent`,
-                {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'x-goog-api-key': GEMINI_API_KEY,
-                    },
-                    body: JSON.stringify({
-                        contents: [{ parts: [{ text: prompt }] }],
-                        generationConfig: {
-                            responseMimeType: 'application/json',
-                            temperature: 0.15,
-                        }
-                    })
-                }
-            )
+            const geminiController = new AbortController()
+            const geminiTimeout = setTimeout(() => geminiController.abort(), 30_000)
+            let geminiRes: Response
+            try {
+                geminiRes = await fetch(
+                    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent`,
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'x-goog-api-key': GEMINI_API_KEY,
+                        },
+                        body: JSON.stringify({
+                            contents: [{ parts: [{ text: prompt }] }],
+                            generationConfig: {
+                                responseMimeType: 'application/json',
+                                temperature: 0.15,
+                            }
+                        }),
+                        signal: geminiController.signal,
+                    }
+                )
+            } finally {
+                clearTimeout(geminiTimeout)
+            }
 
             if (!geminiRes.ok) throw new Error(`Gemini Error: ${geminiRes.status}`)
             const data = await geminiRes.json()
@@ -458,6 +491,31 @@ serve(async (req) => {
 
     } catch (error: any) {
         console.error(`[Sentinel] Fatal Error:`, error.message)
+
+        // On timeout/crash, try to return cached data so the UI isn't completely broken
+        try {
+            const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || ''
+            const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
+            if (SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY) {
+                const fallbackClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+                const { data: cachedArticles } = await fallbackClient
+                    .from('sentinel_articles').select('*').order('pub_date', { ascending: false }).limit(50)
+                const { data: cachedBriefing } = await fallbackClient
+                    .from('sentinel_briefings').select('*').order('generated_at', { ascending: false }).limit(1).single()
+
+                if (cachedArticles && cachedArticles.length > 0) {
+                    console.log(`[Sentinel] Returning ${cachedArticles.length} cached articles after error`)
+                    return new Response(JSON.stringify({
+                        articles: cachedArticles,
+                        briefing: cachedBriefing || { top_stories: [], market_mood: 'mixed', trending_topics: [], signal_count: { bullish: 0, bearish: 0, neutral: 0 } },
+                        meta: { feedsFetched: 0, feedsFailed: ['all — returned cached data due to error'], articlesRaw: 0, articlesDeduplicated: 0, articlesNew: 0, articlesCached: cachedArticles.length, processingTimeMs: 0 }
+                    }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+                }
+            }
+        } catch (fallbackErr) {
+            console.error('[Sentinel] Fallback cache retrieval also failed:', fallbackErr)
+        }
+
         // Phase 2 fix (Audit m18): Don't leak internal error details
         return new Response(JSON.stringify({ error: 'Internal server error' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }

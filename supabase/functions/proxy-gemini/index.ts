@@ -25,9 +25,11 @@ function checkRateLimit(userId: string): boolean {
 // Phase 1 fix (Audit C8): Model name allowlist
 const ALLOWED_MODELS = new Set([
     'gemini-3.1-flash-lite',
+    'gemini-3.1-flash-lite-preview',
     'gemini-3-flash-preview',
-    'gemini-2.0-flash',
     'gemini-3-flash',
+    'gemini-2.0-flash',
+    'gemini-2.0-flash-lite',
 ])
 
 /**
