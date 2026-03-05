@@ -34,7 +34,7 @@ export function useDashboardStats() {
                     .neq('outcome', 'pending');
 
                 let wins = 0;
-                let totalClosed = outcomes?.length || 0;
+                const totalClosed = outcomes?.length || 0;
                 let estimatedPnl = 0;
 
                 if (outcomes) {

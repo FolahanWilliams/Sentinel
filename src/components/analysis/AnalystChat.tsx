@@ -254,10 +254,11 @@ export function AnalystChat() {
                             systemResponse = `**Comparison command recognized:** Comparing ${ticker} vs \`${args.toUpperCase()}\`...\n\n*Note: This would fetch fundamental and technical data for both assets and provide a side-by-side Gemini analysis.*`;
                         }
                         break;
-                    case '/risk':
+                    case '/risk': {
                         const severitySum = tickerAnalysis?.events?.reduce((acc: number, ev: any) => acc + (ev?.severity || 0), 0) || 0;
                         systemResponse = `**Risk Profile for ${ticker}:**\n- Volatility (Beta): ${tickerAnalysis?.fundamentals?.beta || 'Unknown'}\n- Recent Events Severity: ${severitySum} (Cumulative)\n- AI Bias Confidence: ${tickerAnalysis?.biasWeights?.overall_score || 'Unknown'}/100\n\n*Note: This is a simulated risk profile based on current context.*`;
                         break;
+                    }
                     case '/help':
                         systemResponse = `**Available Commands:**\n- \`/screen [criteria]\`: Run a custom market screen\n- \`/compare [ticker]\`: Compare current active ticker with another\n- \`/risk\`: Get a quick risk summary for the current ticker\n- \`/clear\`: Clear the chat history`;
                         break;

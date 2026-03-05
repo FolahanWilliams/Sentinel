@@ -88,7 +88,7 @@ export class ReflectionAgent {
 
         // 2a. Fetch user ratings to enrich the dataset
         const signalIds = outcomes.map((o: any) => o.signal_id).filter(Boolean);
-        let ratingsMap: Record<string, string> = {};
+        const ratingsMap: Record<string, string> = {};
         if (signalIds.length > 0) {
             try {
                 const { data: ratings } = await (supabase
