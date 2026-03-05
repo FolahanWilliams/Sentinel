@@ -83,14 +83,16 @@ export class PositionSizer {
     }
 
     /**
-     * V2: Calibrated position sizing using historical accuracy data + ATR stops.
+     * V2: Dynamic position sizing using ACTUAL historical win-rate per category + ATR risk.
+     * Uses DB lookup for real win rates instead of AI confidence as proxy.
      */
     static async calculateSizeV2(
         aiConfidence: number,
         entryPrice: number,
         targetPrice: number | null,
-        _signalType: string,
+        signalType: string,
         taSnapshot: TASnapshot | null,
+        _ticker?: string,
     ): Promise<PositionSizeResult> {
         // 1. Fetch config
         const { data: config, error } = await supabase
@@ -118,9 +120,37 @@ export class PositionSizer {
 
         const totalCapital = config.total_capital || 10000;
 
-        // 2. Get calibrated win rate
-        const curve = await ConfidenceCalibrator.getCachedCurve();
-        const calibratedWinRate = ConfidenceCalibrator.getCalibratedWinRate(aiConfidence, curve) / 100;
+        // 2. Get ACTUAL win rate from DB — per signal_type, with optional ticker specificity
+        let actualWinRate: number | null = null;
+        try {
+            const { data: typeOutcomes } = await supabase
+                .from('signal_outcomes')
+                .select('outcome, signals!inner(signal_type)')
+                .neq('outcome', 'pending')
+                .limit(100);
+
+            if (typeOutcomes && typeOutcomes.length >= 5) {
+                // Filter to matching signal type
+                const matching = typeOutcomes.filter((o: any) => o.signals?.signal_type === signalType);
+                if (matching.length >= 5) {
+                    const wins = matching.filter((o: any) => o.outcome === 'win').length;
+                    actualWinRate = wins / matching.length;
+                    console.log(`[PositionSizer] Actual DB win rate for ${signalType}: ${(actualWinRate * 100).toFixed(1)}% (n=${matching.length})`);
+                }
+            }
+        } catch { /* fall through to calibrator */ }
+
+        // Use actual DB win rate if available, otherwise fall back to calibrated AI confidence
+        let calibratedWinRate: number;
+        if (actualWinRate !== null) {
+            calibratedWinRate = actualWinRate;
+        } else {
+            const curve = await ConfidenceCalibrator.getCachedCurve();
+            calibratedWinRate = ConfidenceCalibrator.getCalibratedWinRate(aiConfidence, curve) / 100;
+        }
+
+        // Cap portfolio exposure at 25% max per position
+        const maxExposurePct = Math.min(config.max_position_pct || 10, 25);
 
         // 3. Get historical avg win/loss from signal outcomes
         const { data: outcomes } = await supabase
@@ -163,7 +193,7 @@ export class PositionSizer {
         let riskBasedPct = fixedPct;
         if (stopDistancePct > 0) {
             riskBasedPct = (config.risk_per_trade_pct / (stopDistancePct * 100)) * 100;
-            riskBasedPct = Math.min(riskBasedPct, config.max_position_pct || 10);
+            riskBasedPct = Math.min(riskBasedPct, maxExposurePct);
         }
         const riskBasedUsd = (riskBasedPct / 100) * totalCapital;
 
@@ -176,7 +206,7 @@ export class PositionSizer {
             let kellyPct = rawKelly * kellyFraction * 100;
 
             if (kellyPct > 0) {
-                kellyPct = Math.min(kellyPct, config.max_position_pct || 10);
+                kellyPct = Math.min(kellyPct, maxExposurePct);
                 kellyResult = {
                     pct: Math.round(kellyPct * 100) / 100,
                     usd: Math.round((kellyPct / 100) * totalCapital * 100) / 100,
@@ -199,8 +229,8 @@ export class PositionSizer {
 
         // Enforce caps
         let limitReason: string | null = null;
-        if (recommendedPct > (config.max_position_pct || 10)) {
-            recommendedPct = config.max_position_pct || 10;
+        if (recommendedPct > (maxExposurePct)) {
+            recommendedPct = maxExposurePct;
             limitReason = 'Hit max position limit';
         }
 

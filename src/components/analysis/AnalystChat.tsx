@@ -12,6 +12,7 @@ import { GeminiService } from '@/services/gemini';
 import { supabase } from '@/config/supabase';
 import { useChat } from '@/contexts/ChatContext';
 import { MarketDataService } from '@/services/marketData';
+import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 
 // Schema for the chatbot response
 export const ChatbotResponseSchema = {
@@ -58,6 +59,21 @@ interface ChatMessage {
 }
 
 export function AnalystChat() {
+    return (
+        <ErrorBoundary fallback={
+            <div className="fixed bottom-6 right-6 z-50">
+                <div className="bg-sentinel-950 border border-red-500/30 rounded-2xl p-6 text-center max-w-xs shadow-2xl">
+                    <p className="text-sm text-red-400 mb-2">Chat encountered an error</p>
+                    <button onClick={() => window.location.reload()} className="text-xs text-sentinel-400 hover:text-sentinel-200 underline cursor-pointer bg-transparent border-none">Reload</button>
+                </div>
+            </div>
+        }>
+            <AnalystChatInner />
+        </ErrorBoundary>
+    );
+}
+
+function AnalystChatInner() {
     const { isOpen, setIsOpen, activeTicker, setActiveTicker } = useChat();
 
     const ticker = activeTicker || 'GLOBAL';

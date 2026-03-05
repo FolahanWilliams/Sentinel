@@ -1,4 +1,4 @@
-import { Activity, ArrowRight, Clock, Loader2 } from 'lucide-react';
+import { Activity, ArrowRight, Clock, Loader2, BookOpen } from 'lucide-react';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
@@ -29,7 +29,7 @@ export function Dashboard() {
     const [scanStatus, setScanStatus] = useState<string | null>(null);
     const { logs } = useScannerLogs(1);
     const [signalFilters, setSignalFilters] = useState<SignalFilters>({
-        sector: 'All Sectors', minConfidence: 0, signalType: 'all', bias: 'all',
+        sector: 'All Sectors', minConfidence: 0, signalType: 'all', bias: 'all', confluenceOnly: false,
     });
 
     const filteredSignals = useMemo(
@@ -204,7 +204,7 @@ export function Dashboard() {
                                     description="Try adjusting your filters to see more results."
                                     action={
                                         <button
-                                            onClick={() => setSignalFilters({ sector: 'All Sectors', minConfidence: 0, signalType: 'all', bias: 'all' })}
+                                            onClick={() => setSignalFilters({ sector: 'All Sectors', minConfidence: 0, signalType: 'all', bias: 'all', confluenceOnly: false })}
                                             className="mt-2 px-4 py-2 bg-sentinel-800 hover:bg-sentinel-700 text-sentinel-100 rounded-xl text-sm font-medium transition-colors ring-1 ring-sentinel-700 cursor-pointer border-none"
                                         >
                                             Clear Filters
@@ -267,10 +267,52 @@ export function Dashboard() {
                                                 <p className="text-sm text-sentinel-400 leading-relaxed line-clamp-2">
                                                     {signal.thesis}
                                                 </p>
-                                                <div className="mt-4 flex items-center gap-6 text-[11px] text-sentinel-500 font-mono bg-sentinel-950/30 p-2.5 rounded-lg border border-sentinel-800/30 w-fit">
-                                                    <div>ENT: <span className="text-sentinel-300">{formatPrice(signal.suggested_entry_low)} - {formatPrice(signal.suggested_entry_high)}</span></div>
-                                                    <div>TGT: <span className="text-emerald-400">{formatPrice(signal.target_price)}</span></div>
-                                                    <div>STP: <span className="text-red-400">{formatPrice(signal.stop_loss)}</span></div>
+
+                                                {/* Confluence + Projected ROI badges */}
+                                                {(signal.confluence_level || signal.projected_roi != null) && (
+                                                    <div className="mt-2 flex items-center gap-2 flex-wrap">
+                                                        {signal.confluence_level && signal.confluence_level !== 'none' && (
+                                                            <span className={`px-2 py-0.5 text-[10px] font-bold rounded ring-1 ${
+                                                                signal.confluence_level === 'strong'
+                                                                    ? 'bg-emerald-500/15 text-emerald-400 ring-emerald-500/30'
+                                                                    : signal.confluence_level === 'moderate'
+                                                                    ? 'bg-blue-500/15 text-blue-400 ring-blue-500/30'
+                                                                    : 'bg-amber-500/15 text-amber-400 ring-amber-500/30'
+                                                            }`}>
+                                                                {signal.confluence_level.toUpperCase()} CONFLUENCE
+                                                            </span>
+                                                        )}
+                                                        {signal.projected_roi != null && (
+                                                            <span className={`px-2 py-0.5 text-[10px] font-bold font-mono rounded ring-1 ${
+                                                                signal.projected_roi > 0
+                                                                    ? 'bg-emerald-500/10 text-emerald-400 ring-emerald-500/20'
+                                                                    : 'bg-red-500/10 text-red-400 ring-red-500/20'
+                                                            }`}>
+                                                                Est. ROI {signal.projected_roi > 0 ? '+' : ''}{signal.projected_roi}%
+                                                                {signal.projected_win_rate != null && ` (${signal.projected_win_rate}% WR`}
+                                                                {signal.similar_events_count != null && `, ${signal.similar_events_count} similar)`}
+                                                                {signal.projected_win_rate != null && !signal.similar_events_count && ')'}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                )}
+
+                                                <div className="mt-3 flex items-center justify-between">
+                                                    <div className="flex items-center gap-6 text-[11px] text-sentinel-500 font-mono bg-sentinel-950/30 p-2.5 rounded-lg border border-sentinel-800/30 w-fit">
+                                                        <div>ENT: <span className="text-sentinel-300">{formatPrice(signal.suggested_entry_low)} - {formatPrice(signal.suggested_entry_high)}</span></div>
+                                                        <div>TGT: <span className="text-emerald-400">{formatPrice(signal.target_price)}</span></div>
+                                                        <div>STP: <span className="text-red-400">{formatPrice(signal.stop_loss)}</span></div>
+                                                    </div>
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            navigate(`/journal?ticker=${signal.ticker}&thesis=${encodeURIComponent(signal.thesis?.slice(0, 200) || '')}&entry=${signal.suggested_entry_low || ''}&target=${signal.target_price || ''}&stop=${signal.stop_loss || ''}`);
+                                                        }}
+                                                        className="px-2.5 py-1.5 bg-sentinel-800/50 hover:bg-sentinel-700/50 text-sentinel-400 hover:text-sentinel-200 rounded-lg text-[10px] font-medium transition-colors flex items-center gap-1 opacity-0 group-hover:opacity-100 cursor-pointer border-none"
+                                                        title="Log trade to journal"
+                                                    >
+                                                        <BookOpen className="w-3 h-3" /> Log Trade
+                                                    </button>
                                                 </div>
                                             </motion.div>
                                         ))}

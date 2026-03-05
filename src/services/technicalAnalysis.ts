@@ -8,7 +8,7 @@
  */
 
 import { supabase } from '@/config/supabase';
-import type { TASnapshot, TAAlignment } from '@/types/signals';
+import type { TASnapshot, TAAlignment, ConfluenceLevel } from '@/types/signals';
 
 interface OHLCV {
     date: string;
@@ -310,6 +310,55 @@ export class TechnicalAnalysisService {
             return { blocked: true, reason: 'RSI <20 with bullish MACD crossover — shorting at capitulation' };
         }
         return { blocked: false, reason: '' };
+    }
+
+    /**
+     * Compute a confluence score (0-100) combining news sentiment + TA alignment.
+     * High confluence = news catalyst CONFIRMED by technicals = highest win rate.
+     */
+    static computeConfluence(
+        snapshot: TASnapshot | null,
+        signalDirection: 'long' | 'short',
+        newsConfidence: number,
+    ): { score: number; level: ConfluenceLevel } {
+        if (!snapshot) return { score: newsConfidence * 0.5, level: 'weak' };
+
+        const alignment = this.evaluateAlignment(snapshot, signalDirection);
+        const { rsi14, volumeRatio, taScore } = snapshot;
+
+        let taConfirmations = 0;
+
+        // RSI confirmation
+        if (signalDirection === 'long') {
+            if (rsi14 !== null && rsi14 < 35) taConfirmations += 25;
+            else if (rsi14 !== null && rsi14 < 45) taConfirmations += 10;
+        } else {
+            if (rsi14 !== null && rsi14 > 65) taConfirmations += 25;
+            else if (rsi14 !== null && rsi14 > 55) taConfirmations += 10;
+        }
+
+        // Volume surge confirmation (>150% avg)
+        if (volumeRatio !== null && volumeRatio > 1.5) taConfirmations += 20;
+        else if (volumeRatio !== null && volumeRatio > 1.2) taConfirmations += 10;
+
+        // TA score alignment
+        if (signalDirection === 'long' && taScore > 30) taConfirmations += 20;
+        else if (signalDirection === 'short' && taScore < -30) taConfirmations += 20;
+
+        // Alignment bonus
+        if (alignment === 'confirmed') taConfirmations += 15;
+        else if (alignment === 'partial') taConfirmations += 5;
+        else if (alignment === 'conflicting') taConfirmations -= 20;
+
+        // Combine: 60% news, 40% TA
+        const score = Math.min(100, Math.max(0, Math.round(newsConfidence * 0.6 + taConfirmations * 0.4)));
+
+        let level: ConfluenceLevel = 'none';
+        if (score >= 75) level = 'strong';
+        else if (score >= 55) level = 'moderate';
+        else if (score >= 35) level = 'weak';
+
+        return { score, level };
     }
 
     /**
