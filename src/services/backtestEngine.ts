@@ -118,7 +118,7 @@ function pickReturn(row: any, horizon: BacktestParams['returnHorizon']): number 
             row.return_30d,
         ].filter((v): v is number => v !== null && v !== undefined);
         if (candidates.length === 0) return 0;
-        return candidates.reduce((best, v) => v > best ? v : best, candidates[0]);
+        return candidates.reduce((best, v) => v > best ? v : best, candidates[0] ?? 0);
     }
     const map: Record<string, string> = {
         '1d': 'return_1d', '5d': 'return_5d',
@@ -235,7 +235,8 @@ export function runBacktest(
     const winRate = trades.length > 0 ? (winners.length / trades.length) * 100 : 0;
     const avgWin = winners.length > 0 ? winners.reduce((s, t) => s + t.pnl_pct, 0) / winners.length : 0;
     const avgLoss = losers.length > 0 ? losers.reduce((s, t) => s + t.pnl_pct, 0) / losers.length : 0;
-    const equity = trades.length > 0 ? trades[trades.length - 1].equity_after : params.startingCapital;
+    const lastTrade = trades[trades.length - 1];
+    const equity = lastTrade ? lastTrade.equity_after : params.startingCapital;
     const totalReturn = equity - params.startingCapital;
     const totalReturnPct = params.startingCapital > 0 ? (totalReturn / params.startingCapital) * 100 : 0;
 
@@ -248,8 +249,8 @@ export function runBacktest(
         );
         if (stdDev > 0 && trades.length >= 2) {
             // Calculate actual trades per year based on date range
-            const firstDate = new Date(trades[0].date).getTime();
-            const lastDate = new Date(trades[trades.length - 1].date).getTime();
+            const firstDate = new Date(trades[0]!.date).getTime();
+            const lastDate = new Date(trades[trades.length - 1]!.date).getTime();
             const calendarDays = Math.max(1, (lastDate - firstDate) / (1000 * 60 * 60 * 24));
             const tradesPerYear = (trades.length / calendarDays) * 365;
             sharpeRatio = (meanReturn / stdDev) * Math.sqrt(tradesPerYear);
@@ -300,34 +301,39 @@ export function runBacktest(
         const dateObj = new Date(trade.date);
         const monthKey = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}`;
         if (!monthlyMap[monthKey]) monthlyMap[monthKey] = { returnPct: 0, tradeCount: 0 };
-        monthlyMap[monthKey].returnPct += trade.pnl_pct;
-        monthlyMap[monthKey].tradeCount++;
+        const monthEntry = monthlyMap[monthKey]!;
+        monthEntry.returnPct += trade.pnl_pct;
+        monthEntry.tradeCount++;
 
         // Signal type
         if (!signalTypeMap[trade.signal_type]) signalTypeMap[trade.signal_type] = { wins: 0, losses: 0, breakevens: 0 };
-        if (isWin) signalTypeMap[trade.signal_type].wins++;
-        else if (isLoss) signalTypeMap[trade.signal_type].losses++;
-        else signalTypeMap[trade.signal_type].breakevens++;
+        const stEntry = signalTypeMap[trade.signal_type]!;
+        if (isWin) stEntry.wins++;
+        else if (isLoss) stEntry.losses++;
+        else stEntry.breakevens++;
 
         // Bias type
         if (!biasTypeMap[trade.bias_type]) biasTypeMap[trade.bias_type] = { wins: 0, losses: 0, breakevens: 0 };
-        if (isWin) biasTypeMap[trade.bias_type].wins++;
-        else if (isLoss) biasTypeMap[trade.bias_type].losses++;
-        else biasTypeMap[trade.bias_type].breakevens++;
+        const btEntry = biasTypeMap[trade.bias_type]!;
+        if (isWin) btEntry.wins++;
+        else if (isLoss) btEntry.losses++;
+        else btEntry.breakevens++;
 
         // Calibration
         const bucketIdx = Math.min(9, Math.floor(trade.confidence / 10));
         const bucketKey = `${bucketIdx * 10}-${(bucketIdx + 1) * 10}`;
-        if (calibrationMap[bucketKey]) {
-            calibrationMap[bucketKey].total++;
-            if (isWin) calibrationMap[bucketKey].wins++;
+        const calEntry = calibrationMap[bucketKey];
+        if (calEntry) {
+            calEntry.total++;
+            if (isWin) calEntry.wins++;
         }
     }
 
     // Best / worst
     const sortedByPnl = [...trades].sort((a, b) => b.pnl_pct - a.pnl_pct);
-    const bestTrade = sortedByPnl.length > 0 ? { ticker: sortedByPnl[0].ticker, pnl_pct: sortedByPnl[0].pnl_pct } : null;
-    const worstTrade = sortedByPnl.length > 0 ? { ticker: sortedByPnl[sortedByPnl.length - 1].ticker, pnl_pct: sortedByPnl[sortedByPnl.length - 1].pnl_pct } : null;
+    const bestTrade = sortedByPnl.length > 0 ? { ticker: sortedByPnl[0]!.ticker, pnl_pct: sortedByPnl[0]!.pnl_pct } : null;
+    const lastSorted = sortedByPnl[sortedByPnl.length - 1];
+    const worstTrade = lastSorted ? { ticker: lastSorted.ticker, pnl_pct: lastSorted.pnl_pct } : null;
 
     // Breakdowns
     const bySignalType: WinRateBreakdown[] = Object.entries(signalTypeMap).map(([label, v]) => ({
@@ -381,11 +387,13 @@ export function runBacktest(
         const testWins = testResult.trades.filter(t => classifyTrade(t.pnl_pct) === 'win').length;
         const trainWinRate = trainResult.trades.length > 0 ? (trainWins / trainResult.trades.length) * 100 : 0;
         const testWinRate = testResult.trades.length > 0 ? (testWins / testResult.trades.length) * 100 : 0;
-        const trainReturnPct = trainResult.trades.length > 0
-            ? ((trainResult.trades[trainResult.trades.length - 1].equity_after - params.startingCapital) / params.startingCapital) * 100
+        const lastTrainTrade = trainResult.trades[trainResult.trades.length - 1];
+        const trainReturnPct = lastTrainTrade
+            ? ((lastTrainTrade.equity_after - params.startingCapital) / params.startingCapital) * 100
             : 0;
-        const testReturnPct = testResult.trades.length > 0
-            ? ((testResult.trades[testResult.trades.length - 1].equity_after - params.startingCapital) / params.startingCapital) * 100
+        const lastTestTrade = testResult.trades[testResult.trades.length - 1];
+        const testReturnPct = lastTestTrade
+            ? ((lastTestTrade.equity_after - params.startingCapital) / params.startingCapital) * 100
             : 0;
 
         walkForward = {
@@ -422,7 +430,7 @@ export function runBacktest(
             for (let i = 0; i < tradeReturns.length; i++) {
                 // Random resample with replacement
                 const randomIdx = Math.floor(Math.random() * tradeReturns.length);
-                const pnlPct = tradeReturns[randomIdx];
+                const pnlPct = tradeReturns[randomIdx] ?? 0;
                 const posSize = simEquity * (params.positionSizePct / 100);
                 simEquity += posSize * (pnlPct / 100);
 
@@ -440,12 +448,12 @@ export function runBacktest(
 
         monteCarlo = {
             simulations: NUM_SIMS,
-            medianFinalEquity: finalEquities[Math.floor(NUM_SIMS / 2)],
-            percentile5: finalEquities[Math.floor(NUM_SIMS * 0.05)],
-            percentile95: finalEquities[Math.floor(NUM_SIMS * 0.95)],
+            medianFinalEquity: finalEquities[Math.floor(NUM_SIMS / 2)] ?? 0,
+            percentile5: finalEquities[Math.floor(NUM_SIMS * 0.05)] ?? 0,
+            percentile95: finalEquities[Math.floor(NUM_SIMS * 0.95)] ?? 0,
             probabilityOfLoss: finalEquities.filter(e => e < params.startingCapital).length / NUM_SIMS * 100,
             probabilityOfDrawdownOver20: maxDrawdowns.filter(d => d > 20).length / NUM_SIMS * 100,
-            medianMaxDrawdownPct: maxDrawdowns[Math.floor(NUM_SIMS / 2)],
+            medianMaxDrawdownPct: maxDrawdowns[Math.floor(NUM_SIMS / 2)] ?? 0,
         };
     }
 

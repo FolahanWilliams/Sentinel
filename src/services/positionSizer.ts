@@ -89,7 +89,7 @@ export class PositionSizer {
         aiConfidence: number,
         entryPrice: number,
         targetPrice: number | null,
-        signalType: string,
+        _signalType: string,
         taSnapshot: TASnapshot | null,
     ): Promise<PositionSizeResult> {
         // 1. Fetch config

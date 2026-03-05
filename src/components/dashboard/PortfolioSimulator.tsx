@@ -9,10 +9,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/config/supabase';
 import { MarketDataService } from '@/services/marketData';
-import {
-    Briefcase, TrendingUp, TrendingDown, AlertTriangle,
-    DollarSign, PieChart, Loader2, RefreshCw
-} from 'lucide-react';
+import { Briefcase, Loader2, RefreshCw } from 'lucide-react';
 
 interface Position {
     id: string;

@@ -32,7 +32,7 @@ function computeEMA(closes: number[], period: number): number | null {
     const k = 2 / (period + 1);
     let ema = closes.slice(0, period).reduce((a, b) => a + b, 0) / period;
     for (let i = period; i < closes.length; i++) {
-        ema = closes[i] * k + ema * (1 - k);
+        ema = (closes[i] ?? 0) * k + ema * (1 - k);
     }
     return ema;
 }
@@ -45,7 +45,7 @@ function computeRSI(closes: number[], period: number = 14): number | null {
 
     // Initial average
     for (let i = 1; i <= period; i++) {
-        const change = closes[i] - closes[i - 1];
+        const change = (closes[i] ?? 0) - (closes[i - 1] ?? 0);
         if (change > 0) avgGain += change;
         else avgLoss += Math.abs(change);
     }
@@ -54,7 +54,7 @@ function computeRSI(closes: number[], period: number = 14): number | null {
 
     // Smooth with Wilder's method
     for (let i = period + 1; i < closes.length; i++) {
-        const change = closes[i] - closes[i - 1];
+        const change = (closes[i] ?? 0) - (closes[i - 1] ?? 0);
         if (change > 0) {
             avgGain = (avgGain * (period - 1) + change) / period;
             avgLoss = (avgLoss * (period - 1)) / period;
@@ -84,8 +84,9 @@ function computeMACD(closes: number[]): { value: number; signal: number; histogr
     let ema26Running = closes.slice(0, 26).reduce((a, b) => a + b, 0) / 26;
 
     for (let i = 26; i < closes.length; i++) {
-        if (i >= 12) ema12Running = closes[i] * k12 + ema12Running * (1 - k12);
-        ema26Running = closes[i] * k26 + ema26Running * (1 - k26);
+        const c = closes[i] ?? 0;
+        if (i >= 12) ema12Running = c * k12 + ema12Running * (1 - k12);
+        ema26Running = c * k26 + ema26Running * (1 - k26);
         macdSeries.push(ema12Running - ema26Running);
     }
 
@@ -95,7 +96,7 @@ function computeMACD(closes: number[]): { value: number; signal: number; histogr
     const kSig = 2 / 10;
     let signalLine = macdSeries.slice(0, 9).reduce((a, b) => a + b, 0) / 9;
     for (let i = 9; i < macdSeries.length; i++) {
-        signalLine = macdSeries[i] * kSig + signalLine * (1 - kSig);
+        signalLine = (macdSeries[i] ?? 0) * kSig + signalLine * (1 - kSig);
     }
 
     return {
@@ -110,17 +111,16 @@ function computeATR(bars: OHLCV[], period: number = 14): number | null {
 
     const trueRanges: number[] = [];
     for (let i = 1; i < bars.length; i++) {
-        const high = bars[i].high;
-        const low = bars[i].low;
-        const prevClose = bars[i - 1].close;
-        const tr = Math.max(high - low, Math.abs(high - prevClose), Math.abs(low - prevClose));
+        const bar = bars[i]!;
+        const prevBar = bars[i - 1]!;
+        const tr = Math.max(bar.high - bar.low, Math.abs(bar.high - prevBar.close), Math.abs(bar.low - prevBar.close));
         trueRanges.push(tr);
     }
 
     // Initial ATR = simple average of first `period` TRs
     let atr = trueRanges.slice(0, period).reduce((a, b) => a + b, 0) / period;
     for (let i = period; i < trueRanges.length; i++) {
-        atr = (atr * (period - 1) + trueRanges[i]) / period;
+        atr = (atr * (period - 1) + (trueRanges[i] ?? 0)) / period;
     }
     return atr;
 }
@@ -135,7 +135,7 @@ function computeBollingerPosition(closes: number[], period: number = 20, stdDevM
 
     const upperBand = sma + stdDevMultiplier * stdDev;
     const lowerBand = sma - stdDevMultiplier * stdDev;
-    const currentPrice = closes[closes.length - 1];
+    const currentPrice = closes[closes.length - 1] ?? 0;
 
     if (upperBand === lowerBand) return 0.5;
     return (currentPrice - lowerBand) / (upperBand - lowerBand);
@@ -145,7 +145,7 @@ function computeVolumeRatio(volumes: number[], period: number = 20): number | nu
     if (volumes.length < period + 1) return null;
     const avgVol = volumes.slice(-period - 1, -1).reduce((a, b) => a + b, 0) / period;
     if (avgVol === 0) return null;
-    return volumes[volumes.length - 1] / avgVol;
+    return (volumes[volumes.length - 1] ?? 0) / avgVol;
 }
 
 // ─── Main Service ───
@@ -194,7 +194,7 @@ export class TechnicalAnalysisService {
         const bollingerPosition = computeBollingerPosition(closes, 20, 2);
 
         // Determine trend direction
-        const currentPrice = closes[closes.length - 1];
+        const currentPrice = closes[closes.length - 1] ?? 0;
         let trendDirection: TASnapshot['trendDirection'] = 'neutral';
         if (sma50 !== null && sma200 !== null) {
             if (currentPrice > sma50 && currentPrice > sma200) trendDirection = 'bullish';
@@ -252,7 +252,7 @@ export class TechnicalAnalysisService {
     ): TAAlignment {
         if (!snapshot) return 'unavailable';
 
-        const { rsi14, macd, trendDirection, volumeRatio, taScore } = snapshot;
+        const { rsi14, macd, trendDirection, volumeRatio } = snapshot;
         let confirmations = 0;
         let conflicts = 0;
 

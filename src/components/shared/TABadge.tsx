@@ -16,7 +16,7 @@ const alignmentConfig: Record<string, { color: string; bg: string; border: strin
 };
 
 export function TABadge({ taAlignment, taSnapshot, compact = false }: TABadgeProps) {
-    const config = alignmentConfig[taAlignment || 'unavailable'] || alignmentConfig.unavailable;
+    const config = alignmentConfig[taAlignment || 'unavailable'] ?? alignmentConfig['unavailable']!;
     const { color, bg, border, label, Icon } = config;
 
     const tooltipLines = useMemo(() => {
