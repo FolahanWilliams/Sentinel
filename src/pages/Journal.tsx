@@ -12,19 +12,19 @@ const MOODS = ['😡', '😐', '😊', '🔥'] as const;
 const MOOD_LABELS: Record<string, string> = { '😡': 'Frustrated', '😐': 'Neutral', '😊': 'Confident', '🔥': 'On Fire' };
 const ENTRY_TYPES = ['thesis', 'learning', 'mistake', 'general'] as const;
 
+// Storage keys for filters (outside component to avoid re-creation)
+const STORAGE_KEYS = {
+    SEARCH: 'sentinel_journal_search',
+    TYPE: 'sentinel_journal_type',
+    MOOD: 'sentinel_journal_mood',
+    TAG: 'sentinel_journal_tag',
+    DATE: 'sentinel_journal_date',
+} as const;
+
 export function Journal() {
     const [entries, setEntries] = useState<any[]>([]);
     const [macroEvents, setMacroEvents] = useState<Record<string, string>>({});
     const [loading, setLoading] = useState(true);
-
-    // Storage keys for filters
-    const STORAGE_KEYS = {
-        SEARCH: 'sentinel_journal_search',
-        TYPE: 'sentinel_journal_type',
-        MOOD: 'sentinel_journal_mood',
-        TAG: 'sentinel_journal_tag',
-        DATE: 'sentinel_journal_date',
-    };
 
     // Helper to init state from sessionStorage
     const getStoredState = (key: string, defaultValue: string | null = null): any => {

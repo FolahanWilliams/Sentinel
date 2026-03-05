@@ -7,7 +7,7 @@ const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY!
 const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 async function test() {
-  const { data: { user }, error: authErr } = await supabase.auth.signInAnonymously()
+  const { data: { user: _user }, error: authErr } = await supabase.auth.signInAnonymously()
   if (authErr) { console.error("Auth error:", authErr); return }
   const { data: session } = await supabase.auth.getSession()
   const token = session.session?.access_token

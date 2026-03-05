@@ -17,8 +17,9 @@ import { GlassMaterialize } from '@/components/shared/GlassMaterialize';
 import { useScannerLogs } from '@/hooks/useScannerLogs';
 import { SkeletonSignalFeed } from '@/components/shared/SkeletonPrimitives';
 import { EmptyState } from '@/components/shared/EmptyState';
-import { SignalFilterBar, applySignalFilters } from '@/components/signals/SignalFilterBar';
-import type { SignalFilters } from '@/components/signals/SignalFilterBar';
+import { SignalFilterBar } from '@/components/signals/SignalFilterBar';
+import { applySignalFilters } from '@/utils/signalFilters';
+import type { SignalFilters } from '@/utils/signalFilters';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export function Dashboard() {

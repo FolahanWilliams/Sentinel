@@ -6,7 +6,7 @@
  */
 
 import { supabase } from '@/config/supabase';
-import { getMatchingAlertRules } from '@/components/settings/AlertRulesPanel';
+import { getMatchingAlertRules } from '@/utils/alertRules';
 
 /** Minimum requirements for a smart alert to fire */
 const SMART_ALERT_THRESHOLDS = {

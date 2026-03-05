@@ -126,9 +126,7 @@ export function useUpcomingEvents() {
         } catch (err: any) {
             setError(err.message);
             console.error('[useUpcomingEvents] Error:', err);
-            if (!data) {
-                setData({ notable: [], earnings: [], economic: [] });
-            }
+            setData(prev => prev ?? { notable: [], earnings: [], economic: [] });
         } finally {
             setLoading(false);
         }

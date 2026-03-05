@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/config/supabase';
 import { Rss, ExternalLink, Cpu, HeartPulse, Building2, ShieldAlert, TrendingUp, Globe, Clock, MessageSquare, AlertTriangle } from 'lucide-react';
 import { Database } from '@/types/database';
@@ -40,14 +40,7 @@ export function NewsFeed({ ticker, limit = 10, title = "Live Intelligence Feed",
     const [loading, setLoading] = useState(true);
     const [categoryFilter, setCategoryFilter] = useState<string>('all');
 
-    // Auto-refresh every 5 minutes
-    useEffect(() => {
-        fetchNews();
-        const interval = setInterval(fetchNews, 5 * 60 * 1000);
-        return () => clearInterval(interval);
-    }, [ticker, categoryFilter, limit]);
-
-    async function fetchNews() {
+    const fetchNews = useCallback(async () => {
         try {
             setLoading(true);
 
@@ -75,7 +68,14 @@ export function NewsFeed({ ticker, limit = 10, title = "Live Intelligence Feed",
         } finally {
             setLoading(false);
         }
-    }
+    }, [ticker, categoryFilter, limit]);
+
+    // Auto-refresh every 5 minutes
+    useEffect(() => {
+        fetchNews();
+        const interval = setInterval(fetchNews, 5 * 60 * 1000);
+        return () => clearInterval(interval);
+    }, [fetchNews]);
 
     return (
         <div className={`bg-sentinel-900/50 rounded-xl border border-sentinel-800 overflow-hidden flex flex-col ${className}`}>

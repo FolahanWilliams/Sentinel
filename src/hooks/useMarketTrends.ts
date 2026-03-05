@@ -91,16 +91,14 @@ export function useMarketTrends() {
             setError(err.message);
             console.error('[useMarketTrends] Error:', err);
             // Use fallback if no cache
-            if (!data) {
-                setData({
-                    midTerm: [
-                        { text: 'Loading trends...', direction: 'neutral' },
-                    ],
-                    longTerm: [
-                        { text: 'Loading trends...', direction: 'neutral' },
-                    ],
-                });
-            }
+            setData(prev => prev ?? {
+                midTerm: [
+                    { text: 'Loading trends...', direction: 'neutral' as const },
+                ],
+                longTerm: [
+                    { text: 'Loading trends...', direction: 'neutral' as const },
+                ],
+            });
         } finally {
             setLoading(false);
         }
