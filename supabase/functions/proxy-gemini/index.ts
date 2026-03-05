@@ -122,7 +122,7 @@ serve(async (req) => {
             systemInstruction,
             prompt,
             messages,
-            model = 'gemini-3-flash',
+            model = 'gemini-3-flash-preview',
             requireGroundedSearch = false,
             responseSchema,
             temperature,

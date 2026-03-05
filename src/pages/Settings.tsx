@@ -144,7 +144,7 @@ export function Settings() {
                         <div className="space-y-3">
                             <div className="flex justify-between text-sm">
                                 <span className="text-sentinel-400">Gemini Model</span>
-                                <span className="text-sentinel-100">gemini-3-flash</span>
+                                <span className="text-sentinel-100">gemini-3-flash-preview</span>
                             </div>
                             <div className="flex justify-between text-sm">
                                 <span className="text-sentinel-400">Grounded Search</span>
