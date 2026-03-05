@@ -216,10 +216,10 @@ export class ScannerService {
                 return `${t.ticker}(${t.priority}${src})`;
             }).join(', '));
 
-            // 3. Sync RSS Feeds + Alpha Vantage News (Feed the beast)
+            // 3. Sync RSS Feeds + Google News via Gemini (Feed the beast)
             await RSSReaderService.syncAllFeeds();
 
-            // 3a. Pull Alpha Vantage & Reddit sentiment for watched tickers
+            // 3a. Pull Google News (via Gemini grounded search) & Reddit sentiment for watched tickers
             try {
                 const headTickers = tickers.slice(0, 5);
                 await Promise.allSettled([
