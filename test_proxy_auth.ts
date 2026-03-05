@@ -1,5 +1,5 @@
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { serve as _serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import { createClient as _createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 // Just a dummy script to test the auth
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || '';

@@ -15,7 +15,7 @@ import { MarketDataService } from '@/services/marketData';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 
 // Schema for the chatbot response
-export const ChatbotResponseSchema = {
+const ChatbotResponseSchema = {
     type: "object",
     properties: {
         message: {
@@ -239,7 +239,7 @@ function AnalystChatInner() {
         }
 
         return parts.join('\n');
-    }, [ticker, tickerAnalysis, quote, activeTicker]);
+    }, [ticker, tickerAnalysis, quote]);
 
     const handleSend = async () => {
         const trimmed = input.trim();

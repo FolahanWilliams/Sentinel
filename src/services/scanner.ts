@@ -414,7 +414,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                 let quote: any;
                                 try {
                                     quote = await MarketDataService.getQuote(ev.ticker);
-                                } catch (e) { /* ignore */ }
+                                } catch { /* ignore */ }
 
                                 const priceDrop = quote ? quote.changePercent : -10; // Mocked if api fails
 

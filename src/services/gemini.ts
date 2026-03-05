@@ -88,7 +88,7 @@ export class GeminiService {
             if (req.responseSchema && data.text) {
                 try {
                     parsedData = JSON.parse(data.text) as T;
-                } catch (parseErr) {
+                } catch {
                     console.error('[GeminiService] Failed to parse JSON response:', data.text?.slice(0, 200));
                     throw new Error('Gemini returned invalid JSON');
                 }
@@ -156,7 +156,7 @@ export class GeminiService {
             if (req.responseSchema && data.text) {
                 try {
                     parsedData = JSON.parse(data.text) as T;
-                } catch (parseErr) {
+                } catch {
                     console.error('[GeminiService] Multi-turn JSON parse failed:', data.text?.slice(0, 200));
                     throw new Error('Gemini returned invalid JSON in multi-turn');
                 }

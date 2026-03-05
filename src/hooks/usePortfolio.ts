@@ -3,7 +3,7 @@
  * with realtime subscriptions for live updates.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/config/supabase';
 
 export interface PortfolioConfig {
@@ -62,7 +62,7 @@ export function usePortfolio(): PortfolioData {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    async function fetchAll() {
+    const fetchAll = useCallback(async () => {
         try {
             // Fetch config (singleton)
             const { data: cfgData } = await supabase
@@ -95,11 +95,11 @@ export function usePortfolio(): PortfolioData {
             console.error('[usePortfolio]', err);
             setError(err.message);
             // Use defaults if config doesn't exist yet
-            if (!config) setConfig(DEFAULT_CONFIG);
+            setConfig(prev => prev ?? DEFAULT_CONFIG);
         } finally {
             setLoading(false);
         }
-    }
+    }, []);
 
     useEffect(() => {
         fetchAll();
@@ -110,7 +110,7 @@ export function usePortfolio(): PortfolioData {
             .subscribe();
 
         return () => { supabase.removeChannel(ch); };
-    }, []);
+    }, [fetchAll]);
 
     const openPositions = positions.filter(p => p.status === 'open');
     const closedPositions = positions.filter(p => p.status === 'closed');

@@ -117,7 +117,7 @@ export function Positions() {
     }, [fetchQuotes]);
 
     // Calculate live P&L for a position
-    const calcPnL = (pos: Position) => {
+    const calcPnL = useCallback((pos: Position) => {
         const livePrice = liveQuotes[pos.ticker]?.price;
         if (!livePrice || !pos.entry_price || !pos.shares) return null;
 
@@ -125,7 +125,7 @@ export function Positions() {
         const pnlUsd = (livePrice - pos.entry_price) * pos.shares * multiplier;
         const pnlPct = ((livePrice - pos.entry_price) / pos.entry_price) * 100 * multiplier;
         return { pnlUsd, pnlPct, livePrice };
-    };
+    }, [liveQuotes]);
 
     // Summary stats
     const summaryStats = useMemo(() => {
@@ -151,7 +151,7 @@ export function Positions() {
             .reduce((sum, p) => sum + (p.realized_pnl || 0), 0);
 
         return { totalPnl, closedPnl, openCount: openPositions.length, winnersCount, losersCount, biggestWin, biggestLoss };
-    }, [positions, liveQuotes]);
+    }, [positions, calcPnL]);
 
     async function handleAddPosition(e: React.FormEvent) {
         e.preventDefault();

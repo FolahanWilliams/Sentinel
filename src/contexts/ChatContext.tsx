@@ -2,6 +2,7 @@
  * Phase 3 fix (Audit m6): Memoize context value and callback to prevent unnecessary re-renders
  */
 
+/* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from 'react';
 
 interface ChatContextType {
