@@ -31,6 +31,23 @@ import { SelfCritiqueAgent } from './selfCritique';
 export class ScannerService {
 
     /**
+     * Ensure a ticker exists in the watchlist table so FK constraints on market_events are satisfied.
+     * Uses upsert with ignoreDuplicates so it's safe to call multiple times.
+     */
+    private static async ensureWatchlistEntry(ticker: string): Promise<void> {
+        const { error } = await supabase.from('watchlist').upsert({
+            ticker: ticker.toUpperCase(),
+            company_name: ticker.toUpperCase(), // Placeholder — will be enriched later
+            sector: 'Unknown',
+            is_active: true,
+            notes: 'Auto-added by AI discovery scan'
+        } as any, { onConflict: 'ticker', ignoreDuplicates: true });
+        if (error) {
+            console.warn(`[Scanner] Failed to ensure watchlist entry for ${ticker}:`, error.message);
+        }
+    }
+
+    /**
      * Smart Scan Prioritization — rank tickers by urgency.
      * Higher priority = more recent events + higher win rate + more RSS mentions
      * + News Intelligence (sentinel_articles) high-impact article mentions.
@@ -854,6 +871,9 @@ If there is genuinely no major news, return: {"events": []}`,
         console.log(`[Scanner] Initiating manual scan for ${ticker}...`);
 
         try {
+            // 0. Ensure ticker is in watchlist (FK constraint on market_events)
+            await this.ensureWatchlistEntry(ticker);
+
             // 1. Log the start of the scan
             const { data: scanLog, error: logErr } = await supabase
                 .from('scan_logs')
@@ -1125,6 +1145,9 @@ If there is genuinely no major news, return: {"events": []}`,
             onProgress?.(`Scanning ${ticker} (${i + 1}/${discovered.length}): ${reason}`);
 
             try {
+                // Ensure ticker exists in watchlist (FK constraint on market_events)
+                await this.ensureWatchlistEntry(ticker);
+
                 // Save the discovery event so it shows up in event history
                 const { error: discUpsertErr } = await supabase.from('market_events').upsert({
                     ticker,

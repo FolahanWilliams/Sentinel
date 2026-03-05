@@ -24,6 +24,41 @@ const corsHeaders = {
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// --- Server-side response cache ---
+// TTL: 30s for quotes, 5 min for news sentiment, 15 min for historical
+interface CacheEntry {
+    data: any
+    expiresAt: number
+}
+const responseCache = new Map<string, CacheEntry>()
+const CACHE_TTL = {
+    quote: 30_000,          // 30 seconds — quotes change frequently
+    news_sentiment: 300_000, // 5 minutes — news doesn't change that fast
+    historical: 900_000,     // 15 minutes — daily bars don't change intraday
+} as const
+
+function getCached(key: string): any | null {
+    const entry = responseCache.get(key)
+    if (!entry) return null
+    if (Date.now() > entry.expiresAt) {
+        responseCache.delete(key)
+        return null
+    }
+    return entry.data
+}
+
+function setCache(key: string, data: any, endpoint: string): void {
+    const ttl = CACHE_TTL[endpoint as keyof typeof CACHE_TTL] || 30_000
+    responseCache.set(key, { data, expiresAt: Date.now() + ttl })
+    // Evict expired entries periodically (keep map from growing unbounded)
+    if (responseCache.size > 200) {
+        const now = Date.now()
+        for (const [k, v] of responseCache) {
+            if (now > v.expiresAt) responseCache.delete(k)
+        }
+    }
+}
+
 serve(async (req) => {
     // CORS Preflight
     if (req.method === 'OPTIONS') {
@@ -64,7 +99,17 @@ serve(async (req) => {
             )
         }
 
-        // 3. Load Secrets
+        // 3. Check server-side cache before hitting upstream APIs
+        const cacheKey = `${endpoint}:${(ticker || tickerParam || 'general').toUpperCase()}`
+        const cached = getCached(cacheKey)
+        if (cached) {
+            console.log(`[proxy-market-data] Cache hit: ${cacheKey}`)
+            return new Response(JSON.stringify(cached), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json', 'X-Cache': 'HIT' },
+            })
+        }
+
+        // 4. Load Secrets
         const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
         const ALPHA_VANTAGE_KEY = Deno.env.get('MARKET_DATA_API_KEY') || Deno.env.get('ALPHA_VANTAGE_KEY') || ''
 
@@ -73,7 +118,7 @@ serve(async (req) => {
         }
 
         const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
-        console.log(`[proxy-market-data] ${endpoint} for ${ticker || 'general'}`)
+        console.log(`[proxy-market-data] ${endpoint} for ${ticker || 'general'} (cache miss)`)
 
         const startTime = Date.now()
         let responseData: any = null
@@ -379,9 +424,10 @@ serve(async (req) => {
             )
         }
 
-        // 6. Return Data
+        // 6. Cache and return data
+        setCache(cacheKey, responseData, endpoint)
         return new Response(JSON.stringify(responseData), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            headers: { ...corsHeaders, 'Content-Type': 'application/json', 'X-Cache': 'MISS' },
         })
 
     } catch (error: any) {
