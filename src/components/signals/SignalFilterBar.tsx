@@ -15,6 +15,7 @@ export interface SignalFilters {
     minConfidence: number;
     signalType: 'all' | 'overreaction' | 'contagion';
     bias: 'all' | 'bullish' | 'bearish';
+    confluenceOnly: boolean;
 }
 
 const SECTORS = [
@@ -58,6 +59,9 @@ export function SignalFilterBar({ filters, onChange, totalCount, filteredCount }
     }
     if (filters.bias !== 'all') {
         activeFilters.push({ label: `Bias: ${filters.bias}`, onClear: () => update({ bias: 'all' }) });
+    }
+    if (filters.confluenceOnly) {
+        activeFilters.push({ label: 'Confluence Only', onClear: () => update({ confluenceOnly: false }) });
     }
 
     const hasFilters = activeFilters.length > 0;
@@ -106,7 +110,7 @@ export function SignalFilterBar({ filters, onChange, totalCount, filteredCount }
                             </span>
                         ))}
                         <button
-                            onClick={() => onChange({ sector: 'All Sectors', minConfidence: 0, signalType: 'all', bias: 'all' })}
+                            onClick={() => onChange({ sector: 'All Sectors', minConfidence: 0, signalType: 'all', bias: 'all', confluenceOnly: false })}
                             className="text-[10px] text-sentinel-500 hover:text-red-400 transition-colors cursor-pointer bg-transparent border-none"
                         >
                             Clear all
@@ -182,9 +186,22 @@ export function SignalFilterBar({ filters, onChange, totalCount, filteredCount }
                             </div>
                         </div>
 
+                        {/* Confluence Toggle */}
+                        <div className="flex items-center gap-3 pt-1">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={filters.confluenceOnly}
+                                    onChange={e => update({ confluenceOnly: e.target.checked })}
+                                    className="accent-emerald-500 w-3.5 h-3.5"
+                                />
+                                <span className="text-xs text-sentinel-300">High-ROI Only (Confluence Confirmed)</span>
+                            </label>
+                        </div>
+
                         <div className="flex justify-between items-center pt-2 border-t border-sentinel-800/30">
                             <button
-                                onClick={() => onChange({ sector: 'All Sectors', minConfidence: 0, signalType: 'all', bias: 'all' })}
+                                onClick={() => onChange({ sector: 'All Sectors', minConfidence: 0, signalType: 'all', bias: 'all', confluenceOnly: false })}
                                 className="text-[10px] text-sentinel-500 hover:text-red-400 transition-colors cursor-pointer bg-transparent border-none"
                             >
                                 Reset all filters
@@ -208,7 +225,7 @@ export function SignalFilterBar({ filters, onChange, totalCount, filteredCount }
  * Expects signals from the `signals` table shape.
  */
 export function applySignalFilters(signals: any[], filters: SignalFilters): any[] {
-    return signals.filter(s => {
+    let filtered = signals.filter(s => {
         if (filters.sector !== 'All Sectors') {
             const sector = (s.sector || '').toLowerCase();
             if (!sector.includes(filters.sector.toLowerCase())) return false;
@@ -224,6 +241,16 @@ export function applySignalFilters(signals: any[], filters: SignalFilters): any[
             const bias = (s.bias_type || '').toLowerCase();
             if (!bias.includes(filters.bias)) return false;
         }
+        if (filters.confluenceOnly) {
+            if (!s.confluence_level || s.confluence_level === 'none' || s.confluence_level === 'weak') return false;
+        }
         return true;
     });
+
+    // Sort by projected ROI (desc) when confluence filter is on
+    if (filters.confluenceOnly) {
+        filtered.sort((a, b) => (b.projected_roi || 0) - (a.projected_roi || 0));
+    }
+
+    return filtered;
 }

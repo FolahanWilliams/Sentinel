@@ -588,6 +588,38 @@ If there is genuinely no major news, return: {"events": []}`,
                                             calibratedConfidence = ConfidenceCalibrator.getCalibratedWinRate(analysis.data.confidence_score, curve);
                                         } catch { /* non-fatal */ }
 
+                                        // TA Confluence scoring — news + technicals combined
+                                        const confluence = TechnicalAnalysisService.computeConfluence(
+                                            taSnapshot, 'long', analysis.data.confidence_score
+                                        );
+                                        console.log(`[Scanner] Confluence for ${ev.ticker}: score=${confluence.score}, level=${confluence.level}`);
+
+                                        // Projected ROI from historical matching
+                                        let projectedRoi: number | null = null;
+                                        let projectedWinRate: number | null = null;
+                                        let similarEventsCount: number | null = null;
+                                        try {
+                                            const { data: pastOutcomes } = await supabase
+                                                .from('signal_outcomes')
+                                                .select('outcome, return_at_5d, return_at_10d, signals!inner(signal_type, bias_type)')
+                                                .not('outcome', 'eq', 'pending')
+                                                .limit(100);
+                                            if (pastOutcomes && pastOutcomes.length >= 3) {
+                                                // Filter to similar signal types
+                                                const similar = pastOutcomes.filter((o: any) =>
+                                                    o.signals?.signal_type === 'long_overreaction'
+                                                );
+                                                if (similar.length >= 3) {
+                                                    similarEventsCount = similar.length;
+                                                    const wins = similar.filter((o: any) => o.outcome === 'win');
+                                                    projectedWinRate = Math.round((wins.length / similar.length) * 100);
+                                                    const avgReturn = similar.reduce((sum: number, o: any) =>
+                                                        sum + (o.return_at_5d || o.return_at_10d || 0), 0) / similar.length;
+                                                    projectedRoi = Math.round(avgReturn * 10) / 10;
+                                                }
+                                            }
+                                        } catch { /* non-fatal */ }
+
                                         const { data: savedSignal } = await supabase.from('signals').insert({
                                             ticker: ev.ticker,
                                             signal_type: 'long_overreaction',
@@ -604,6 +636,11 @@ If there is genuinely no major news, return: {"events": []}`,
                                             trailing_stop_rule: trailingStopRule,
                                             ta_snapshot: taSnapshot,
                                             ta_alignment: taAlignment,
+                                            confluence_score: confluence.score,
+                                            confluence_level: confluence.level,
+                                            projected_roi: projectedRoi,
+                                            projected_win_rate: projectedWinRate,
+                                            similar_events_count: similarEventsCount,
                                             data_quality: 'full',
                                             agent_outputs: {
                                                 overreaction: analysis.data,
@@ -631,10 +668,17 @@ If there is genuinely no major news, return: {"events": []}`,
                                             } as any);
                                         }
 
-                                        // 9. Position sizing recommendation
+                                        // 9. Position sizing recommendation (V2 with actual DB win rate + ATR)
                                         try {
-                                            const sizing = await PositionSizer.calculateSize(0.6, 0.10, 0.05);
-                                            console.log(`[Scanner] Position size for ${ev.ticker}: ${sizing.recommendedPct}% ($${sizing.usdValue})`);
+                                            const sizing = await PositionSizer.calculateSizeV2(
+                                                analysis.data.confidence_score,
+                                                entryPrice,
+                                                analysis.data.target_price,
+                                                'long_overreaction',
+                                                taSnapshot,
+                                                ev.ticker
+                                            );
+                                            console.log(`[Scanner] Position size for ${ev.ticker}: ${sizing.recommendedPct}% ($${sizing.usdValue}) via ${sizing.method}${sizing.stopLoss ? ` | SL: $${sizing.stopLoss}` : ''}`);
                                         } catch { /* non-fatal */ }
                                     }
 
@@ -698,6 +742,11 @@ If there is genuinely no major news, return: {"events": []}`,
                                                         if (contagionSanity.success && contagionSanity.data?.passes_sanity_check) {
                                                             signalsGenerated++;
 
+                                                            // Confluence for contagion signal
+                                                            const contagionConfluence = TechnicalAnalysisService.computeConfluence(
+                                                                null, 'long', contagion.data.confidence_score
+                                                            );
+
                                                             const { data: savedContagionSignal } = await supabase.from('signals').insert({
                                                                 ticker: sat.ticker,
                                                                 signal_type: 'sector_contagion',
@@ -710,6 +759,8 @@ If there is genuinely no major news, return: {"events": []}`,
                                                                 suggested_entry_high: contagion.data.suggested_entry_high,
                                                                 stop_loss: contagion.data.stop_loss,
                                                                 target_price: contagion.data.target_price,
+                                                                confluence_score: contagionConfluence.score,
+                                                                confluence_level: contagionConfluence.level,
                                                                 agent_outputs: {
                                                                     contagion: contagion.data,
                                                                     red_team: contagionSanity.data,
@@ -891,8 +942,13 @@ If there is genuinely no major news, return: {"events": []}`,
 
                 if (sanity.success && sanity.data?.passes_sanity_check) {
                     // 7. Save Signal
-                    // 7. Save Signal
                     signalsGenerated = 1;
+
+                    // Confluence for discovery scan signal
+                    const discConfluence = TechnicalAnalysisService.computeConfluence(
+                        null, 'long', analysis.data.confidence_score
+                    );
+
                     const { data: savedSignal } = await supabase.from('signals').insert({
                         ticker: ticker,
                         signal_type: 'long_overreaction',
@@ -905,6 +961,8 @@ If there is genuinely no major news, return: {"events": []}`,
                         suggested_entry_high: analysis.data.suggested_entry_high,
                         stop_loss: analysis.data.stop_loss,
                         target_price: analysis.data.target_price,
+                        confluence_score: discConfluence.score,
+                        confluence_level: discConfluence.level,
                         agent_outputs: {
                             overreaction: analysis.data,
                             red_team: sanity.data

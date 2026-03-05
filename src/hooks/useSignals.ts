@@ -1,11 +1,14 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useCallback } from 'react';
 import { supabase } from '@/config/supabase';
+import { useSignalStore } from '@/stores/signalStore';
 import type { Signal } from '@/types/signals';
 
+/**
+ * Consolidated signal hook — uses Zustand store as single source of truth.
+ * Hydrates from Supabase on mount and provides mutation helpers.
+ */
 export function useSignals(filter?: { status?: string; ticker?: string }) {
-    const [signals, setSignals] = useState<Signal[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+    const { signals: allSignals, loading, setSignals, setLoading } = useSignalStore();
 
     const fetchSignals = useCallback(async () => {
         setLoading(true);
@@ -24,23 +27,27 @@ export function useSignals(filter?: { status?: string; ticker?: string }) {
 
         const { data, error: err } = await query;
 
-        if (err) {
-            setError(err.message);
-        } else {
+        if (!err && data) {
             setSignals((data || []) as unknown as Signal[]);
-            setError(null);
         }
         setLoading(false);
-    }, [filter?.status, filter?.ticker]);
+    }, [filter?.status, filter?.ticker, setSignals, setLoading]);
 
     useEffect(() => { fetchSignals(); }, [fetchSignals]);
+
+    // Apply local filters on the store data
+    const signals = allSignals.filter(s => {
+        if (filter?.status && s.status !== filter.status) return false;
+        if (filter?.ticker && s.ticker !== filter.ticker) return false;
+        return true;
+    });
 
     const updateSignalNotes = useCallback(async (signalId: string, notes: string) => {
         const { error: err } = await supabase
             .from('signals')
             .update({ user_notes: notes } as any)
             .eq('id', signalId);
-        if (err) { setError(err.message); return false; }
+        if (err) return false;
         await fetchSignals();
         return true;
     }, [fetchSignals]);
@@ -50,10 +57,10 @@ export function useSignals(filter?: { status?: string; ticker?: string }) {
             .from('signals')
             .update({ status: 'manually_closed' } as any)
             .eq('id', signalId);
-        if (err) { setError(err.message); return false; }
+        if (err) return false;
         await fetchSignals();
         return true;
     }, [fetchSignals]);
 
-    return { signals, loading, error, refetch: fetchSignals, updateSignalNotes, closeSignal };
+    return { signals, loading, error: null, refetch: fetchSignals, updateSignalNotes, closeSignal };
 }

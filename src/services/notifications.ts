@@ -12,6 +12,7 @@ import { getMatchingAlertRules } from '@/components/settings/AlertRulesPanel';
 const SMART_ALERT_THRESHOLDS = {
     minConfidence: 80,
     taAlignmentRequired: ['confirmed', 'partial'] as string[],
+    confluenceRequired: ['strong', 'moderate'] as string[],
 };
 
 export class NotificationService {
@@ -85,6 +86,13 @@ export class NotificationService {
 
             if (!SMART_ALERT_THRESHOLDS.taAlignmentRequired.includes(taAlign)) {
                 console.log(`[NotificationService] Skipping alert for ${signal.ticker} — TA alignment '${taAlign}' not in required set`);
+                return;
+            }
+
+            // Confluence gate — only alert for confirmed confluence signals
+            const confluenceLevel = signal.confluence_level || 'none';
+            if (!SMART_ALERT_THRESHOLDS.confluenceRequired.includes(confluenceLevel)) {
+                console.log(`[NotificationService] Skipping alert for ${signal.ticker} — confluence '${confluenceLevel}' below threshold`);
                 return;
             }
 

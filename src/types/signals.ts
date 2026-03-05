@@ -9,6 +9,7 @@ export type SignalStatus = 'active' | 'triggered' | 'stopped_out' | 'target_hit'
 export type RiskLevel = 'low' | 'medium' | 'high' | 'extreme';
 export type DataQuality = 'full' | 'partial' | 'stale' | 'no_quote';
 export type TAAlignment = 'confirmed' | 'partial' | 'conflicting' | 'unavailable';
+export type ConfluenceLevel = 'strong' | 'moderate' | 'weak' | 'none';
 
 export interface TASnapshot {
     ticker: string;
@@ -51,6 +52,11 @@ export interface Signal {
     agent_outputs: AgentOutputsJson;
     ta_snapshot: TASnapshot | null;
     ta_alignment: TAAlignment | null;
+    confluence_score: number | null;
+    confluence_level: ConfluenceLevel | null;
+    projected_roi: number | null;
+    projected_win_rate: number | null;
+    similar_events_count: number | null;
     data_quality: DataQuality;
     user_notes: string | null;
     is_paper: boolean;
