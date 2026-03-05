@@ -387,20 +387,33 @@ s3_access_key = "env(S3_ACCESS_KEY)"
 # Configures AWS_SECRET_ACCESS_KEY for S3 bucket
 s3_secret_key = "env(S3_SECRET_KEY)"
 
+# --- Edge Functions ---
+# All functions handle JWT verification internally (auth.getUser).
+# Gateway verify_jwt is disabled so the functions can return proper
+# error messages instead of a generic Supabase 401.
+
 [functions.proxy-market-data]
 enabled = true
-# JWT verification disabled at gateway — function handles auth internally
-# and makes auth optional (market data is public, no user-specific data exposed)
 verify_jwt = false
 entrypoint = "./functions/proxy-market-data/index.ts"
 
 [functions.proxy-rss]
 enabled = true
-verify_jwt = true
+verify_jwt = false
 import_map = "./functions/proxy-rss/deno.json"
-# Uncomment to specify a custom file path to the entrypoint.
-# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
 entrypoint = "./functions/proxy-rss/index.ts"
-# Specifies static files to be bundled with the function. Supports glob patterns.
-# For example, if you want to serve static HTML pages in your function:
-# static_files = [ "./functions/proxy-rss/*.html" ]
+
+[functions.proxy-gemini]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/proxy-gemini/index.ts"
+
+[functions.sentinel]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/sentinel/index.ts"
+
+[functions.send-alert-email]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/send-alert-email/index.ts"
