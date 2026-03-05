@@ -21,6 +21,8 @@ import {
     Activity, Briefcase, Eye, BarChart3, Zap, User,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { MarketSnapshot } from '@/components/dashboard/MarketSnapshot';
+import { GlassMaterialize } from '@/components/shared/GlassMaterialize';
 import type { DashboardTab } from '@/types/dashboard';
 
 const TABS: { id: DashboardTab; label: string; icon: typeof Activity }[] = [
@@ -156,6 +158,11 @@ export function UnifiedDashboard() {
                         )}
                     </div>
                 )}
+
+                {/* Market Overview */}
+                <div className="mb-6">
+                    <GlassMaterialize delay={0}><MarketSnapshot /></GlassMaterialize>
+                </div>
 
                 {/* Tab Bar */}
                 <div className="flex items-center gap-1 p-1 bg-sentinel-900/70 rounded-xl ring-1 ring-sentinel-800/50 mb-6 overflow-x-auto" role="tablist" aria-label="Dashboard sections">
