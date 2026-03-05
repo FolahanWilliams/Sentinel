@@ -152,12 +152,14 @@ export function Dashboard() {
                 )}
             </AnimatePresence>
 
+            {/* MARKET OVERVIEW — Full-width hero */}
+            <GlassMaterialize delay={0}><MarketSnapshot /></GlassMaterialize>
+
             {/* MAIN CONTENT GRID */}
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
 
-                {/* LEFT COLUMN: Market Snapshot & Portfolio */}
+                {/* LEFT COLUMN: Portfolio */}
                 <div className="xl:col-span-1 space-y-6 flex flex-col min-h-[600px]">
-                    <GlassMaterialize delay={0}><MarketSnapshot /></GlassMaterialize>
                     <GlassMaterialize delay={50}><PortfolioSimulator /></GlassMaterialize>
                     <GlassMaterialize delay={100}><PortfolioOverview /></GlassMaterialize>
                     <GlassMaterialize delay={150}><WeeklyDigest /></GlassMaterialize>
