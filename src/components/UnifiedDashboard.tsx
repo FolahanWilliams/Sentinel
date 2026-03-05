@@ -6,7 +6,8 @@
  * with one cohesive trading intelligence interface.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { useSignalStore } from '@/stores/signalStore';
@@ -18,11 +19,12 @@ import { UnifiedPortfolioView } from '@/components/dashboard/UnifiedPortfolioVie
 import { WatchlistSection } from '@/components/dashboard/WatchlistSection';
 import { PerformanceMetrics } from '@/components/dashboard/PerformanceMetrics';
 import {
-    Activity, Briefcase, Eye, BarChart3, Zap, User,
+    Activity, Briefcase, Eye, BarChart3, Zap, User, TrendingUp,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MarketSnapshot } from '@/components/dashboard/MarketSnapshot';
 import { GlassMaterialize } from '@/components/shared/GlassMaterialize';
+import type { Signal } from '@/types/signals';
 import type { DashboardTab } from '@/types/dashboard';
 
 const TABS: { id: DashboardTab; label: string; icon: typeof Activity }[] = [
@@ -33,6 +35,7 @@ const TABS: { id: DashboardTab; label: string; icon: typeof Activity }[] = [
 ];
 
 export function UnifiedDashboard() {
+    const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState<DashboardTab>('signals');
 
     // Top-bar live data
@@ -41,18 +44,51 @@ export function UnifiedDashboard() {
     const [portfolioValue, setPortfolioValue] = useState<number | null>(null);
     const [dailyRoi, setDailyRoi] = useState<number | null>(null);
     const [activeSignalCount, setActiveSignalCount] = useState(0);
+    const [portfolioRefreshKey, setPortfolioRefreshKey] = useState(0);
+    const [topSignals, setTopSignals] = useState<Signal[]>([]);
 
-    // Fetch active signal count from DB (in case Zustand store isn't hydrated)
-    useEffect(() => {
-        async function fetchActiveCount() {
-            const { count } = await supabase
-                .from('signals')
-                .select('*', { count: 'exact', head: true })
-                .eq('status', 'active');
-            setActiveSignalCount(count ?? signals.length);
-        }
-        fetchActiveCount();
+    // Fetch active signal count from DB
+    const fetchActiveCount = useCallback(async () => {
+        const { count } = await supabase
+            .from('signals')
+            .select('*', { count: 'exact', head: true })
+            .eq('status', 'active');
+        setActiveSignalCount(count ?? signals.length);
     }, [signals.length]);
+
+    useEffect(() => {
+        fetchActiveCount();
+    }, [fetchActiveCount]);
+
+    // Fetch top 3 signals by projected ROI for mobile pill bar
+    useEffect(() => {
+        async function fetchTopSignals() {
+            const { data } = await supabase
+                .from('signals')
+                .select('id, ticker, projected_roi, confidence_score, signal_type')
+                .eq('status', 'active')
+                .not('projected_roi', 'is', null)
+                .order('projected_roi', { ascending: false })
+                .limit(3);
+            if (data) setTopSignals(data as unknown as Signal[]);
+        }
+        fetchTopSignals();
+    }, [activeSignalCount]);
+
+    // Realtime subscriptions for live dashboard updates
+    useEffect(() => {
+        const channel = supabase.channel('dashboard_realtime')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'signals' }, () => {
+                fetchActiveCount();
+            })
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'positions' }, () => {
+                // Portfolio hook handles its own refresh; just bump the key to recompute value
+                setPortfolioRefreshKey(k => k + 1);
+            })
+            .subscribe();
+
+        return () => { supabase.removeChannel(channel); };
+    }, [fetchActiveCount]);
 
     // Compute portfolio value with live prices
     useEffect(() => {
@@ -93,7 +129,8 @@ export function UnifiedDashboard() {
             }
         }
         computeValue();
-    }, [config, openPositions]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [config, openPositions, portfolioRefreshKey]);
 
     return (
         <ErrorBoundary>
@@ -213,6 +250,34 @@ export function UnifiedDashboard() {
                         {activeTab === 'performance' && <PerformanceMetrics />}
                     </motion.div>
                 </AnimatePresence>
+
+                {/* Mobile floating Top 3 Signals pill bar */}
+                {topSignals.length > 0 && activeTab !== 'signals' && (
+                    <div className="fixed bottom-4 left-4 right-4 z-50 sm:hidden">
+                        <motion.div
+                            initial={{ y: 50, opacity: 0 }}
+                            animate={{ y: 0, opacity: 1 }}
+                            className="flex items-center gap-2 p-2 bg-sentinel-900/95 backdrop-blur-lg rounded-xl ring-1 ring-sentinel-700/50 shadow-xl overflow-x-auto"
+                        >
+                            <TrendingUp className="w-4 h-4 text-emerald-400 flex-shrink-0 ml-1" />
+                            {topSignals.map(s => (
+                                <button
+                                    key={s.id}
+                                    onClick={() => {
+                                        setActiveTab('signals');
+                                        navigate(`/analysis/${s.ticker}`);
+                                    }}
+                                    className="flex items-center gap-1.5 px-2.5 py-1.5 bg-sentinel-800/70 rounded-lg text-xs font-mono whitespace-nowrap ring-1 ring-sentinel-700/40 hover:ring-emerald-500/30 transition-colors border-none cursor-pointer flex-shrink-0"
+                                >
+                                    <span className="text-sentinel-100 font-bold">{s.ticker}</span>
+                                    {s.projected_roi != null && (
+                                        <span className="text-emerald-400 font-bold">+{s.projected_roi}%</span>
+                                    )}
+                                </button>
+                            ))}
+                        </motion.div>
+                    </div>
+                )}
             </div>
         </ErrorBoundary>
     );

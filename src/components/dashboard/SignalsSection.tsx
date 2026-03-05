@@ -18,9 +18,10 @@ import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 import {
     Activity, BookOpen, Clock, Filter, Loader2, RefreshCw,
-    TrendingUp, ChevronDown, ChevronUp, X,
+    TrendingUp, ChevronDown, ChevronUp, X, Calculator, Shield,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { usePortfolio } from '@/hooks/usePortfolio';
 import type { Signal, ConfluenceLevel } from '@/types/signals';
 import type { Quote } from '@/types/market';
 
@@ -33,6 +34,7 @@ type DirectionFilter = 'all' | 'long' | 'short';
 
 export function SignalsSection({ className = '' }: SignalsSectionProps) {
     const navigate = useNavigate();
+    const { config: portfolioConfig, openPositions } = usePortfolio();
     const [signals, setSignals] = useState<Signal[]>([]);
     const [quotes, setQuotes] = useState<Record<string, Quote>>({});
     const [loading, setLoading] = useState(true);
@@ -45,6 +47,7 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
     const [showFilters, setShowFilters] = useState(false);
     const [minConfidence, setMinConfidence] = useState(0);
     const [highImpactOnly, setHighImpactOnly] = useState(false);
+    const [highRoiOnly, setHighRoiOnly] = useState(false);
     const [directionFilter, setDirectionFilter] = useState<DirectionFilter>('all');
     const [confluenceFilter, setConfluenceFilter] = useState(false);
     const [sortBy, setSortBy] = useState<SortField>('created_at');
@@ -107,6 +110,11 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
             );
         }
 
+        // High ROI: projected_roi >= 12%
+        if (highRoiOnly) {
+            result = result.filter(s => (s.projected_roi ?? 0) >= 12);
+        }
+
         // Direction filter
         if (directionFilter === 'long') {
             result = result.filter(s => s.signal_type.includes('long') || s.signal_type === 'sector_contagion');
@@ -134,11 +142,12 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
         });
 
         return result;
-    }, [signals, minConfidence, highImpactOnly, directionFilter, confluenceFilter, sortBy]);
+    }, [signals, minConfidence, highImpactOnly, highRoiOnly, directionFilter, confluenceFilter, sortBy]);
 
     const activeFilterCount = [
         minConfidence > 0,
         highImpactOnly,
+        highRoiOnly,
         directionFilter !== 'all',
         confluenceFilter,
         sortBy !== 'created_at',
@@ -183,6 +192,20 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
         }
     };
 
+    /** Compute portfolio impact if this signal were taken at 2% risk */
+    const getPortfolioImpact = useCallback((signal: Signal) => {
+        const totalCapital = portfolioConfig?.total_capital ?? 10000;
+        const riskPct = portfolioConfig?.risk_per_trade_pct ?? 2;
+        const positionSize = totalCapital * (riskPct / 100);
+        const currentExposure = openPositions.reduce((sum, p) => sum + (p.position_size_usd ?? 0), 0);
+        const newExposurePct = ((currentExposure + positionSize) / totalCapital) * 100;
+
+        // Check for sector overlap (same ticker already open)
+        const hasDuplicate = openPositions.some(p => p.ticker === signal.ticker);
+
+        return { positionSize, newExposurePct, hasDuplicate };
+    }, [portfolioConfig, openPositions]);
+
     return (
         <ErrorBoundary>
             <div className={className}>
@@ -205,6 +228,22 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                         aria-label="Refresh signal list"
                     >
                         <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+                    </button>
+
+                    <button
+                        onClick={() => {
+                            setHighRoiOnly(!highRoiOnly);
+                            if (!highRoiOnly) setSortBy('projected_roi');
+                        }}
+                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ring-1 flex items-center gap-2 border-none cursor-pointer ${
+                            highRoiOnly
+                                ? 'bg-emerald-500/15 text-emerald-400 ring-emerald-500/30'
+                                : 'bg-sentinel-800/50 text-sentinel-400 ring-sentinel-700/50 hover:bg-sentinel-700/50'
+                        }`}
+                        aria-label="Toggle high ROI signals only"
+                    >
+                        <TrendingUp className="w-4 h-4" />
+                        High-ROI Only
                     </button>
 
                     <button
@@ -326,6 +365,7 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                         onClick={() => {
                                             setMinConfidence(0);
                                             setHighImpactOnly(false);
+                                            setHighRoiOnly(false);
                                             setDirectionFilter('all');
                                             setConfluenceFilter(false);
                                             setSortBy('created_at');
@@ -516,6 +556,34 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                                         </div>
                                                     )}
 
+                                                    {/* Portfolio impact guardrail */}
+                                                    {(() => {
+                                                        const impact = getPortfolioImpact(signal);
+                                                        return (
+                                                            <div className="flex flex-wrap items-center gap-2 p-2.5 rounded-lg bg-sentinel-950/30 border border-sentinel-800/30">
+                                                                <Shield className="w-3.5 h-3.5 text-sentinel-500 flex-shrink-0" />
+                                                                <span className="text-[10px] text-sentinel-400 font-mono">
+                                                                    {portfolioConfig?.risk_per_trade_pct ?? 2}% risk = <span className="text-sentinel-200">{formatPrice(impact.positionSize)}</span>
+                                                                </span>
+                                                                <span className="text-[10px] text-sentinel-500">|</span>
+                                                                <span className={`text-[10px] font-mono font-bold ${
+                                                                    impact.newExposurePct > (portfolioConfig?.max_total_exposure_pct ?? 60)
+                                                                        ? 'text-red-400'
+                                                                        : impact.newExposurePct > 40
+                                                                            ? 'text-amber-400'
+                                                                            : 'text-emerald-400'
+                                                                }`}>
+                                                                    New Exposure: {impact.newExposurePct.toFixed(1)}%
+                                                                </span>
+                                                                {impact.hasDuplicate && (
+                                                                    <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded ring-1 ring-amber-500/20">
+                                                                        DUPLICATE
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })()}
+
                                                     {/* Action buttons */}
                                                     <div className="flex items-center gap-2 pt-1">
                                                         <button
@@ -526,6 +594,15 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                                             className="px-3 py-1.5 bg-sentinel-800/70 hover:bg-sentinel-700/70 text-sentinel-300 rounded-lg text-xs font-medium transition-colors ring-1 ring-sentinel-700/50 flex items-center gap-1.5 border-none cursor-pointer"
                                                         >
                                                             <TrendingUp className="w-3 h-3" /> Full Analysis
+                                                        </button>
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                navigate(`/simulator?ticker=${signal.ticker}&entry=${signal.suggested_entry_low || ''}&target=${signal.target_price || ''}&stop=${signal.stop_loss || ''}&side=${signal.signal_type.includes('short') ? 'short' : 'long'}`);
+                                                            }}
+                                                            className="px-3 py-1.5 bg-blue-600/15 hover:bg-blue-600/25 text-blue-400 rounded-lg text-xs font-medium transition-colors ring-1 ring-blue-500/30 flex items-center gap-1.5 border-none cursor-pointer"
+                                                        >
+                                                            <Calculator className="w-3 h-3" /> Simulate Trade
                                                         </button>
                                                         <button
                                                             onClick={(e) => {
