@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/config/supabase';
 import { Rss, ExternalLink, Cpu, HeartPulse, Building2, ShieldAlert, TrendingUp, Globe, Clock, MessageSquare, AlertTriangle } from 'lucide-react';
 import { Database } from '@/types/database';
+import { timeAgo } from '@/utils/formatters';
 
 type RssRow = Database['public']['Tables']['rss_cache']['Row'];
 
@@ -76,16 +77,6 @@ export function NewsFeed({ ticker, limit = 10, title = "Live Intelligence Feed",
         }
     }
 
-    const timeAgo = (dateStr: string | null) => {
-        if (!dateStr) return 'Unknown';
-        const date = new Date(dateStr);
-        const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000);
-        if (seconds < 60) return "Just now";
-        if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-        if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-        return `${Math.floor(seconds / 86400)}d ago`;
-    };
-
     return (
         <div className={`bg-sentinel-900/50 rounded-xl border border-sentinel-800 overflow-hidden flex flex-col ${className}`}>
             {/* Header */}
@@ -148,7 +139,7 @@ export function NewsFeed({ ticker, limit = 10, title = "Live Intelligence Feed",
                                             <span className="text-sentinel-600">•</span>
                                             <span className="flex items-center gap-1">
                                                 <Clock className="w-3 h-3" />
-                                                {timeAgo(item.published_at)}
+                                                {item.published_at ? timeAgo(item.published_at) : 'Unknown'}
                                             </span>
 
                                             {/* Show sentiment tag if it's AV data */}

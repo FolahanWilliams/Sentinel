@@ -46,7 +46,6 @@ export function useSentinel(intervalMs = DEFAULT_INTERVAL_MS) {
 
     useEffect(() => {
         let active = true;
-        let timer: ReturnType<typeof setInterval>;
 
         const fetchSentinel = async (isInitial = false) => {
             if (isFetchingRef.current) return;
@@ -85,7 +84,7 @@ export function useSentinel(intervalMs = DEFAULT_INTERVAL_MS) {
         fetchSentinel(true);
 
         // Setup polling
-        timer = setInterval(() => fetchSentinel(false), intervalMs);
+        const timer = setInterval(() => fetchSentinel(false), intervalMs);
 
         return () => {
             active = false;

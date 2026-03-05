@@ -31,7 +31,7 @@ export function Journal() {
         try {
             const stored = sessionStorage.getItem(key);
             if (stored) return JSON.parse(stored);
-        } catch { }
+        } catch { /* ignore parse errors */ }
         return defaultValue;
     };
 
