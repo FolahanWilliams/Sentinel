@@ -225,7 +225,7 @@ export function SignalFilterBar({ filters, onChange, totalCount, filteredCount }
  * Expects signals from the `signals` table shape.
  */
 export function applySignalFilters(signals: any[], filters: SignalFilters): any[] {
-    let filtered = signals.filter(s => {
+    const filtered = signals.filter(s => {
         if (filters.sector !== 'All Sectors') {
             const sector = (s.sector || '').toLowerCase();
             if (!sector.includes(filters.sector.toLowerCase())) return false;
