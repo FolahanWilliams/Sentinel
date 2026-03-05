@@ -144,7 +144,7 @@ export function Settings() {
                         <div className="space-y-3">
                             <div className="flex justify-between text-sm">
                                 <span className="text-sentinel-400">Gemini Model</span>
-                                <span className="text-sentinel-100">gemini-2.0-flash</span>
+                                <span className="text-sentinel-100">gemini-3-flash</span>
                             </div>
                             <div className="flex justify-between text-sm">
                                 <span className="text-sentinel-400">Grounded Search</span>
@@ -164,11 +164,11 @@ export function Settings() {
                         <div className="space-y-3">
                             <div className="flex justify-between text-sm">
                                 <span className="text-sentinel-400">Market Data</span>
-                                <span className="text-sentinel-100">Alpha Vantage</span>
+                                <span className="text-sentinel-100">Yahoo Finance</span>
                             </div>
                             <div className="flex justify-between text-sm">
-                                <span className="text-sentinel-400">Market Data (TA)</span>
-                                <span className="text-sentinel-100">Yahoo Finance</span>
+                                <span className="text-sentinel-400">News Intelligence</span>
+                                <span className="text-sentinel-100">Gemini Grounded Search</span>
                             </div>
                             <div className="flex justify-between items-center text-sm pt-2 border-t border-white/5">
                                 <div className="flex items-center gap-2">
