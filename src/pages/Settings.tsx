@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/config/supabase';
-import { Settings as SettingsIcon, Save, Bot, Shield, Bell } from 'lucide-react';
+import { Settings as SettingsIcon, Save, Bot, Shield, Bell, Mail } from 'lucide-react';
 import { ReflectionPanel } from '@/components/analysis/ReflectionPanel';
 import { AlertRulesPanel } from '@/components/settings/AlertRulesPanel';
 
 export function Settings() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [emailAlertsEnabled, setEmailAlertsEnabled] = useState(false);
     const [settings, setSettings] = useState<any>({
         total_capital: 10000,
         max_position_pct: 10,
@@ -19,12 +20,26 @@ export function Settings() {
 
     useEffect(() => {
         async function fetchConfig() {
-            const { data } = await supabase.from('portfolio_config').select('*').limit(1).single();
-            if (data) setSettings(data);
+            const [{ data: configData }, { data: alertSetting }] = await Promise.all([
+                supabase.from('portfolio_config').select('*').limit(1).single(),
+                supabase.from('app_settings').select('value').eq('key', 'email_alerts_enabled').maybeSingle(),
+            ]);
+            if (configData) setSettings(configData);
+            if (alertSetting?.value) setEmailAlertsEnabled(true);
             setLoading(false);
         }
         fetchConfig();
     }, []);
+
+    async function handleToggleEmailAlerts() {
+        const newValue = !emailAlertsEnabled;
+        setEmailAlertsEnabled(newValue);
+        await supabase.from('app_settings').upsert({
+            key: 'email_alerts_enabled',
+            value: newValue,
+            updated_at: new Date().toISOString(),
+        } as any, { onConflict: 'key' });
+    }
 
     async function handleSave(e: React.FormEvent) {
         e.preventDefault();
@@ -152,9 +167,30 @@ export function Settings() {
                                 <span className="text-sentinel-100">Alpha Vantage</span>
                             </div>
                             <div className="flex justify-between text-sm">
-                                <span className="text-sentinel-400">Email Alerts</span>
-                                <span className="text-emerald-400">Resend API (Active)</span>
+                                <span className="text-sentinel-400">Market Data (TA)</span>
+                                <span className="text-sentinel-100">Yahoo Finance</span>
                             </div>
+                            <div className="flex justify-between items-center text-sm pt-2 border-t border-white/5">
+                                <div className="flex items-center gap-2">
+                                    <Mail className="w-3.5 h-3.5 text-sentinel-400" />
+                                    <span className="text-sentinel-400">Email Alerts</span>
+                                </div>
+                                <button
+                                    onClick={handleToggleEmailAlerts}
+                                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors cursor-pointer border-none ${
+                                        emailAlertsEnabled ? 'bg-emerald-500' : 'bg-sentinel-700'
+                                    }`}
+                                >
+                                    <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                                        emailAlertsEnabled ? 'translate-x-4.5' : 'translate-x-0.5'
+                                    }`} />
+                                </button>
+                            </div>
+                            {emailAlertsEnabled && (
+                                <p className="text-[10px] text-emerald-500/70 pl-5">
+                                    Smart alerts: only high-conviction + TA-confirmed signals
+                                </p>
+                            )}
                         </div>
                     </div>
                 </div>

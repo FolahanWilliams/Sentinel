@@ -1,6 +1,8 @@
 import { useMemo } from 'react';
 import type { ProcessedArticle, SentinelTradingSignal } from '@/types/sentinel';
-import { Target, TrendingUp, TrendingDown, Activity, Radar } from 'lucide-react';
+import { Target, TrendingUp, TrendingDown, Activity, Radar, ShieldCheck } from 'lucide-react';
+import { TABadge } from '@/components/shared/TABadge';
+import type { TAAlignment, TASnapshot } from '@/types/signals';
 
 interface SignalsSidebarProps {
     articles: ProcessedArticle[];

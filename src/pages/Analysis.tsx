@@ -18,6 +18,8 @@ import { FundamentalSnapshot } from '@/components/analysis/FundamentalSnapshot';
 import { HistoricalPrecedent } from '@/components/analysis/HistoricalPrecedent';
 import { AgentReasoning } from '@/components/analysis/AgentReasoning';
 import { ConfidenceMeter } from '@/components/shared/ConfidenceMeter';
+import { TABadge } from '@/components/shared/TABadge';
+import { SignalRating } from '@/components/shared/SignalRating';
 import { LoadingState } from '@/components/shared/LoadingState';
 import { useTickerAnalysis } from '@/hooks/useTickerAnalysis';
 
@@ -156,6 +158,13 @@ export function Analysis() {
                                                 <span className="px-2 py-0.5 bg-sentinel-800 text-sentinel-300 text-xs font-medium rounded ring-1 ring-sentinel-700 capitalize">
                                                     {signal.signal_type.replace('_', ' ')}
                                                 </span>
+                                                {signal.ta_alignment && (
+                                                    <TABadge
+                                                        taAlignment={signal.ta_alignment}
+                                                        taSnapshot={signal.ta_snapshot}
+                                                        compact
+                                                    />
+                                                )}
                                                 {outcomeData && outcomeData.outcome !== 'pending' && (
                                                     <span className={`px-2 py-0.5 text-xs font-bold rounded ${outcomeData.outcome === 'win'
                                                         ? 'bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/20'
@@ -177,6 +186,11 @@ export function Analysis() {
                                     <div className="flex items-center gap-6 text-sm">
                                         <div className="w-24">
                                             <ConfidenceMeter value={signal.confidence_score} size="sm" />
+                                            {signal.calibrated_confidence != null && (
+                                                <p className="text-[10px] text-sentinel-500 font-mono text-center mt-0.5">
+                                                    Cal: {signal.calibrated_confidence.toFixed(0)}%
+                                                </p>
+                                            )}
                                         </div>
                                         <div className="text-right">
                                             <div className="text-sentinel-500 text-xs font-mono">ENTRY</div>
@@ -186,14 +200,28 @@ export function Analysis() {
                                             <div className="text-sentinel-500 text-xs font-mono">TARGET</div>
                                             <div className="font-medium text-emerald-400">{formatPrice(signal.target_price)}</div>
                                         </div>
+                                        <SignalRating signalId={signal.id} />
                                     </div>
                                 </div>
 
                                 {/* Expanded Content — Modular Components */}
                                 {isExpanded && (
                                     <div className="px-5 pb-5 pt-2 border-t border-sentinel-800/50 bg-sentinel-950/30">
-                                        {/* Primary Thesis */}
-                                        <div className="mb-6 mt-4">
+                                        {/* TA Confirmation + Primary Thesis */}
+                                        <div className="mb-6 mt-4 space-y-3">
+                                            {signal.ta_alignment && (
+                                                <div className="flex items-center gap-3">
+                                                    <TABadge
+                                                        taAlignment={signal.ta_alignment}
+                                                        taSnapshot={signal.ta_snapshot}
+                                                    />
+                                                    {signal.trailing_stop_rule && (
+                                                        <span className="text-[10px] text-sentinel-500 font-mono bg-sentinel-900/50 px-2 py-1 rounded border border-sentinel-700/30">
+                                                            {signal.trailing_stop_rule}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            )}
                                             <p className="text-sm text-sentinel-200 leading-relaxed bg-sentinel-900/50 p-4 rounded-lg border border-sentinel-800 border-l-4 border-l-blue-500">
                                                 {signal.thesis}
                                             </p>
