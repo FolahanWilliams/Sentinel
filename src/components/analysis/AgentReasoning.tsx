@@ -17,6 +17,7 @@ const AGENT_META: Record<string, { label: string; color: string }> = {
     bias_classifier: { label: 'Bias Classifier', color: '#EC4899' },
     sanity_checker: { label: 'Sanity Checker', color: '#EF4444' },
     red_team: { label: 'Red Team', color: '#EF4444' },
+    self_critique: { label: 'Self-Critique', color: '#F97316' },
     historical_matcher: { label: 'Historical Matcher', color: '#6366F1' },
     signal_synthesizer: { label: 'Signal Synthesizer', color: '#14B8A6' },
 };

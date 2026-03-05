@@ -245,6 +245,69 @@ serve(async (req) => {
                 success: true,
                 estimated_cost_usd: 0.0001
             })
+        } else if (endpoint === 'historical') {
+            // Historical OHLCV bars for technical analysis (Yahoo Finance chart API)
+            if (!ticker) {
+                return new Response(
+                    JSON.stringify({ success: false, error: 'Missing ticker for historical endpoint' }),
+                    { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+                )
+            }
+
+            const tickerUpper = ticker.toUpperCase()
+            console.log(`[proxy-market-data] Fetching historical bars for ${tickerUpper}`)
+
+            try {
+                const yfUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(tickerUpper)}?range=1y&interval=1d`
+                const yfRes = await fetch(yfUrl, {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept': 'application/json'
+                    }
+                })
+
+                if (!yfRes.ok) {
+                    return new Response(
+                        JSON.stringify({ success: false, error: `Yahoo Finance returned ${yfRes.status}` }),
+                        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 502 }
+                    )
+                }
+
+                const yfData = await yfRes.json()
+                const result = yfData?.chart?.result?.[0]
+                const timestamps = result?.timestamp || []
+                const quote = result?.indicators?.quote?.[0] || {}
+
+                const bars = timestamps.map((ts: number, i: number) => ({
+                    date: new Date(ts * 1000).toISOString().split('T')[0],
+                    open: quote.open?.[i] ?? 0,
+                    high: quote.high?.[i] ?? 0,
+                    low: quote.low?.[i] ?? 0,
+                    close: quote.close?.[i] ?? 0,
+                    volume: quote.volume?.[i] ?? 0,
+                })).filter((b: any) => b.close > 0) // Filter out null/zero bars
+
+                console.log(`[proxy-market-data] Historical: ${tickerUpper} — ${bars.length} bars`)
+                responseData = { success: true, data: bars }
+
+                const durationMs = Date.now() - startTime
+                await supabaseAdmin.from('api_usage').insert({
+                    provider: 'yahoo-finance',
+                    endpoint: 'historical',
+                    ticker: tickerUpper,
+                    latency_ms: durationMs,
+                    success: true,
+                    estimated_cost_usd: 0
+                })
+
+            } catch (histErr: any) {
+                console.error('[proxy-market-data] Historical fetch failed:', histErr.message)
+                return new Response(
+                    JSON.stringify({ success: false, error: 'Failed to fetch historical data' }),
+                    { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 502 }
+                )
+            }
+
         } else {
             return new Response(
                 JSON.stringify({ success: false, error: `Unsupported endpoint: ${endpoint}` }),

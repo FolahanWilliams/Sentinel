@@ -1,26 +1,41 @@
 /**
  * Sentinel — Position Sizing Engine
  *
- * Implements Half-Kelly Criterion sizing based on historical win rates
- * and user-defined risk parameters in the portfolio_config table.
+ * v2: Now supports calibrated confidence via ConfidenceCalibrator,
+ * ATR-based stops, trailing stop suggestions, and comparison of
+ * three sizing methods (fixed %, risk-based, Kelly).
  */
 
 import { supabase } from '@/config/supabase';
+import type { TASnapshot } from '@/types/signals';
+import { ConfidenceCalibrator } from './confidenceCalibrator';
+
+export interface PositionSizeResult {
+    recommendedPct: number;
+    usdValue: number;
+    limitReason: string | null;
+    method: 'fixed_pct' | 'risk_based' | 'kelly';
+    stopLoss: number | null;
+    trailingStopRule: string | null;
+    riskRewardRatio: number | null;
+    comparisons: {
+        fixedPct: { pct: number; usd: number };
+        riskBased: { pct: number; usd: number };
+        kelly: { pct: number; usd: number } | null;
+    };
+}
 
 export class PositionSizer {
 
     /**
-     * Calculates the optimal position size allocation percentage using the Kelly Criterion.
-     * Modifies it by a fraction (e.g., 0.5 for Half-Kelly, 0.25 for Quarter-Kelly) for safety.
+     * Original v1 method — kept for backward compatibility.
      */
     static async calculateSize(
-        winRate: number,       // decimal, e.g., 0.65 for 65%
-        avgWinPct: number,     // decimal, e.g., 0.15 for +15%
-        avgLossPct: number,    // positive decimal, e.g., 0.05 for -5%
-        overrideFraction?: number // optional override of the config defaults
+        winRate: number,
+        avgWinPct: number,
+        avgLossPct: number,
+        overrideFraction?: number
     ): Promise<{ recommendedPct: number; usdValue: number; limitReason: string | null }> {
-
-        // 1. Fetch live portfolio configuration
         const { data: config, error } = await supabase
             .from('portfolio_config')
             .select('*')
@@ -28,56 +43,188 @@ export class PositionSizer {
             .single();
 
         if (error || !config) {
-            console.warn('[PositionSizer] Failed to load config, falling back to defaults', error);
-            return { recommendedPct: 2.0, usdValue: 200, limitReason: 'Fallback defaults' };
+            console.warn('[PositionSizer] Failed to load config, using conservative defaults', error);
+            return { recommendedPct: 1.0, usdValue: 0, limitReason: 'No portfolio config — using conservative 1%' };
         }
 
-        // Protect against division by zero or invalid stats
         if (avgLossPct === 0 || winRate === 0) {
             return { recommendedPct: 0, usdValue: 0, limitReason: 'Invalid edge stats' };
         }
 
-        // 2. Core Kelly Math
-        // W = Win probability
-        // R = Win/Loss Ratio = (avgWin / avgLoss)
-        // Kelly % = W - ((1 - W) / R)
-
         const winLossRatio = avgWinPct / avgLossPct;
-        let kellyPct = winRate - ((1 - winRate) / winLossRatio);
-
-        // 3. Apply the dampener fraction (Half-Kelly, Quarter-Kelly)
+        const kellyPct = winRate - ((1 - winRate) / winLossRatio);
         const kellyFraction = overrideFraction || config.kelly_fraction;
-        let recommendedPct = (kellyPct * kellyFraction) * 100; // Convert to whole %
+        let recommendedPct = (kellyPct * kellyFraction) * 100;
 
-        // If edge is negative, no trade
         if (recommendedPct <= 0) {
             return { recommendedPct: 0, usdValue: 0, limitReason: 'Negative edge' };
         }
 
         let limitReason = null;
 
-        // 4. Run Risk Checks
-        // Check against absolute max size
         if (recommendedPct > config.max_position_pct) {
             recommendedPct = config.max_position_pct;
             limitReason = 'Hit max position limit';
         }
 
-        // Check against max risk per trade (if we get stopped out, does it violate risk tolerance?)
-        // E.g. If stop is 5% away, and risk tolerance is 2% of portfolio, max max size is 40% of portfolio.
         const riskImpliedPct = (config.risk_per_trade_pct / (avgLossPct * 100)) * 100;
         if (recommendedPct > riskImpliedPct) {
             recommendedPct = riskImpliedPct;
             limitReason = 'Hit risk-per-trade limit';
         }
 
-        // 5. Calculate USD Value
         const usdValue = (recommendedPct / 100) * config.total_capital;
 
         return {
-            recommendedPct: Math.round(recommendedPct * 100) / 100, // Round to 2 decimals
+            recommendedPct: Math.round(recommendedPct * 100) / 100,
             usdValue: Math.round(usdValue * 100) / 100,
             limitReason
+        };
+    }
+
+    /**
+     * V2: Calibrated position sizing using historical accuracy data + ATR stops.
+     */
+    static async calculateSizeV2(
+        aiConfidence: number,
+        entryPrice: number,
+        targetPrice: number | null,
+        signalType: string,
+        taSnapshot: TASnapshot | null,
+    ): Promise<PositionSizeResult> {
+        // 1. Fetch config
+        const { data: config, error } = await supabase
+            .from('portfolio_config')
+            .select('*')
+            .limit(1)
+            .single();
+
+        if (error || !config) {
+            return {
+                recommendedPct: 1.0,
+                usdValue: 0,
+                limitReason: 'No portfolio config — conservative 1%',
+                method: 'fixed_pct',
+                stopLoss: null,
+                trailingStopRule: null,
+                riskRewardRatio: null,
+                comparisons: {
+                    fixedPct: { pct: 1.0, usd: 0 },
+                    riskBased: { pct: 1.0, usd: 0 },
+                    kelly: null,
+                }
+            };
+        }
+
+        const totalCapital = config.total_capital || 10000;
+
+        // 2. Get calibrated win rate
+        const curve = await ConfidenceCalibrator.getCachedCurve();
+        const calibratedWinRate = ConfidenceCalibrator.getCalibratedWinRate(aiConfidence, curve) / 100;
+
+        // 3. Get historical avg win/loss from signal outcomes
+        const { data: outcomes } = await supabase
+            .from('signal_outcomes')
+            .select('outcome, return_at_5d, return_at_10d')
+            .neq('outcome', 'pending')
+            .limit(100);
+
+        let avgWinPct = 0.10; // default 10%
+        let avgLossPct = 0.05; // default 5%
+
+        if (outcomes && outcomes.length >= 5) {
+            const wins = outcomes.filter(o => o.outcome === 'win');
+            const losses = outcomes.filter(o => o.outcome === 'loss');
+            if (wins.length > 0) {
+                avgWinPct = Math.abs(wins.reduce((s, o) => s + (o.return_at_5d || o.return_at_10d || 0), 0) / wins.length) / 100;
+            }
+            if (losses.length > 0) {
+                avgLossPct = Math.abs(losses.reduce((s, o) => s + (o.return_at_5d || o.return_at_10d || 0), 0) / losses.length) / 100;
+            }
+        }
+
+        // 4. ATR-based stop loss
+        let stopLoss: number | null = null;
+        let trailingStopRule: string | null = null;
+        let stopDistancePct = avgLossPct; // fallback
+
+        if (taSnapshot?.atr14 && entryPrice > 0) {
+            stopLoss = Math.round((entryPrice - taSnapshot.atr14 * 1.5) * 100) / 100;
+            stopDistancePct = (taSnapshot.atr14 * 1.5) / entryPrice;
+            const breakevenTarget = entryPrice + taSnapshot.atr14;
+            trailingStopRule = `Move stop to breakeven ($${entryPrice.toFixed(2)}) after price reaches $${breakevenTarget.toFixed(2)} (+1x ATR). Trail by 1.5x ATR thereafter.`;
+        }
+
+        // 5. Method 1: Fixed percentage (simple)
+        const fixedPct = config.risk_per_trade_pct || 2.0;
+        const fixedUsd = (fixedPct / 100) * totalCapital;
+
+        // 6. Method 2: Risk-based (risk per trade / stop distance)
+        let riskBasedPct = fixedPct;
+        if (stopDistancePct > 0) {
+            riskBasedPct = (config.risk_per_trade_pct / (stopDistancePct * 100)) * 100;
+            riskBasedPct = Math.min(riskBasedPct, config.max_position_pct || 10);
+        }
+        const riskBasedUsd = (riskBasedPct / 100) * totalCapital;
+
+        // 7. Method 3: Kelly (calibrated)
+        let kellyResult: { pct: number; usd: number } | null = null;
+        if (calibratedWinRate > 0 && avgLossPct > 0) {
+            const winLossRatio = avgWinPct / avgLossPct;
+            const rawKelly = calibratedWinRate - ((1 - calibratedWinRate) / winLossRatio);
+            const kellyFraction = config.kelly_fraction || 0.25;
+            let kellyPct = rawKelly * kellyFraction * 100;
+
+            if (kellyPct > 0) {
+                kellyPct = Math.min(kellyPct, config.max_position_pct || 10);
+                kellyResult = {
+                    pct: Math.round(kellyPct * 100) / 100,
+                    usd: Math.round((kellyPct / 100) * totalCapital * 100) / 100,
+                };
+            }
+        }
+
+        // 8. Choose the most conservative method
+        let recommendedPct = fixedPct;
+        let method: PositionSizeResult['method'] = 'fixed_pct';
+
+        if (kellyResult && kellyResult.pct < recommendedPct && kellyResult.pct > 0) {
+            recommendedPct = kellyResult.pct;
+            method = 'kelly';
+        }
+        if (riskBasedPct < recommendedPct && riskBasedPct > 0) {
+            recommendedPct = riskBasedPct;
+            method = 'risk_based';
+        }
+
+        // Enforce caps
+        let limitReason: string | null = null;
+        if (recommendedPct > (config.max_position_pct || 10)) {
+            recommendedPct = config.max_position_pct || 10;
+            limitReason = 'Hit max position limit';
+        }
+
+        // 9. Risk:Reward ratio
+        let riskRewardRatio: number | null = null;
+        if (stopLoss && targetPrice && entryPrice > 0) {
+            const risk = Math.abs(entryPrice - stopLoss);
+            const reward = Math.abs(targetPrice - entryPrice);
+            riskRewardRatio = risk > 0 ? Math.round((reward / risk) * 10) / 10 : null;
+        }
+
+        return {
+            recommendedPct: Math.round(recommendedPct * 100) / 100,
+            usdValue: Math.round((recommendedPct / 100) * totalCapital * 100) / 100,
+            limitReason,
+            method,
+            stopLoss,
+            trailingStopRule,
+            riskRewardRatio,
+            comparisons: {
+                fixedPct: { pct: Math.round(fixedPct * 100) / 100, usd: Math.round(fixedUsd * 100) / 100 },
+                riskBased: { pct: Math.round(riskBasedPct * 100) / 100, usd: Math.round(riskBasedUsd * 100) / 100 },
+                kelly: kellyResult,
+            }
         };
     }
 }

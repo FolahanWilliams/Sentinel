@@ -7,6 +7,22 @@ import type { BiasType } from '@/config/constants';
 export type SignalType = 'long_overreaction' | 'short_overreaction' | 'sector_contagion' | 'earnings_overreaction' | 'information';
 export type SignalStatus = 'active' | 'triggered' | 'stopped_out' | 'target_hit' | 'manually_closed' | 'expired';
 export type RiskLevel = 'low' | 'medium' | 'high' | 'extreme';
+export type DataQuality = 'full' | 'partial' | 'stale' | 'no_quote';
+export type TAAlignment = 'confirmed' | 'partial' | 'conflicting' | 'unavailable';
+
+export interface TASnapshot {
+    ticker: string;
+    timestamp: string;
+    rsi14: number | null;
+    macd: { value: number; signal: number; histogram: number } | null;
+    sma50: number | null;
+    sma200: number | null;
+    atr14: number | null;
+    volumeRatio: number | null;
+    bollingerPosition: number | null;
+    trendDirection: 'bullish' | 'bearish' | 'neutral';
+    taScore: number;
+}
 
 export interface Signal {
     id: string;
@@ -14,6 +30,7 @@ export interface Signal {
     signal_type: SignalType;
     status: SignalStatus;
     confidence_score: number;
+    calibrated_confidence: number | null;
     risk_level: RiskLevel;
     bias_type: BiasType;
     secondary_biases: BiasType[];
@@ -25,12 +42,16 @@ export interface Signal {
     stop_loss: number | null;
     target_price: number | null;
     expected_timeframe_days: number | null;
+    trailing_stop_rule: string | null;
     historical_win_rate: number | null;
     historical_avg_return: number | null;
     historical_matches_count: number | null;
     correction_probability: number | null;
     sources: string[];
     agent_outputs: AgentOutputsJson;
+    ta_snapshot: TASnapshot | null;
+    ta_alignment: TAAlignment | null;
+    data_quality: DataQuality;
     user_notes: string | null;
     is_paper: boolean;
     created_at: string;

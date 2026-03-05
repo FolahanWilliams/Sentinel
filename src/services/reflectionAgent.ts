@@ -39,6 +39,7 @@ ANALYSIS FRAMEWORK:
 2. Group by sector to find sector-specific blind spots
 3. Look at confidence calibration — are high-confidence signals actually performing better?
 4. Identify specific conditions where the AI is consistently wrong
+5. Consider user_rating feedback — signals rated "down" by the user indicate dissatisfaction even if the numerical outcome was OK. Signals rated "up" confirm the thesis was useful.
 
 OUTPUT FORMAT: Return a JSON object with a "lessons" array. Each lesson must have:
 - id: unique short identifier (e.g., "tech_overreaction_high_rsi")
@@ -85,6 +86,23 @@ export class ReflectionAgent {
             };
         }
 
+        // 2a. Fetch user ratings to enrich the dataset
+        const signalIds = outcomes.map((o: any) => o.signal_id).filter(Boolean);
+        let ratingsMap: Record<string, string> = {};
+        if (signalIds.length > 0) {
+            try {
+                const { data: ratings } = await (supabase
+                    .from('signal_ratings' as any)
+                    .select('signal_id, rating') as any)
+                    .in('signal_id', signalIds);
+                if (ratings) {
+                    for (const r of ratings as any[]) {
+                        ratingsMap[r.signal_id] = r.rating;
+                    }
+                }
+            } catch { /* signal_ratings table may not exist yet */ }
+        }
+
         // 2. Build a condensed dataset for the prompt
         const condensed = outcomes.map((o: any) => ({
             ticker: o.signals?.ticker || o.ticker,
@@ -100,6 +118,7 @@ export class ReflectionAgent {
             max_gain: o.max_gain,
             hit_target: o.hit_target,
             hit_stop_loss: o.hit_stop_loss,
+            user_rating: ratingsMap[o.signal_id] || null,
         }));
 
         // 3. Quick stats for context

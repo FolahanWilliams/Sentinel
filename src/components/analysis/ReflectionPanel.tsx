@@ -12,6 +12,7 @@ import {
     CheckCircle2, Clock, BarChart3, Loader2
 } from 'lucide-react';
 import { ReflectionAgent } from '@/services/reflectionAgent';
+import { ConfidenceCalibrator } from '@/services/confidenceCalibrator';
 import type { ReflectionResult, LessonRule } from '@/services/reflectionAgent';
 import { motion } from 'framer-motion';
 
@@ -40,7 +41,14 @@ export function ReflectionPanel() {
         setRunning(true);
         setError(null);
         try {
-            const result = await ReflectionAgent.runReflection();
+            // Run reflection and calibration in parallel
+            const [result] = await Promise.all([
+                ReflectionAgent.runReflection(),
+                ConfidenceCalibrator.buildCalibrationCurve().catch(err => {
+                    console.warn('[ReflectionPanel] Calibration update failed (non-fatal):', err);
+                    return null;
+                }),
+            ]);
             setReflection(result);
         } catch (err: any) {
             setError(err.message || 'Failed to run reflection');

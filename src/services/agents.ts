@@ -48,7 +48,9 @@ export class AgentService {
         currentPrice: number,
         priceDropPct: number,
         performanceContext?: string,
-        marketContext?: MarketContext
+        marketContext?: MarketContext,
+        taContext?: string,
+        historicalContext?: string
     ): Promise<AgentResult<any>> {
         const perfBlock = performanceContext
             ? `\n\n${performanceContext}\n\nUse the performance data above to calibrate your confidence. If this bias type or sector historically underperforms, lower your confidence. If it outperforms, you may raise it slightly.`
@@ -61,12 +63,15 @@ export class AgentService {
     Sector Performance: ${marketContext.sectorPerformance ?? 'N/A'}`
             : '';
 
+        const taBlock = taContext || '';
+        const histBlock = historicalContext || '';
+
         const prompt = `
     TICKER: ${ticker}
     CURRENT PRICE: $${currentPrice.toFixed(2)} (Down ${priceDropPct.toFixed(2)}%)
     EVENT HEADLINE: ${eventHeadline}
     EVENT DESCRIPTION: ${eventDesc}
-    ${marketBlock}${perfBlock}
+    ${marketBlock}${taBlock}${histBlock}${perfBlock}
     Evaluate if this drop is an irrational overreaction presenting a mean-reversion buying opportunity.
     Think step-by-step in your reasoning before reaching your verdict.
     Return JSON perfectly matching the expected schema.

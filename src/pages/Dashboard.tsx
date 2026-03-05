@@ -4,11 +4,14 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
 import { ScannerService } from '@/services/scanner';
 import { formatPrice } from '@/utils/formatters';
+import { TABadge } from '@/components/shared/TABadge';
 import { MarketSnapshot } from '@/components/dashboard/MarketSnapshot';
 import { MarketTrends, PotentialSignals } from '@/components/dashboard/MarketTrends';
 import { UpcomingEvents } from '@/components/dashboard/UpcomingEvents';
 import { WeeklyDigest } from '@/components/dashboard/WeeklyDigest';
 import { PortfolioOverview } from '@/components/dashboard/PortfolioOverview';
+import { PortfolioSimulator } from '@/components/dashboard/PortfolioSimulator';
+import { SectorHeatMap } from '@/components/dashboard/SectorHeatMap';
 import { NewsFeed } from '@/components/dashboard/NewsFeed';
 import { GlassMaterialize } from '@/components/shared/GlassMaterialize';
 import { useScannerLogs } from '@/hooks/useScannerLogs';
@@ -154,8 +157,9 @@ export function Dashboard() {
                 {/* LEFT COLUMN: Market Snapshot & Portfolio */}
                 <div className="xl:col-span-1 space-y-6 flex flex-col min-h-[600px]">
                     <GlassMaterialize delay={0}><MarketSnapshot /></GlassMaterialize>
-                    <GlassMaterialize delay={50}><PortfolioOverview /></GlassMaterialize>
-                    <GlassMaterialize delay={100}><WeeklyDigest /></GlassMaterialize>
+                    <GlassMaterialize delay={50}><PortfolioSimulator /></GlassMaterialize>
+                    <GlassMaterialize delay={100}><PortfolioOverview /></GlassMaterialize>
+                    <GlassMaterialize delay={150}><WeeklyDigest /></GlassMaterialize>
                 </div>
 
                 {/* MIDDLE COLUMN: Signal Feed */}
@@ -248,6 +252,13 @@ export function Dashboard() {
                                                             <Clock className="w-3 h-3" />
                                                             {new Date(signal.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                                         </span>
+                                                        {signal.ta_alignment && (
+                                                            <TABadge
+                                                                taAlignment={signal.ta_alignment}
+                                                                taSnapshot={signal.ta_snapshot}
+                                                                compact
+                                                            />
+                                                        )}
                                                         <div className="px-2 py-1 bg-emerald-500/10 text-emerald-400 text-xs font-bold font-mono rounded ring-1 ring-emerald-500/20">
                                                             {signal.confidence_score}% CONF
                                                         </div>
@@ -270,12 +281,13 @@ export function Dashboard() {
                     </div>
                 </div>
 
-                {/* RIGHT COLUMN: Trends & Events*/}
+                {/* RIGHT COLUMN: Trends, Sector Heat Map & Events*/}
                 <div className="xl:col-span-1 space-y-6 flex flex-col min-h-[600px]">
-                    <GlassMaterialize delay={50}><MarketTrends /></GlassMaterialize>
-                    <GlassMaterialize delay={100}><PotentialSignals /></GlassMaterialize>
-                    <GlassMaterialize delay={150}><NewsFeed limit={8} /></GlassMaterialize>
-                    <GlassMaterialize delay={200}><UpcomingEvents /></GlassMaterialize>
+                    <GlassMaterialize delay={50}><SectorHeatMap /></GlassMaterialize>
+                    <GlassMaterialize delay={100}><MarketTrends /></GlassMaterialize>
+                    <GlassMaterialize delay={150}><PotentialSignals /></GlassMaterialize>
+                    <GlassMaterialize delay={200}><NewsFeed limit={8} /></GlassMaterialize>
+                    <GlassMaterialize delay={250}><UpcomingEvents /></GlassMaterialize>
                 </div>
             </div>
         </div>

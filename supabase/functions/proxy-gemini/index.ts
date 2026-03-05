@@ -6,6 +6,22 @@ const corsHeaders = {
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// Rate limiting (in-memory, per-user)
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>()
+const GEMINI_RATE_LIMIT = 60 // requests per minute
+
+function checkRateLimit(userId: string): boolean {
+    const now = Date.now()
+    const entry = rateLimitMap.get(userId)
+    if (!entry || now > entry.resetAt) {
+        rateLimitMap.set(userId, { count: 1, resetAt: now + 60_000 })
+        return true
+    }
+    if (entry.count >= GEMINI_RATE_LIMIT) return false
+    entry.count++
+    return true
+}
+
 // Phase 1 fix (Audit C8): Model name allowlist
 const ALLOWED_MODELS = new Set([
     'gemini-3.1-flash-lite',
@@ -90,6 +106,14 @@ serve(async (req) => {
             return new Response(
                 JSON.stringify({ success: false, error: 'Unauthorized', authError: authError?.message }),
                 { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 401 }
+            )
+        }
+
+        // Rate limit check
+        if (!checkRateLimit(user.id)) {
+            return new Response(
+                JSON.stringify({ success: false, error: 'Rate limit exceeded' }),
+                { headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Retry-After': '60' }, status: 429 }
             )
         }
 

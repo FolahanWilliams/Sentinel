@@ -24,6 +24,9 @@ import { performanceStats } from './performanceStats';
 import { ReflectionAgent } from './reflectionAgent';
 import { isBudgetExceeded } from '@/utils/costEstimator';
 import { responseValidator } from '@/utils/responseValidator';
+import { TechnicalAnalysisService } from './technicalAnalysis';
+import { ConfidenceCalibrator } from './confidenceCalibrator';
+import { SelfCritiqueAgent } from './selfCritique';
 
 export class ScannerService {
 
@@ -156,6 +159,7 @@ export class ScannerService {
         let eventsFound = 0;
         let signalsGenerated = 0;
         const errors: string[] = [];
+        const skippedTickers: string[] = [];
 
         console.log(`[Scanner] Initiating ${scanType.toUpperCase()} scan...`);
 
@@ -427,15 +431,51 @@ If there is genuinely no major news, return: {"events": []}`,
                                 const eventContext = articleContextByTicker[ev.ticker]
                                     || `Event: ${ev.event_type} — ${ev.headline}`;
 
+                                // Skip ticker if no real price data available
+                                if (!quote?.price) {
+                                    console.warn(`[Scanner] Skipping ${ev.ticker} — no live quote available (data_quality: no_quote)`);
+                                    skippedTickers.push(ev.ticker);
+                                    continue;
+                                }
+
+                                // 6a. Pre-fetch TA snapshot for agent context
+                                let earlyTaSnapshot = null;
+                                let earlyTaContext = '';
+                                try {
+                                    earlyTaSnapshot = await TechnicalAnalysisService.getSnapshot(ev.ticker);
+                                    earlyTaContext = TechnicalAnalysisService.formatForPrompt(earlyTaSnapshot);
+                                } catch { /* non-fatal — TA context optional */ }
+
+                                // 6b. Fetch historical context for this ticker
+                                let historicalCtx = '';
+                                try {
+                                    const { data: pastSignals } = await supabase
+                                        .from('signals')
+                                        .select('signal_type, confidence_score, thesis, created_at, signal_outcomes(outcome, return_at_5d)')
+                                        .eq('ticker', ev.ticker)
+                                        .order('created_at', { ascending: false })
+                                        .limit(5);
+                                    if (pastSignals && pastSignals.length > 0) {
+                                        const lines = pastSignals.map((s: any) => {
+                                            const outcome = s.signal_outcomes?.[0];
+                                            const ret = outcome?.return_at_5d != null ? `${outcome.return_at_5d > 0 ? '+' : ''}${outcome.return_at_5d.toFixed(1)}%` : 'pending';
+                                            return `- ${s.signal_type} (conf: ${s.confidence_score}) → ${outcome?.outcome || 'pending'} (5d: ${ret})`;
+                                        });
+                                        historicalCtx = `\n\nHISTORICAL SIGNALS FOR ${ev.ticker} (last ${pastSignals.length}):\n${lines.join('\n')}\nUse this history to calibrate — if past signals for this ticker failed, be MORE skeptical.`;
+                                    }
+                                } catch { /* non-fatal */ }
+
                                 // Pipeline A: Overreaction Analysis
                                 const analysis = await AgentService.evaluateOverreaction(
                                     ev.ticker,
                                     ev.headline,
                                     eventContext,
-                                    quote?.price || 100,
+                                    quote.price,
                                     priceDrop,
                                     perfContext,
-                                    marketContext
+                                    marketContext,
+                                    earlyTaContext,
+                                    historicalCtx
                                 );
 
                                 // Validate agent response before acting on it
@@ -452,6 +492,33 @@ If there is genuinely no major news, return: {"events": []}`,
                                 }
 
                                 if (analysis.success && validation.valid && analysis.data?.is_overreaction && analysis.data.confidence_score > 75) {
+
+                                    // 6.5. TA CONFIRMATION LAYER — use pre-fetched TA snapshot
+                                    let taSnapshot = earlyTaSnapshot;
+                                    let taAlignment: import('@/types/signals').TAAlignment = 'unavailable';
+                                    try {
+                                        if (!taSnapshot) {
+                                            taSnapshot = await TechnicalAnalysisService.getSnapshot(ev.ticker);
+                                        }
+                                        taAlignment = TechnicalAnalysisService.evaluateAlignment(taSnapshot, 'long');
+
+                                        // Block signal if TA shows buying into exhaustion
+                                        const blockCheck = TechnicalAnalysisService.shouldBlockLong(taSnapshot);
+                                        if (blockCheck.blocked) {
+                                            console.warn(`[Scanner] TA BLOCKED signal for ${ev.ticker}: ${blockCheck.reason}`);
+                                            continue;
+                                        }
+
+                                        // Reduce confidence if TA conflicts
+                                        if (taAlignment === 'conflicting') {
+                                            analysis.data.confidence_score = Math.max(0, analysis.data.confidence_score - 20);
+                                            console.log(`[Scanner] TA conflicting for ${ev.ticker} — confidence reduced to ${analysis.data.confidence_score}`);
+                                        } else if (taAlignment === 'partial') {
+                                            analysis.data.confidence_score = Math.max(0, analysis.data.confidence_score - 10);
+                                        }
+                                    } catch (taErr) {
+                                        console.warn(`[Scanner] TA fetch failed for ${ev.ticker}, proceeding without TA:`, taErr);
+                                    }
 
                                     // 7. SANITY CHECK (Red Team)
                                     const sanity = await AgentService.runSanityCheck(
@@ -471,25 +538,77 @@ If there is genuinely no major news, return: {"events": []}`,
                                     }
 
                                     if (sanity.success && sanity.data?.passes_sanity_check) {
+                                        // 7.5. SELF-CRITIQUE — second-pass confidence adjustment
+                                        let critiqueOutput = null;
+                                        try {
+                                            const critique = await SelfCritiqueAgent.critique(
+                                                ev.ticker,
+                                                analysis.data.thesis,
+                                                analysis.data.reasoning || analysis.data.thesis,
+                                                analysis.data.confidence_score,
+                                                sanity.data.counter_thesis,
+                                                'long_overreaction'
+                                            );
+                                            critiqueOutput = critique;
+                                            if (critique.hasFlaws && critique.adjustedConfidence < analysis.data.confidence_score) {
+                                                console.log(`[Scanner] Self-critique adjusted confidence for ${ev.ticker}: ${analysis.data.confidence_score} → ${critique.adjustedConfidence} (${critique.criticalFlaws.length} critical, ${critique.minorFlaws.length} minor flaws)`);
+                                                analysis.data.confidence_score = critique.adjustedConfidence;
+                                            }
+                                            // Drop signal if critique brings confidence below threshold
+                                            if (critique.adjustedConfidence < 50) {
+                                                console.warn(`[Scanner] Self-critique dropped signal for ${ev.ticker} — adjusted confidence ${critique.adjustedConfidence} below threshold`);
+                                                continue;
+                                            }
+                                        } catch (critiqueErr) {
+                                            console.warn(`[Scanner] Self-critique failed for ${ev.ticker} (non-fatal):`, critiqueErr);
+                                        }
+
                                         // 8. WINNER! WE HAVE A SIGNAL.
                                         signalsGenerated++;
 
-                                        const entryPrice = quote?.price || 100;
+                                        const entryPrice = quote.price;
+
+                                        // ATR-based stop-loss and trailing stop
+                                        let stopLoss = analysis.data.stop_loss;
+                                        let trailingStopRule: string | null = null;
+                                        if (taSnapshot?.atr14) {
+                                            const atrStop = entryPrice - (taSnapshot.atr14 * 1.5);
+                                            // Use ATR stop if it's tighter than Gemini's suggestion (or if Gemini's is missing)
+                                            if (!stopLoss || atrStop > stopLoss) {
+                                                stopLoss = Math.round(atrStop * 100) / 100;
+                                            }
+                                            const breakevenTarget = entryPrice + taSnapshot.atr14;
+                                            trailingStopRule = `Move stop to breakeven ($${entryPrice.toFixed(2)}) after price reaches $${breakevenTarget.toFixed(2)} (+1x ATR). Trail by 1.5x ATR thereafter.`;
+                                        }
+
+                                        // Calibrated confidence
+                                        let calibratedConfidence: number | null = null;
+                                        try {
+                                            const curve = await ConfidenceCalibrator.getCachedCurve();
+                                            calibratedConfidence = ConfidenceCalibrator.getCalibratedWinRate(analysis.data.confidence_score, curve);
+                                        } catch { /* non-fatal */ }
+
                                         const { data: savedSignal } = await supabase.from('signals').insert({
                                             ticker: ev.ticker,
                                             signal_type: 'long_overreaction',
                                             confidence_score: analysis.data.confidence_score,
+                                            calibrated_confidence: calibratedConfidence,
                                             risk_level: sanity.data.risk_score > 80 ? 'low' : 'medium',
                                             bias_type: 'recency_bias',
                                             thesis: analysis.data.thesis,
                                             counter_argument: sanity.data.counter_thesis,
                                             suggested_entry_low: analysis.data.suggested_entry_low,
                                             suggested_entry_high: analysis.data.suggested_entry_high,
-                                            stop_loss: analysis.data.stop_loss,
+                                            stop_loss: stopLoss,
                                             target_price: analysis.data.target_price,
+                                            trailing_stop_rule: trailingStopRule,
+                                            ta_snapshot: taSnapshot,
+                                            ta_alignment: taAlignment,
+                                            data_quality: 'full',
                                             agent_outputs: {
                                                 overreaction: analysis.data,
-                                                red_team: sanity.data
+                                                red_team: sanity.data,
+                                                self_critique: critiqueOutput
                                             },
                                             status: 'open',
                                             secondary_biases: [],
@@ -709,8 +828,20 @@ If there is genuinely no major news, return: {"events": []}`,
                 console.warn(`[Scanner] Could not get live quote for ${ticker}`, e);
             }
 
-            const currentPrice = quote?.price || 100;
-            const priceDropPct = quote?.changePercent || 0;
+            if (!quote?.price) {
+                // Update scan log and return — no valid price data
+                if (scanLog) {
+                    await supabase.from('scan_logs').update({
+                        status: 'completed',
+                        error_message: `No live quote available for ${ticker}`,
+                        duration_ms: Date.now() - startTime,
+                    } as any).eq('id', scanLog.id);
+                }
+                return { success: false, summary: `No live quote available for ${ticker}. Skipping to avoid fabricated signals.`, signalsGenerated: 0 };
+            }
+
+            const currentPrice = quote.price;
+            const priceDropPct = quote.changePercent || 0;
 
             // 3. Instead of waiting for RSS, we use Gemini's grounded search to find the latest "event" for this ticker
             const eventPrompt = `Find the most recent, significant news event for ${ticker} from the last 48 hours. Focus on earnings, regulatory news, product launches, or major macroeconomic impacts specific to this company. If there is no major news, summarize the current market sentiment.`;
