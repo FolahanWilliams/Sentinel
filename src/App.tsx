@@ -12,6 +12,7 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { ChatProvider } from '@/contexts/ChatContext';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 import { Dashboard } from '@/pages/Dashboard';
+import { UnifiedDashboard } from '@/components/UnifiedDashboard';
 import { Analysis } from '@/pages/Analysis';
 import { Watchlist } from '@/pages/Watchlist';
 import { Backtest } from '@/pages/Backtest';
@@ -67,7 +68,8 @@ export default function App() {
                 <BrowserRouter>
                     <Routes>
                         <Route element={<AppLayout />}>
-                            <Route path="/" element={<Dashboard />} />
+                            <Route path="/" element={<UnifiedDashboard />} />
+                            <Route path="/legacy" element={<Dashboard />} />
                             {/* Phase 3 fix (Audit C16): /analysis base route redirects to dashboard */}
                             <Route path="/analysis" element={<Navigate to="/" replace />} />
                             <Route path="/analysis/:ticker" element={<Analysis />} />
