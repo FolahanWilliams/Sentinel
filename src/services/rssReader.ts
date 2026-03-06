@@ -83,7 +83,7 @@ export class RSSReaderService {
                                     tickers_mentioned: tickers,
                                     keywords,
                                 };
-                            } as any),
+                            }) as any[],
                             { onConflict: 'link' }
                         );
 
