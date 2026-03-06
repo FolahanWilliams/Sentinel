@@ -24,8 +24,8 @@ export const OVERREACTION_SCHEMA = {
         financial_impact_assessment: { type: "string", description: "Assessment of the actual long-term cash flow impact." },
         suggested_entry_low: { type: "number", description: "Suggested low-end of entry zone." },
         suggested_entry_high: { type: "number", description: "Suggested high-end of entry zone." },
-        stop_loss: { type: "number", description: "Hard stop loss level based on technical invalidation." },
-        target_price: { type: "number", description: "Target price for the reversion." },
+        stop_loss: { type: "number", description: "Hard stop loss level BELOW the current price (this is a LONG trade — stop must be lower than entry and target)." },
+        target_price: { type: "number", description: "Target price for the reversion — must be ABOVE the current price (we are buying a dip expecting a bounce)." },
         timeframe_days: { type: "integer", description: "Expected days for the setup to play out." }
     },
     required: ["reasoning", "is_overreaction", "confidence_score", "identified_biases", "thesis", "financial_impact_assessment", "stop_loss", "target_price"]
