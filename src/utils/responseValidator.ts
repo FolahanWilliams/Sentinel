@@ -137,8 +137,16 @@ export class ResponseValidator {
         // Phase 4 fix (Audit m2): Check both field names to match DB schema
         const timeframe = (data.expected_timeframe_days ?? data.timeframe_days) as number | undefined;
         if (timeframe !== undefined && typeof timeframe === 'number') {
+            // Only treat zero/negative timeframe as FATAL when the agent actually recommends a trade.
+            // When is_overreaction=false / is_mispriced=false / is_contagion=false, the agent
+            // rejected the setup so timeframe_days=0 is expected and harmless.
+            const isAccepted = data.is_overreaction === true || data.is_mispriced === true || data.is_contagion === true;
             if (timeframe <= 0) {
-                warnings.push('FATAL: timeframe_days is zero or negative');
+                if (isAccepted) {
+                    warnings.push('FATAL: timeframe_days is zero or negative');
+                } else {
+                    warnings.push('timeframe_days is zero or negative (non-fatal: signal was rejected by agent)');
+                }
             }
             if (timeframe > 365) {
                 warnings.push('timeframe_days exceeds 1 year — unusually long');

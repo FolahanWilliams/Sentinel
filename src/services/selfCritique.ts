@@ -36,12 +36,30 @@ ANALYSIS FRAMEWORK:
 - Is the timeframe realistic for the proposed setup?
 - Are price targets anchored to something concrete, or just round numbers?
 
+WHAT COUNTS AS A CRITICAL FLAW (be strict about this classification):
+- The thesis contradicts known facts or the provided data
+- The trade is structurally unsound (e.g., wrong direction, impossible price targets)
+- A specific near-term catalyst will invalidate the thesis (e.g., earnings tomorrow, FDA ruling next week)
+- The reasoning is circular or the conclusion does not follow from the evidence
+
+WHAT IS A MINOR FLAW (most concerns should go here):
+- General macro uncertainty or sector headwinds
+- Timeframe might be optimistic
+- Position sizing concerns
+- Valuation is stretched but not extreme
+- "Markets could go lower" type concerns
+- Missing context that doesn't invalidate the thesis
+
 CONFIDENCE ADJUSTMENT RULES:
-- If you find a critical flaw: reduce confidence by 15-25 points
-- If you find minor flaws only: reduce confidence by 5-10 points
-- If the thesis is solid with good reasoning: keep confidence within ±5 points
+- Total adjustment is based on the OVERALL quality of the thesis, not per-flaw arithmetic
+- Strong thesis with minor concerns only: reduce by 5-10 points total
+- Thesis has one genuine critical flaw: reduce by 15-20 points total
+- Thesis has multiple critical flaws: reduce by 20-30 points total (absolute maximum)
+- NEVER reduce by more than 30 points total regardless of flaw count
 - NEVER increase confidence above the original — you are a critic, not a cheerleader
-- Minimum confidence after adjustment: 30 (below this the signal should be dropped)
+- Minimum confidence after adjustment: 30
+
+IMPORTANT: You are a quality filter, not an adversary. If the Red Team already passed this trade, your job is to catch what they missed — not to re-litigate the same concerns. A trade that survived the Red Team with a sound thesis should typically lose only 5-15 points here.
 
 Return a JSON object with your critique.`;
 
@@ -115,10 +133,12 @@ Return your adjusted confidence and reasoning.`;
 
             const data = result.data;
 
-            // Enforce: never increase above original
+            // Enforce: never increase above original, and cap max reduction at 30 points
+            const rawAdjusted = data.adjusted_confidence ?? originalConfidence;
+            const maxReduction = 30;
             const adjustedConf = Math.min(
                 originalConfidence,
-                Math.max(30, data.adjusted_confidence ?? originalConfidence)
+                Math.max(30, Math.max(rawAdjusted, originalConfidence - maxReduction))
             );
 
             return {
