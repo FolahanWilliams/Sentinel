@@ -70,10 +70,28 @@ export class GeminiService {
                 enableThinking: req.enableThinking ?? false,
             };
 
-            // 2. Call Edge Function
-            const { data, error } = await supabase.functions.invoke('proxy-gemini', {
-                body: payload,
-            });
+            // 2. Call Edge Function with retry on transient 502/503 errors
+            let data: any;
+            let error: any;
+            const maxRetries = 2;
+            for (let attempt = 0; attempt <= maxRetries; attempt++) {
+                const res = await supabase.functions.invoke('proxy-gemini', {
+                    body: payload,
+                });
+                data = res.data;
+                error = res.error;
+
+                if (!error) break;
+
+                const isTransient = error.message?.includes('non-2xx status code');
+                if (isTransient && attempt < maxRetries) {
+                    const delay = (attempt + 1) * 2000; // 2s, 4s
+                    console.warn(`[GeminiService] Transient error (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${delay}ms...`);
+                    await new Promise(res => setTimeout(res, delay));
+                    continue;
+                }
+                break;
+            }
 
             if (error) {
                 const detail = (data as any)?.detail || (data as any)?.error || error.message;

@@ -391,7 +391,9 @@ If there is genuinely no major news, return: {"events": []}`,
                     }
                 }
 
-                if (extraction.success && extraction.data?.events) {
+                // Check for events even if the original extraction failed —
+                // per-ticker grounded search may have populated extraction.data.events
+                if (extraction.data?.events && extraction.data.events.length > 0) {
                     console.log(`[Scanner] Extracted ${extraction.data.events.length} events:`, extraction.data.events.map((e: any) => `${e.ticker}(${e.event_type}, sev=${e.severity})`).join(', '));
 
                     for (const ev of extraction.data.events) {
