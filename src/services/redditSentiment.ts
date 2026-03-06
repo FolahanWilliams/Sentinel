@@ -23,13 +23,91 @@ export class RedditSentimentService {
      *
      * @param tickers Array of tickers to search for (e.g. ['AAPL', 'NVDA'])
      */
-    static async fetchAndCacheSentiment(_tickers: string[]): Promise<number> {
-        // Reddit aggressively blocks all datacenter/server IPs, so proxy-rss
-        // always gets 502. Skip entirely to avoid noisy errors in the scan.
-        // Retail sentiment is covered by Hacker News + Techmeme RSS feeds
-        // and the Gemini Grounded Search (GoogleNewsService) instead.
-        console.log('[RedditSentiment] Skipped — Reddit blocks server-side fetches.');
-        return 0;
+    static async fetchAndCacheSentiment(tickers: string[]): Promise<number> {
+        if (!tickers || tickers.length === 0) return 0;
+
+        console.log(`[RedditSentiment] Fetching retail sentiment for ${tickers.length} tickers...`);
+        let totalCached = 0;
+
+        try {
+            const session = await supabase.auth.getSession();
+            const token = session.data.session?.access_token || '';
+            const edgeUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/proxy-rss`;
+
+            // Max 5 tickers per run to avoid spamming the proxy/Reddit
+            const searchTickers = tickers.slice(0, 5);
+
+            for (const ticker of searchTickers) {
+                try {
+                    // Fetch Atom feed via proxy (uses allorigins fallback if Reddit blocks direct)
+                    const feedUrl = `https://www.reddit.com/r/wallstreetbets/search.rss?q=${ticker}&restrict_sr=1&sort=new`;
+
+                    const res = await fetch(edgeUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({ feedUrl })
+                    });
+
+                    if (!res.ok) {
+                        console.warn(`[RedditSentiment] Proxy returned ${res.status} for ${ticker}`);
+                        continue;
+                    }
+
+                    const xmlText = await res.text();
+                    const items = this.parseAtomFeed(xmlText);
+
+                    if (items.length > 0) {
+                        // Transform to rss_cache format
+                        const rows = items.map(item => {
+                            // Strip HTML tags from content
+                            const cleanContent = (item.content || '')
+                                .replace(/<[^>]*>?/gm, '')
+                                .substring(0, 1500);
+
+                            return {
+                                feed_name: 'r/wallstreetbets',
+                                feed_category: 'retail_sentiment',
+                                title: item.title,
+                                link: item.link,
+                                description: cleanContent,
+                                published_at: item.updated || new Date().toISOString(),
+                                // Cache for 24 hours
+                                expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+                                tickers_mentioned: [ticker],
+                                keywords: [ticker, 'reddit', 'wallstreetbets', item.author]
+                            };
+                        });
+
+                        const { error } = await supabase.from('rss_cache').upsert(
+                            rows as any[],
+                            { onConflict: 'link' }
+                        );
+
+                        if (error) {
+                            console.error(`[RedditSentiment] DB insert error for ${ticker}:`, error.message);
+                        } else {
+                            totalCached += rows.length;
+                        }
+                    }
+
+                    // Add a tiny delay between requests to be polite to the proxy
+                    await new Promise(resolve => setTimeout(resolve, 500));
+
+                } catch (tickerErr) {
+                    console.warn(`[RedditSentiment] Failed to fetch sentiment for ${ticker}:`, tickerErr);
+                }
+            }
+
+            console.log(`[RedditSentiment] Cached ${totalCached} retail sentiment items.`);
+            return totalCached;
+
+        } catch (err) {
+            console.error('[RedditSentiment] Fatal error fetching sentiment:', err);
+            return 0;
+        }
     }
 
     /**
