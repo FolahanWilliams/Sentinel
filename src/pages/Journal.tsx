@@ -4,6 +4,7 @@
  */
 
 import { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
 import { BookOpen, Plus, Search, Download, X, Tag } from 'lucide-react';
 import { CalendarHeatmap } from '@/components/journal/CalendarHeatmap';
@@ -22,6 +23,7 @@ const STORAGE_KEYS = {
 } as const;
 
 export function Journal() {
+    const [searchParams] = useSearchParams();
     const [entries, setEntries] = useState<any[]>([]);
     const [macroEvents, setMacroEvents] = useState<Record<string, string>>({});
     const [loading, setLoading] = useState(true);
@@ -34,6 +36,12 @@ export function Journal() {
         } catch { /* ignore parse errors */ }
         return defaultValue;
     };
+
+    // Pre-fill from URL query params (e.g. from "Log Trade" on signal cards)
+    const prefillTicker = searchParams.get('ticker') || '';
+    const prefillEntry = searchParams.get('entry') || '';
+    const prefillThesis = searchParams.get('thesis') ? decodeURIComponent(searchParams.get('thesis')!) : '';
+    const hasPrefill = !!prefillTicker;
 
     // Filters (Initialized from storage)
     const [searchQuery, setSearchQuery] = useState(() => getStoredState(STORAGE_KEYS.SEARCH, ''));
@@ -61,13 +69,13 @@ export function Journal() {
         else sessionStorage.removeItem(STORAGE_KEYS.DATE);
     }, [selectedDate]);
 
-    // Form State
-    const [showForm, setShowForm] = useState(false);
-    const [ticker, setTicker] = useState('');
+    // Form State — initialized from URL params when present
+    const [showForm, setShowForm] = useState(hasPrefill);
+    const [ticker, setTicker] = useState(prefillTicker);
     const [direction, setDirection] = useState<'long' | 'short'>('long');
-    const [entryPrice, setEntryPrice] = useState('');
+    const [entryPrice, setEntryPrice] = useState(prefillEntry);
     const [exitPrice, setExitPrice] = useState('');
-    const [notes, setNotes] = useState('');
+    const [notes, setNotes] = useState(prefillThesis);
     const [mood, setMood] = useState('😐');
     const [tagInput, setTagInput] = useState('');
     const [tags, setTags] = useState<string[]>([]);

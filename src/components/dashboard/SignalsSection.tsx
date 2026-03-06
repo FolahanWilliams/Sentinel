@@ -577,6 +577,17 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                                     </span>
                                                 );
                                             })()}
+                                            {/* Position sizing badge */}
+                                            {(() => {
+                                                const ps = (signal.agent_outputs as any)?.position_sizing;
+                                                if (!ps) return null;
+                                                return (
+                                                    <span className="px-2 py-0.5 text-[10px] font-bold font-mono rounded ring-1 bg-cyan-500/10 text-cyan-400 ring-cyan-500/20"
+                                                        title={`${ps.method} — ${ps.recommended_pct}% of portfolio ($${Number(ps.usd_value).toLocaleString()}) | ${ps.shares} shares${ps.risk_reward_ratio ? ` | R:R ${Number(ps.risk_reward_ratio).toFixed(1)}` : ''}`}>
+                                                        SIZE {ps.recommended_pct}% · ${Number(ps.usd_value).toLocaleString()}
+                                                    </span>
+                                                );
+                                            })()}
                                         </div>
 
                                         {/* Live price + entry/target/stop */}
@@ -728,7 +739,7 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                                         <button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
-                                                                navigate(`/simulator?ticker=${signal.ticker}&entry=${signal.suggested_entry_low || ''}&target=${signal.target_price || ''}&stop=${signal.stop_loss || ''}&side=${signal.signal_type.includes('short') ? 'short' : 'long'}`);
+                                                                navigate(`/positions?ticker=${signal.ticker}&entry=${signal.suggested_entry_low || ''}&side=${signal.signal_type.includes('short') ? 'short' : 'long'}`);
                                                             }}
                                                             className="px-3 py-1.5 bg-blue-600/15 hover:bg-blue-600/25 text-blue-400 rounded-lg text-xs font-medium transition-colors ring-1 ring-blue-500/30 flex items-center gap-1.5 border-none cursor-pointer"
                                                         >

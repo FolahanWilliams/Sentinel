@@ -70,6 +70,30 @@ export interface Signal {
 }
 
 export interface AgentOutputsJson {
+    overreaction?: Record<string, unknown>;
+    red_team?: Record<string, unknown>;
+    self_critique?: Record<string, unknown>;
+    sentiment_divergence?: {
+        type: string;
+        sentiment_avg: number;
+        sentiment_trend: number;
+        confidence_boost: number;
+        article_count: number;
+    } | null;
+    gap_analysis?: {
+        gap_pct: number;
+        gap_type: string;
+        gap_fill_target: number;
+    } | null;
+    position_sizing?: {
+        recommended_pct: number;
+        usd_value: number;
+        shares: number;
+        method: string;
+        stop_loss: number | null;
+        risk_reward_ratio: number | null;
+    } | null;
+    // Legacy fields for older signals
     event_detector?: Record<string, unknown>;
     bias_classifier?: Record<string, unknown>;
     sanity_checker?: Record<string, unknown>;
