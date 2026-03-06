@@ -16,16 +16,14 @@ export interface RSSFeedConfig {
 
 export const RSS_FEEDS: RSSFeedConfig[] = [
     // === Market-Moving News ===
-    // Reuters legacy feed is dead — replaced with Google News RSS for business
-    { name: 'Google News Business', url: 'https://news.google.com/rss/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx6TVdZU0FtVnVHZ0pWVXlnQVAB', category: 'market_moving', priority: 'high' },
+    { name: 'CNBC Business', url: 'https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10001147', category: 'market_moving', priority: 'high' },
     { name: 'Bloomberg Markets', url: 'https://feeds.bloomberg.com/markets/news.rss', category: 'market_moving', priority: 'high' },
     { name: 'CNBC Top News', url: 'https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114', category: 'market_moving', priority: 'high' },
     { name: 'MarketWatch', url: 'https://feeds.marketwatch.com/marketwatch/topstories/', category: 'market_moving', priority: 'high' },
     { name: 'WSJ Markets', url: 'https://feeds.a.dj.com/rss/RSSMarketsMain.xml', category: 'market_moving', priority: 'high' },
     { name: 'Financial Times', url: 'https://www.ft.com/rss/home', category: 'market_moving', priority: 'high' },
     { name: 'Yahoo Finance', url: 'https://finance.yahoo.com/news/rssindex', category: 'market_moving', priority: 'medium' },
-    // Google News "Stock Market" topic for additional coverage
-    { name: 'Google News Markets', url: 'https://news.google.com/rss/search?q=stock+market+when:1d&hl=en-US&gl=US&ceid=US:en', category: 'market_moving', priority: 'medium' },
+    { name: 'Politico Economy', url: 'https://rss.politico.com/economy.xml', category: 'market_moving', priority: 'medium' },
 
     // === Tech & AI ===
     { name: 'TechCrunch', url: 'https://techcrunch.com/feed/', category: 'tech_ai', priority: 'high' },
@@ -41,7 +39,7 @@ export const RSS_FEEDS: RSSFeedConfig[] = [
     { name: 'FierceBiotech', url: 'https://www.fiercebiotech.com/rss/xml', category: 'biotech', priority: 'high' },
     { name: 'BioPharma Dive', url: 'https://www.biopharmadive.com/feeds/news/', category: 'biotech', priority: 'high' },
     { name: 'Endpoints News', url: 'https://endpts.com/feed/', category: 'biotech', priority: 'high' },
-    { name: 'FDA Approvals (Google News)', url: 'https://news.google.com/rss/search?q=FDA+approval+when:7d&hl=en-US&gl=US&ceid=US:en', category: 'biotech', priority: 'high' },
+    { name: 'FiercePharma', url: 'https://www.fiercepharma.com/rss/xml', category: 'biotech', priority: 'high' },
 
     // === Semiconductor & Hardware ===
     { name: 'SemiAnalysis', url: 'https://www.semianalysis.com/feed', category: 'semiconductors', priority: 'high' },
@@ -79,8 +77,7 @@ export const RSS_FEEDS: RSSFeedConfig[] = [
     // === SEC & Regulatory ===
     // SEC press.xml returns 403 — replaced with SEC EDGAR RSS feed for recent filings
     { name: 'SEC EDGAR Filings', url: 'https://efts.sec.gov/LATEST/search-index?q=%228-K%22&dateRange=custom&startdt=2025-01-01&forms=8-K&from=0&size=20', category: 'regulatory', priority: 'high' },
-    // Google News "SEC" topic for regulatory news
-    { name: 'Google News SEC', url: 'https://news.google.com/rss/search?q=SEC+filing+regulation+when:7d&hl=en-US&gl=US&ceid=US:en', category: 'regulatory', priority: 'medium' },
+    { name: 'Politico Financial Services', url: 'https://rss.politico.com/financial-services.xml', category: 'regulatory', priority: 'medium' },
 
     // === Earnings & Data ===
     { name: 'Earnings Whispers', url: 'https://www.earningswhispers.com/rss', category: 'earnings', priority: 'high' },
