@@ -182,7 +182,10 @@ export function useMarketSnapshot() {
                 });
 
                 if (!geminiErr && geminiRes?.text) {
-                    const parsed = JSON.parse(geminiRes.text);
+                    // Strip markdown code fences — grounded search skips responseSchema,
+                    // so Gemini may wrap JSON in ```json ... ```
+                    const cleanText = geminiRes.text.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+                    const parsed = JSON.parse(cleanText);
                     headline = parsed.headline || headline;
                     description = parsed.description || description;
                     if (parsed.fearGreedValue !== undefined) fearGreedValue = parsed.fearGreedValue;
