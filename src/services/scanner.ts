@@ -1057,24 +1057,8 @@ If there is genuinely no major news, return: {"events": []}`,
                     prompt: `Identify the top ${count} most actionable US stock tickers to analyze right now based on today's market conditions. For each, explain the specific catalyst driving the opportunity. To ensure diverse coverage, focus on different sectors than your previous scans. (Random seed for variance: ${Math.random()}). Return JSON matching the schema exactly.`,
                     requireGroundedSearch: true,
                     temperature: 0.8,
-                    responseSchema: {
-                        type: 'object',
-                        properties: {
-                            tickers: {
-                                type: 'array',
-                                items: {
-                                    type: 'object',
-                                    properties: {
-                                        ticker: { type: 'string', description: 'US equity ticker symbol (e.g. NVDA, AAPL)' },
-                                        reason: { type: 'string', description: 'Why this ticker is interesting right now (1-2 sentences)' },
-                                        catalyst: { type: 'string', description: 'The specific catalyst type: earnings, fda_decision, analyst_action, unusual_volume, sector_rotation, insider_activity, geopolitical, other' },
-                                    },
-                                    required: ['ticker', 'reason', 'catalyst']
-                                }
-                            }
-                        },
-                        required: ['tickers']
-                    }
+                    // responseSchema is intentionally omitted — incompatible with grounded search.
+                    // The prompt asks for JSON and manual parsing below handles the response.
                 }
             });
 
