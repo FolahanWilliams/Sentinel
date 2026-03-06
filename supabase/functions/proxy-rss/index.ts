@@ -17,14 +17,14 @@ const ALLOWED_DOMAINS = new Set([
   'a16z.com', 'www.ycombinator.com', 'stratechery.com',
   'www.semianalysis.com', 'feed.infoq.com', 'cointelegraph.com',
   'rss.politico.com', 'www.cbinsights.com', 'www.darkreading.com',
-  'www.fiercepharma.com', 'www.reddit.com',
+  'www.fiercepharma.com',
   'feeds.bloomberg.com', 'feeds.marketwatch.com', 'feeds.a.dj.com', 'www.ft.com',
   'www.wired.com', 'siliconangle.com',
   'www.statnews.com', 'www.fiercebiotech.com', 'www.biopharmadive.com', 'endpts.com',
   'www.tomshardware.com', 'www.eetimes.com',
-  'www.securityweek.com', 'www.finextra.com', 'www.pymnts.com', 'www.americanbanker.com',
+  'www.securityweek.com', 'www.pymnts.com',
   'www.calculatedriskblog.com', 'wolfstreet.com',
-  'www.fool.com', 'www.investors.com',
+  'www.fool.com',
   'www.earningswhispers.com', 'www.nasdaq.com'
 ])
 
