@@ -84,6 +84,15 @@ export interface FundamentalData {
     updated_at: Date;
 }
 
+export interface NewsItem {
+    title: string;
+    link: string;
+    source: string;
+    publishedAt: string;
+    summary: string;
+    relatedTickers: string[];
+}
+
 export type MarketStatus = 'pre_market' | 'open' | 'after_hours' | 'closed';
 
 export interface MarketDataProvider {
