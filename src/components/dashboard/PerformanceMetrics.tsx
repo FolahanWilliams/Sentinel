@@ -83,7 +83,7 @@ export function PerformanceMetrics({ className = '' }: PerformanceMetricsProps) 
 
         let cumulative = 10000; // Starting capital assumption
         return sorted.map(o => {
-            const returnPct = o.return_at_30d ?? o.return_at_10d ?? o.return_at_5d ?? o.return_at_1d ?? 0;
+            const returnPct = Number(o.return_at_30d ?? o.return_at_10d ?? o.return_at_5d ?? o.return_at_1d ?? 0);
             // Assume 2% position size, scale return accordingly
             cumulative += cumulative * (returnPct / 100) * 0.02;
             return {
@@ -102,7 +102,7 @@ export function PerformanceMetrics({ className = '' }: PerformanceMetricsProps) 
             if (!stats[cat]) stats[cat] = { wins: 0, losses: 0, totalReturn: 0 };
             if (o.outcome === 'win') stats[cat].wins++;
             else stats[cat].losses++;
-            const ret = o.return_at_30d ?? o.return_at_10d ?? o.return_at_5d ?? o.return_at_1d ?? 0;
+            const ret = Number(o.return_at_30d ?? o.return_at_10d ?? o.return_at_5d ?? o.return_at_1d ?? 0);
             stats[cat].totalReturn += ret;
         }
 
@@ -294,7 +294,7 @@ export function PerformanceMetrics({ className = '' }: PerformanceMetricsProps) 
                                             </div>
                                         </div>
                                         <span className="text-xs font-bold font-mono text-emerald-400">
-                                            +{(o.max_gain ?? 0).toFixed(1)}%
+                                            +{Number(o.max_gain ?? 0).toFixed(1)}%
                                         </span>
                                     </div>
                                 ))}
@@ -323,7 +323,7 @@ export function PerformanceMetrics({ className = '' }: PerformanceMetricsProps) 
                                             </div>
                                         </div>
                                         <span className="text-xs font-bold font-mono text-red-400">
-                                            {(o.max_drawdown ?? 0).toFixed(1)}%
+                                            {Number(o.max_drawdown ?? 0).toFixed(1)}%
                                         </span>
                                     </div>
                                 ))}
@@ -373,9 +373,8 @@ function StatCard({ label, value, positive }: { label: string; value: string; po
     return (
         <div className="glass-panel rounded-xl p-4">
             <span className="text-[10px] text-sentinel-500 uppercase tracking-wider font-medium">{label}</span>
-            <div className={`text-xl font-bold font-mono ${
-                positive === undefined ? 'text-sentinel-100' : positive ? 'text-emerald-400' : 'text-red-400'
-            }`}>
+            <div className={`text-xl font-bold font-mono ${positive === undefined ? 'text-sentinel-100' : positive ? 'text-emerald-400' : 'text-red-400'
+                }`}>
                 {value}
             </div>
         </div>

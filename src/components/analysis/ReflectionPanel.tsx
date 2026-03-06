@@ -155,8 +155,8 @@ export function ReflectionPanel() {
                                                 <span>•</span>
                                                 <span>{lesson.sector}</span>
                                                 <span>•</span>
-                                                <span className={lesson.win_rate < 30 ? 'text-red-400' : lesson.win_rate < 50 ? 'text-amber-400' : 'text-emerald-400'}>
-                                                    {lesson.win_rate.toFixed(0)}% win rate
+                                                <span className={Number(lesson.win_rate) < 30 ? 'text-red-400' : Number(lesson.win_rate) < 50 ? 'text-amber-400' : 'text-emerald-400'}>
+                                                    {Number(lesson.win_rate).toFixed(0)}% win rate
                                                 </span>
                                                 <span>•</span>
                                                 <span>n={lesson.sample_size}</span>

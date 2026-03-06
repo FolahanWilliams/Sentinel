@@ -71,7 +71,7 @@ export function WeeklyDigest() {
                                 Best: <span className="font-mono font-bold text-sentinel-200">{digest.bestSignal.ticker}</span>
                             </span>
                             <span className="font-mono font-bold text-emerald-400">
-                                +{digest.bestSignal.returnPct.toFixed(1)}%
+                                +{Number(digest.bestSignal.returnPct).toFixed(1)}%
                             </span>
                         </div>
                     )}
@@ -82,7 +82,7 @@ export function WeeklyDigest() {
                                 Worst: <span className="font-mono font-bold text-sentinel-200">{digest.worstSignal.ticker}</span>
                             </span>
                             <span className="font-mono font-bold text-red-400">
-                                {digest.worstSignal.returnPct.toFixed(1)}%
+                                {Number(digest.worstSignal.returnPct).toFixed(1)}%
                             </span>
                         </div>
                     )}

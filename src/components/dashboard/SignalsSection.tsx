@@ -235,11 +235,10 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                             setHighRoiOnly(!highRoiOnly);
                             if (!highRoiOnly) setSortBy('projected_roi');
                         }}
-                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ring-1 flex items-center gap-2 border-none cursor-pointer ${
-                            highRoiOnly
+                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ring-1 flex items-center gap-2 border-none cursor-pointer ${highRoiOnly
                                 ? 'bg-emerald-500/15 text-emerald-400 ring-emerald-500/30'
                                 : 'bg-sentinel-800/50 text-sentinel-400 ring-sentinel-700/50 hover:bg-sentinel-700/50'
-                        }`}
+                            }`}
                         aria-label="Toggle high ROI signals only"
                     >
                         <TrendingUp className="w-4 h-4" />
@@ -248,11 +247,10 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
 
                     <button
                         onClick={() => setShowFilters(!showFilters)}
-                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ring-1 flex items-center gap-2 border-none cursor-pointer ${
-                            activeFilterCount > 0
+                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ring-1 flex items-center gap-2 border-none cursor-pointer ${activeFilterCount > 0
                                 ? 'bg-blue-500/15 text-blue-400 ring-blue-500/30'
                                 : 'bg-sentinel-800/50 text-sentinel-400 ring-sentinel-700/50 hover:bg-sentinel-700/50'
-                        }`}
+                            }`}
                         aria-label="Toggle signal filters"
                     >
                         <Filter className="w-4 h-4" />
@@ -430,11 +428,10 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                                 <span className="px-2.5 py-1 bg-sentinel-800 text-sentinel-100 text-sm font-bold font-mono rounded ring-1 ring-sentinel-700 shadow-sm">
                                                     {signal.ticker}
                                                 </span>
-                                                <span className={`px-2 py-0.5 text-[10px] font-bold rounded ring-1 ${
-                                                    isLong
+                                                <span className={`px-2 py-0.5 text-[10px] font-bold rounded ring-1 ${isLong
                                                         ? 'bg-emerald-500/15 text-emerald-400 ring-emerald-500/30'
                                                         : 'bg-red-500/15 text-red-400 ring-red-500/30'
-                                                }`}>
+                                                    }`}>
                                                     {isLong ? 'BUY' : 'SELL'}
                                                 </span>
                                                 <span className="text-xs text-sentinel-500 capitalize">
@@ -460,11 +457,10 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                             </div>
                                             <div className="h-1.5 bg-sentinel-800 rounded-full overflow-hidden">
                                                 <div
-                                                    className={`h-full rounded-full transition-all ${
-                                                        signal.confidence_score >= 80 ? 'bg-emerald-500' :
-                                                        signal.confidence_score >= 60 ? 'bg-blue-500' :
-                                                        signal.confidence_score >= 40 ? 'bg-amber-500' : 'bg-red-500'
-                                                    }`}
+                                                    className={`h-full rounded-full transition-all ${signal.confidence_score >= 80 ? 'bg-emerald-500' :
+                                                            signal.confidence_score >= 60 ? 'bg-blue-500' :
+                                                                signal.confidence_score >= 40 ? 'bg-amber-500' : 'bg-red-500'
+                                                        }`}
                                                     style={{ width: `${signal.confidence_score}%` }}
                                                 />
                                             </div>
@@ -483,11 +479,10 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                                 </span>
                                             )}
                                             {signal.projected_roi != null && (
-                                                <span className={`px-2 py-0.5 text-[10px] font-bold font-mono rounded ring-1 ${
-                                                    signal.projected_roi > 0
+                                                <span className={`px-2 py-0.5 text-[10px] font-bold font-mono rounded ring-1 ${signal.projected_roi > 0
                                                         ? 'bg-emerald-500/10 text-emerald-400 ring-emerald-500/20'
                                                         : 'bg-red-500/10 text-red-400 ring-red-500/20'
-                                                }`}>
+                                                    }`}>
                                                     ROI {signal.projected_roi > 0 ? '+' : ''}{signal.projected_roi}%
                                                 </span>
                                             )}
@@ -535,9 +530,9 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                                     {/* TA snapshot summary */}
                                                     {signal.ta_snapshot && (
                                                         <div className="flex flex-wrap gap-2">
-                                                            {signal.ta_snapshot.rsi14 != null && (
+                                                            {signal.ta_snapshot.rsi14 != null && !isNaN(Number(signal.ta_snapshot.rsi14)) && (
                                                                 <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-sentinel-800/50 text-sentinel-400 ring-1 ring-sentinel-700/30">
-                                                                    RSI: {signal.ta_snapshot.rsi14.toFixed(0)}
+                                                                    RSI: {Number(signal.ta_snapshot.rsi14).toFixed(0)}
                                                                 </span>
                                                             )}
                                                             {signal.ta_snapshot.macd && (
@@ -548,9 +543,9 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                                             <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-sentinel-800/50 text-sentinel-400 ring-1 ring-sentinel-700/30">
                                                                 Trend: {signal.ta_snapshot.trendDirection}
                                                             </span>
-                                                            {signal.ta_snapshot.volumeRatio != null && (
+                                                            {signal.ta_snapshot.volumeRatio != null && !isNaN(Number(signal.ta_snapshot.volumeRatio)) && (
                                                                 <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-sentinel-800/50 text-sentinel-400 ring-1 ring-sentinel-700/30">
-                                                                    Vol: {signal.ta_snapshot.volumeRatio.toFixed(1)}x
+                                                                    Vol: {Number(signal.ta_snapshot.volumeRatio).toFixed(1)}x
                                                                 </span>
                                                             )}
                                                         </div>
@@ -566,14 +561,13 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                                                     {portfolioConfig?.risk_per_trade_pct ?? 2}% risk = <span className="text-sentinel-200">{formatPrice(impact.positionSize)}</span>
                                                                 </span>
                                                                 <span className="text-[10px] text-sentinel-500">|</span>
-                                                                <span className={`text-[10px] font-mono font-bold ${
-                                                                    impact.newExposurePct > (portfolioConfig?.max_total_exposure_pct ?? 60)
+                                                                <span className={`text-[10px] font-mono font-bold ${Number(impact.newExposurePct) > (portfolioConfig?.max_total_exposure_pct ?? 60)
                                                                         ? 'text-red-400'
-                                                                        : impact.newExposurePct > 40
+                                                                        : Number(impact.newExposurePct) > 40
                                                                             ? 'text-amber-400'
                                                                             : 'text-emerald-400'
-                                                                }`}>
-                                                                    New Exposure: {impact.newExposurePct.toFixed(1)}%
+                                                                    }`}>
+                                                                    New Exposure: {Number(impact.newExposurePct).toFixed(1)}%
                                                                 </span>
                                                                 {impact.hasDuplicate && (
                                                                     <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded ring-1 ring-amber-500/20">

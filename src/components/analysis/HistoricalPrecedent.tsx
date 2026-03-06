@@ -63,26 +63,26 @@ export function HistoricalPrecedent({
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
                     <div className="bg-sentinel-950/50 rounded-lg p-3 border border-sentinel-800/50 text-center">
                         <p className="text-xs text-sentinel-500 mb-1">Win Rate</p>
-                        <p className={`text-lg font-bold font-mono ${(aggregateStats.win_rate || 0) >= 50 ? 'text-emerald-400' : 'text-red-400'}`}>
-                            {aggregateStats.win_rate?.toFixed(0) || 0}%
+                        <p className={`text-lg font-bold font-mono ${Number(aggregateStats.win_rate || 0) >= 50 ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {aggregateStats.win_rate != null ? Number(aggregateStats.win_rate).toFixed(0) : 0}%
                         </p>
                     </div>
                     <div className="bg-sentinel-950/50 rounded-lg p-3 border border-sentinel-800/50 text-center">
                         <p className="text-xs text-sentinel-500 mb-1">Avg 30d Return</p>
-                        <p className={`text-lg font-bold font-mono ${(aggregateStats.avg_return_30d || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                            {(aggregateStats.avg_return_30d || 0) >= 0 ? '+' : ''}{aggregateStats.avg_return_30d?.toFixed(1) || 0}%
+                        <p className={`text-lg font-bold font-mono ${Number(aggregateStats.avg_return_30d || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {Number(aggregateStats.avg_return_30d || 0) >= 0 ? '+' : ''}{aggregateStats.avg_return_30d != null ? Number(aggregateStats.avg_return_30d).toFixed(1) : 0}%
                         </p>
                     </div>
                     <div className="bg-sentinel-950/50 rounded-lg p-3 border border-sentinel-800/50 text-center">
                         <p className="text-xs text-sentinel-500 mb-1">Best Case</p>
                         <p className="text-lg font-bold font-mono text-emerald-400">
-                            +{aggregateStats.best_case?.toFixed(1) || 0}%
+                            +{aggregateStats.best_case != null ? Number(aggregateStats.best_case).toFixed(1) : 0}%
                         </p>
                     </div>
                     <div className="bg-sentinel-950/50 rounded-lg p-3 border border-sentinel-800/50 text-center">
                         <p className="text-xs text-sentinel-500 mb-1">Worst Case</p>
                         <p className="text-lg font-bold font-mono text-red-400">
-                            {aggregateStats.worst_case?.toFixed(1) || 0}%
+                            {aggregateStats.worst_case != null ? Number(aggregateStats.worst_case).toFixed(1) : 0}%
                         </p>
                     </div>
                 </div>
@@ -113,8 +113,8 @@ export function HistoricalPrecedent({
                                 <p className="text-sentinel-400 truncate">{m.event_description}</p>
                             </div>
                             <div className="flex items-center gap-3 ml-3">
-                                <span className={`font-mono font-bold ${m.outcome_30d_pct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                    {m.outcome_30d_pct >= 0 ? '+' : ''}{m.outcome_30d_pct.toFixed(1)}%
+                                <span className={`font-mono font-bold ${Number(m.outcome_30d_pct) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                    {Number(m.outcome_30d_pct) >= 0 ? '+' : ''}{Number(m.outcome_30d_pct).toFixed(1)}%
                                 </span>
                                 <Badge
                                     label={m.outcome}

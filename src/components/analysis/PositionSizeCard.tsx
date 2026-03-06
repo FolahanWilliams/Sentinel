@@ -56,7 +56,7 @@ export function PositionSizeCard({
     }
 
     const riskRewardRatio = stopLoss && targetPrice && currentPrice
-        ? ((targetPrice - currentPrice) / (currentPrice - stopLoss)).toFixed(1)
+        ? ((Number(targetPrice) - Number(currentPrice)) / (Number(currentPrice) - Number(stopLoss))).toFixed(1)
         : null;
 
     return (

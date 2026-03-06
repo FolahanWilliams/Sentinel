@@ -201,7 +201,7 @@ function AnalystChatInner() {
         parts.push(`TICKER: ${ticker}`);
 
         if (quote) {
-            parts.push(`CURRENT PRICE: $${quote.price?.toFixed(2)} | CHANGE: ${quote.changePercent?.toFixed(2)}%`);
+            parts.push(`CURRENT PRICE: $${quote.price != null ? Number(quote.price).toFixed(2) : 'N/A'} | CHANGE: ${quote.changePercent != null ? Number(quote.changePercent).toFixed(2) : 'N/A'}%`);
             if (quote.volume) parts.push(`VOLUME: ${quote.volume.toLocaleString()}`);
         }
 

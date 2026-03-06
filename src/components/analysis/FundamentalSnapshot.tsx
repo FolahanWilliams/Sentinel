@@ -33,8 +33,11 @@ interface MetricConfig {
     health: 'good' | 'warning' | 'bad' | 'neutral';
 }
 
-function evaluateMetric(label: string, val: number | null | undefined): { value: string; health: 'good' | 'warning' | 'bad' | 'neutral' } {
-    if (val == null) return { value: '--', health: 'neutral' };
+function evaluateMetric(label: string, rawVal: number | string | null | undefined): { value: string; health: 'good' | 'warning' | 'bad' | 'neutral' } {
+    if (rawVal == null) return { value: '--', health: 'neutral' };
+
+    const val = Number(rawVal);
+    if (isNaN(val)) return { value: String(rawVal), health: 'neutral' };
 
     switch (label) {
         case 'Forward P/E':

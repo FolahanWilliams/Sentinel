@@ -220,16 +220,15 @@ export function PortfolioSimulator() {
                                 <div key={pos.id} className="flex items-center justify-between p-3 rounded-lg bg-sentinel-900/40 border border-sentinel-800/40">
                                     <div className="flex items-center gap-3">
                                         <span className="font-bold text-sentinel-100 text-sm font-mono">{pos.ticker}</span>
-                                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
-                                            pos.side === 'long' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
-                                        }`}>
+                                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${pos.side === 'long' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
+                                            }`}>
                                             {pos.side.toUpperCase()}
                                         </span>
                                         {pos.shares && <span className="text-[10px] text-sentinel-500 font-mono">{pos.shares} sh</span>}
                                     </div>
                                     <div className="flex items-center gap-4 text-xs font-mono">
                                         <span className="text-sentinel-500">
-                                            ${pos.entry_price?.toFixed(2)} → {quote ? `$${quote.price.toFixed(2)}` : '...'}
+                                            ${pos.entry_price != null ? Number(pos.entry_price).toFixed(2) : '...'} → {quote ? `$${Number(quote.price).toFixed(2)}` : '...'}
                                         </span>
                                         <span className={unrealizedPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}>
                                             {unrealizedPnl >= 0 ? '+' : ''}{unrealizedPnl.toFixed(2)} ({unrealizedPct >= 0 ? '+' : ''}{unrealizedPct.toFixed(1)}%)

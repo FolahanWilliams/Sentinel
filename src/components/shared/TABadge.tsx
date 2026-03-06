@@ -23,18 +23,18 @@ export function TABadge({ taAlignment, taSnapshot, compact = false }: TABadgePro
         if (!taSnapshot) return ['No technical data available'];
         const lines: string[] = [];
         if (taSnapshot.rsi14 !== null) {
-            const rsiLabel = taSnapshot.rsi14 < 30 ? 'Oversold' : taSnapshot.rsi14 > 70 ? 'Overbought' : 'Neutral';
-            lines.push(`RSI(14): ${taSnapshot.rsi14.toFixed(1)} (${rsiLabel})`);
+            const rsiLabel = Number(taSnapshot.rsi14) < 30 ? 'Oversold' : Number(taSnapshot.rsi14) > 70 ? 'Overbought' : 'Neutral';
+            lines.push(`RSI(14): ${Number(taSnapshot.rsi14).toFixed(1)} (${rsiLabel})`);
         }
         if (taSnapshot.macd) {
-            const macdDir = taSnapshot.macd.histogram > 0 ? 'Bullish' : 'Bearish';
-            lines.push(`MACD: ${macdDir} (H: ${taSnapshot.macd.histogram.toFixed(3)})`);
+            const macdDir = Number(taSnapshot.macd.histogram) > 0 ? 'Bullish' : 'Bearish';
+            lines.push(`MACD: ${macdDir} (H: ${Number(taSnapshot.macd.histogram).toFixed(3)})`);
         }
         lines.push(`Trend: ${taSnapshot.trendDirection}`);
-        if (taSnapshot.sma50 !== null) lines.push(`SMA50: $${taSnapshot.sma50.toFixed(2)}`);
-        if (taSnapshot.sma200 !== null) lines.push(`SMA200: $${taSnapshot.sma200.toFixed(2)}`);
-        if (taSnapshot.atr14 !== null) lines.push(`ATR(14): $${taSnapshot.atr14.toFixed(2)}`);
-        if (taSnapshot.volumeRatio !== null) lines.push(`Volume: ${taSnapshot.volumeRatio.toFixed(1)}x avg`);
+        if (taSnapshot.sma50 !== null) lines.push(`SMA50: $${Number(taSnapshot.sma50).toFixed(2)}`);
+        if (taSnapshot.sma200 !== null) lines.push(`SMA200: $${Number(taSnapshot.sma200).toFixed(2)}`);
+        if (taSnapshot.atr14 !== null) lines.push(`ATR(14): $${Number(taSnapshot.atr14).toFixed(2)}`);
+        if (taSnapshot.volumeRatio !== null) lines.push(`Volume: ${Number(taSnapshot.volumeRatio).toFixed(1)}x avg`);
         lines.push(`TA Score: ${taSnapshot.taScore}`);
         return lines;
     }, [taSnapshot]);
