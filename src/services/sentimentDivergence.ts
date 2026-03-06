@@ -65,15 +65,15 @@ export class SentimentDivergenceDetector {
             }
 
             // Compute overall average sentiment
-            const scores = articles.map(a => a.sentiment_score as number);
-            const avgSentiment = scores.reduce((a, b) => a + b, 0) / scores.length;
+            const scores: number[] = articles.map((a: any) => a.sentiment_score as number);
+            const avgSentiment = scores.reduce((a: number, b: number) => a + b, 0) / scores.length;
 
             // Compute sentiment trend (compare first half vs second half)
             const midpoint = Math.floor(scores.length / 2);
             const firstHalf = scores.slice(0, midpoint);
             const secondHalf = scores.slice(midpoint);
-            const firstAvg = firstHalf.length > 0 ? firstHalf.reduce((a, b) => a + b, 0) / firstHalf.length : 0;
-            const secondAvg = secondHalf.length > 0 ? secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length : 0;
+            const firstAvg = firstHalf.length > 0 ? firstHalf.reduce((a: number, b: number) => a + b, 0) / firstHalf.length : 0;
+            const secondAvg = secondHalf.length > 0 ? secondHalf.reduce((a: number, b: number) => a + b, 0) / secondHalf.length : 0;
             const sentimentTrend = secondAvg - firstAvg; // positive = improving
 
             // Classify divergence
