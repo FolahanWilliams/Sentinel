@@ -147,6 +147,11 @@ serve(async (req) => {
             )
         }
 
+        // Use gemini-2.0-flash for grounded search — Google Search does the heavy lifting,
+        // so the faster model avoids timeouts without sacrificing search quality.
+        // Reserve gemini-3-flash-preview for reasoning/analysis calls.
+        const effectiveModel = requireGroundedSearch ? 'gemini-2.0-flash' : model
+
         // 4. Initialize clients
         const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
         const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY')
@@ -167,7 +172,7 @@ serve(async (req) => {
             ? Math.max(0.0, Math.min(2.0, temperature))
             : 0.2
 
-        console.log(`[proxy-gemini] Calling ${model} (temp=${effectiveTemp}, grounded=${requireGroundedSearch}, thinking=${enableThinking})`)
+        console.log(`[proxy-gemini] Calling ${effectiveModel} (requested=${model}, temp=${effectiveTemp}, grounded=${requireGroundedSearch}, thinking=${enableThinking})`)
         const startTime = Date.now()
 
         // Support both single-turn (prompt) and multi-turn (messages) calls
@@ -212,7 +217,7 @@ serve(async (req) => {
         let totalOutputTokens = 0
 
         try {
-            result = await callGemini(model, payload, GEMINI_API_KEY)
+            result = await callGemini(effectiveModel, payload, GEMINI_API_KEY)
             totalInputTokens += result.inputTokens
             totalOutputTokens += result.outputTokens
 
@@ -229,14 +234,14 @@ serve(async (req) => {
                         { role: 'user', parts: [{ text: 'Your previous response was not valid JSON. Return ONLY valid JSON matching the required schema, with no markdown formatting or extra text.' }] }
                     ]
                     const retryPayload = { ...payload, contents: retryContents }
-                    result = await callGemini(model, retryPayload, GEMINI_API_KEY)
+                    result = await callGemini(effectiveModel, retryPayload, GEMINI_API_KEY)
                     totalInputTokens += result.inputTokens
                     totalOutputTokens += result.outputTokens
                     console.log('[proxy-gemini] Retry succeeded')
                 }
             }
         } catch (geminiError: any) {
-            console.error(`[proxy-gemini] Gemini API Error for model ${model}: ${geminiError.message}`)
+            console.error(`[proxy-gemini] Gemini API Error for model ${effectiveModel}: ${geminiError.message}`)
             // Phase 2 fix (Audit m17): Use 502 for upstream errors
             return new Response(
                 JSON.stringify({ success: false, error: 'AI service returned an error', detail: geminiError.message }),
@@ -248,7 +253,7 @@ serve(async (req) => {
 
         // 7. Phase 2 fix (Audit M3 detailed): Await the usage log insert instead of fire-and-forget
         const { error: logError } = await supabaseAdmin.from('api_usage').insert({
-            provider: model,
+            provider: effectiveModel,
             endpoint: 'generateContent',
             input_tokens: totalInputTokens,
             output_tokens: totalOutputTokens,
