@@ -47,16 +47,18 @@ export class SentimentDivergenceDetector {
         };
 
         try {
-            // Fetch articles mentioning this ticker from the last 5 days
+            // Fetch articles mentioning this ticker from the last 5 days.
+            // Uses sentinel_articles (populated by the sentinel edge function with Gemini analysis)
+            // instead of rss_cache (which never has sentiment_score populated).
             const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString();
 
             const { data: articles, error } = await supabase
-                .from('rss_cache')
-                .select('sentiment_score, fetched_at, title')
+                .from('sentinel_articles' as any)
+                .select('sentiment_score, pub_date, title, entities')
                 .not('sentiment_score', 'is', null)
-                .gte('fetched_at', fiveDaysAgo)
-                .or(`title.ilike.%${ticker}%,description.ilike.%${ticker}%`)
-                .order('fetched_at', { ascending: true });
+                .gte('pub_date', fiveDaysAgo)
+                .or(`title.ilike.%${ticker}%,entities.cs.{${ticker}}`)
+                .order('pub_date', { ascending: true }) as any;
 
             if (error || !articles || articles.length < 3) {
                 return neutral;

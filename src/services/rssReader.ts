@@ -58,19 +58,33 @@ export class RSSReaderService {
 
                         // Upsert into our rss_cache table
                         const { error } = await supabase.from('rss_cache').upsert(
-                            uniqueItems.map(item => ({
-                                feed_name: feed.name,
-                                feed_category: feed.category,
-                                title: item.title,
-                                link: item.link,
-                                description: item.description,
-                                published_at: item.pubDate || new Date().toISOString(),
-                                // Cache for 24 hours
-                                expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-                                tickers_mentioned: [],
-                                keywords: []
-                            } as any)),
-                            { onConflict: 'link' } // Avoid duplicate articles
+                            uniqueItems.map(item => {
+                                // Extract potential tickers from title (1-5 uppercase letters, standalone)
+                                const tickerMatches = (item.title + ' ' + item.description)
+                                    .match(/\b[A-Z]{1,5}\b/g) || [];
+                                // Filter common English words that look like tickers
+                                const stopWords = new Set(['A','I','AM','AN','AS','AT','BE','BY','DO','GO','IF','IN','IS','IT','ME','MY','NO','OF','OK','ON','OR','SO','TO','UP','US','WE']);
+                                const tickers = [...new Set(tickerMatches.filter(t => t.length >= 2 && !stopWords.has(t)))].slice(0, 10);
+                                // Extract keywords from title
+                                const keywords = item.title.toLowerCase()
+                                    .replace(/[^\w\s]/g, '')
+                                    .split(/\s+/)
+                                    .filter(w => w.length > 3)
+                                    .slice(0, 10);
+
+                                return {
+                                    feed_name: feed.name,
+                                    feed_category: feed.category,
+                                    title: item.title,
+                                    link: item.link,
+                                    description: item.description,
+                                    published_at: item.pubDate || new Date().toISOString(),
+                                    expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+                                    tickers_mentioned: tickers,
+                                    keywords,
+                                };
+                            } as any),
+                            { onConflict: 'link' }
                         );
 
                         if (error) {
