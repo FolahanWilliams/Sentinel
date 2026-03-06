@@ -10,8 +10,8 @@ import { supabase } from '@/config/supabase';
 import type { Quote, NewsItem } from '@/types/market';
 
 // Simple in-memory cache for the client session (clears on reload)
-// TTL: 15 minutes for basic quotes
-const CACHE_TTL_MS = 15 * 60 * 1000;
+// TTL: 2 minutes for quotes — keeps data reasonably fresh for a trading platform
+const CACHE_TTL_MS = 2 * 60 * 1000;
 
 interface CacheEntry<T> {
     data: T;
