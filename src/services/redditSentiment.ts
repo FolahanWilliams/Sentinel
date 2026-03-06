@@ -186,31 +186,4 @@ ${postsToScore.map((r, i) => `[Post ${i}] Title: ${r.title}\nContent: ${r.descri
      * Fetch hot/trending posts from a subreddit (no ticker filter).
      * Useful for getting a general retail sentiment pulse.
      */
-    static async fetchSubredditHot(subreddit: string, limit = 25): Promise<RedditPost[]> {
-        try {
-            const session = await supabase.auth.getSession();
-            const token = session.data.session?.access_token || '';
-            const edgeUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/proxy-reddit`;
-
-            const res = await fetch(edgeUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ subreddit, sort: 'hot', limit })
-            });
-
-            if (!res.ok) {
-                console.warn(`[RedditSentiment] Hot fetch failed for r/${subreddit}: ${res.status}`);
-                return [];
-            }
-
-            const data = await res.json();
-            return data.posts || [];
-        } catch (err) {
-            console.error(`[RedditSentiment] Error fetching r/${subreddit} hot:`, err);
-            return [];
-        }
-    }
 }
