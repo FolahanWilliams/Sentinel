@@ -270,7 +270,8 @@ Deno.serve(async (req) => {
         }
 
         // 2. Parse Request
-        const { endpoint, ticker, tickers: tickersParam, tickerParam } = await req.json()
+        const body = await req.json()
+        const { endpoint, ticker, tickers: tickersParam, tickerParam, useApify = true } = body
         if (!endpoint) {
             return new Response(
                 JSON.stringify({ success: false, error: 'Missing endpoint' }),
@@ -327,7 +328,7 @@ Deno.serve(async (req) => {
             // ── Strategy 0: Apify yahoo-finance-scraper (PRIMARY) ──
             // Handles international tickers natively, no IP blocks, batch-capable.
             // Cost: ~$0.005 per run. Falls through to Yahoo direct if token missing or Apify fails.
-            if (APIFY_TOKEN && !quoteResult) {
+            if (APIFY_TOKEN && !quoteResult && useApify) {
                 try {
                     console.log(`[proxy-market-data] Trying Apify yahoo-finance-scraper for ${tickerUpper}`)
                     const quotes = await fetchQuoteViaApify([tickerUpper], APIFY_TOKEN)
@@ -511,6 +512,37 @@ Deno.serve(async (req) => {
                         }
                     }
                 }
+                // Strategy 3: Apify (Final fallback for international or missing quotes)
+                if (!quoteResult && APIFY_TOKEN && useApify) {
+                    console.log(`[proxy-market-data] Falling back to Apify for ${tickerUpper}`)
+                    try {
+                        const quotes = await fetchQuoteViaApify([tickerUpper], APIFY_TOKEN)
+                        if (quotes.has(tickerUpper)) {
+                            const quote = quotes.get(tickerUpper)!
+                            quoteResult = {
+                                price: quote.price,
+                                change: quote.change,
+                                changePercent: quote.changePercent,
+                                volume: quote.volume,
+                                previousClose: quote.previousClose,
+                                open: quote.open,
+                                high: quote.high,
+                                low: quote.low,
+                                marketCap: quote.marketCap,
+                                peRatio: quote.peRatio,
+                                fiftyTwoWeekHigh: quote.fiftyTwoWeekHigh,
+                                fiftyTwoWeekLow: quote.fiftyTwoWeekLow,
+                            }
+                            actualProvider = 'apify-yahoo-finance'
+                            resolvedTicker = tickerUpper
+                            console.log(`[proxy-market-data] Apify fallback success: ${resolvedTicker} @ $${quoteResult.price}`)
+                        } else {
+                            console.warn(`[proxy-market-data] Apify fallback returned no quote for ${tickerUpper}`)
+                        }
+                    } catch (apifyErr: any) {
+                        console.warn('[proxy-market-data] Apify quote fetch failed:', apifyErr.message)
+                    }
+                }
             }
 
             // All providers failed
@@ -580,6 +612,12 @@ Deno.serve(async (req) => {
             console.log(`[proxy-market-data] Fetching news via Apify for ${newsTickers.join(',')}`)
 
             try {
+                if (!useApify) {
+                    return new Response(
+                        JSON.stringify({ success: false, error: 'Apify news fetch disabled by request (useApify: false)' }),
+                        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+                    )
+                }
                 const newsItems = await fetchNewsViaApify(
                     newsTickers.map(t => t.toUpperCase()),
                     APIFY_TOKEN,

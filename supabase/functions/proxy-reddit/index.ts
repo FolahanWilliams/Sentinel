@@ -49,6 +49,7 @@ async function fetchViaApify(
   sort: string,
   limit: number,
   query?: string,
+  queries?: string[],
 ): Promise<RedditPost[]> {
   const apifyToken = Deno.env.get('APIFY_TOKEN') || ''
   if (!apifyToken) {
@@ -70,8 +71,13 @@ async function fetchViaApify(
     },
   }
 
-  if (query) {
-    // Search mode: search within the subreddit for the query term
+  if (queries && queries.length > 0) {
+    // Batch search mode: search for multiple queries in one run
+    input.startUrls = queries.map(q => ({
+      url: `https://www.reddit.com/r/${subreddit}/search/?q=${encodeURIComponent(q)}&restrict_sr=1&sort=${sort}`
+    }))
+  } else if (query) {
+    // Single search mode
     input.startUrls = [{
       url: `https://www.reddit.com/r/${subreddit}/search/?q=${encodeURIComponent(query)}&restrict_sr=1&sort=${sort}`
     }]
@@ -212,6 +218,7 @@ Deno.serve(async (req) => {
     const sort = body?.sort || 'hot'
     const limit = Math.min(body?.limit || 25, 100)
     const query: string | undefined = body?.query
+    const queries: string[] | undefined = body?.queries
 
     // ── Validate inputs ──
     if (!ALLOWED_SUBREDDITS.has(subreddit)) {
@@ -227,9 +234,10 @@ Deno.serve(async (req) => {
       })
     }
 
-    console.log(`[proxy-reddit] Apify scrape: r/${subreddit}/${sort} (limit=${limit}${query ? `, q=${query}` : ''})`)
+    const logParams = query ? `, q=${query}` : (queries ? `, qs=${queries.join(',')}` : '')
+    console.log(`[proxy-reddit] Apify scrape: r/${subreddit}/${sort} (limit=${limit}${logParams})`)
 
-    const posts = await fetchViaApify(subreddit, sort, limit, query)
+    const posts = await fetchViaApify(subreddit, sort, limit, query, queries)
 
     console.log(`[proxy-reddit] Apify returned ${posts.length} posts from r/${subreddit}`)
 

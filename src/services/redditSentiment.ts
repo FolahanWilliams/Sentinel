@@ -35,59 +35,21 @@ export class RedditSentimentService {
      * Fetch latest posts matching specific tickers from r/wallstreetbets
      * and cache them into the rss_cache table as 'retail_sentiment'.
      *
-     * Runs up to 5 ticker searches in parallel to minimize latency.
-     * Each search is a separate Apify actor run (~10-30s).
+     * BATCHED: Sends up to 5 tickers in a single Apify run to save costs (~$0.02 vs ~$0.005).
      *
      * @param tickers Array of tickers to search for (e.g. ['AAPL', 'NVDA'])
      */
     static async fetchAndCacheSentiment(tickers: string[]): Promise<number> {
         if (!tickers || tickers.length === 0) return 0;
 
-        console.log(`[RedditSentiment] Fetching retail sentiment for ${tickers.length} tickers...`);
+        const searchTickers = tickers.slice(0, 5).map(t => t.toUpperCase());
+        console.log(`[RedditSentiment] Fetching batched sentiment for: ${searchTickers.join(', ')}`);
 
         try {
             const session = await supabase.auth.getSession();
             const token = session.data.session?.access_token || '';
             const edgeUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/proxy-reddit`;
 
-            // Cap at 5 tickers to limit Apify compute usage
-            const searchTickers = tickers.slice(0, 5);
-
-            // Run all ticker searches in parallel — each is an independent Apify run
-            const results = await Promise.allSettled(
-                searchTickers.map(ticker =>
-                    RedditSentimentService.fetchAndCacheForTicker(
-                        edgeUrl, token, SEARCH_SUBREDDIT, ticker
-                    )
-                )
-            );
-
-            let totalCached = 0;
-            for (const result of results) {
-                if (result.status === 'fulfilled') {
-                    totalCached += result.value;
-                }
-            }
-
-            console.log(`[RedditSentiment] Cached ${totalCached} retail sentiment items.`);
-            return totalCached;
-
-        } catch (err) {
-            console.error('[RedditSentiment] Fatal error:', err);
-            return 0;
-        }
-    }
-
-    /**
-     * Search a single subreddit for a single ticker and cache results.
-     */
-    private static async fetchAndCacheForTicker(
-        edgeUrl: string,
-        token: string,
-        sub: string,
-        ticker: string,
-    ): Promise<number> {
-        try {
             const res = await fetch(edgeUrl, {
                 method: 'POST',
                 headers: {
@@ -95,15 +57,15 @@ export class RedditSentimentService {
                     'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify({
-                    subreddit: sub,
-                    query: ticker,
+                    subreddit: SEARCH_SUBREDDIT,
+                    queries: searchTickers, // Using the new batched queries param
                     sort: 'new',
-                    limit: 15,
+                    limit: 50, // Higher limit for batched requests
                 })
             });
 
             if (!res.ok) {
-                console.warn(`[RedditSentiment] proxy-reddit returned ${res.status} for ${ticker} in r/${sub}`);
+                console.warn(`[RedditSentiment] proxy-reddit batched request failed: ${res.status}`);
                 return 0;
             }
 
@@ -112,47 +74,110 @@ export class RedditSentimentService {
 
             if (posts.length === 0) return 0;
 
-            const rows = posts.map(post => ({
-                feed_name: `r/${post.subreddit || sub}`,
-                feed_category: 'retail_sentiment',
-                title: post.title,
-                link: post.permalink || post.url,
-                description: post.selftext.substring(0, 1500) || post.title,
-                published_at: post.created_utc
-                    ? new Date(post.created_utc * 1000).toISOString()
-                    : new Date().toISOString(),
-                expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-                tickers_mentioned: [ticker],
-                keywords: [
-                    ticker, 'reddit', post.subreddit || sub,
-                    post.author,
-                    `score:${post.score}`,
-                    `comments:${post.num_comments}`,
-                ]
-            }));
+            // Attribute posts to tickers (since Apify returns a mixed list)
+            const rows: any[] = [];
+            const seenLinks = new Set<string>();
 
-            // Deduplicate by link within this batch
-            const seen = new Set<string>();
-            const uniqueRows = rows.filter(r => {
-                if (seen.has(r.link)) return false;
-                seen.add(r.link);
-                return true;
+            for (const post of posts) {
+                if (seenLinks.has(post.permalink)) continue;
+                seenLinks.add(post.permalink);
+
+                // Find which tickers are mentioned in this specific post
+                const content = `${post.title} ${post.selftext}`.toUpperCase();
+                const matchedTickers = searchTickers.filter(t => {
+                    // Match boundary: $TICKER or TICKER with spaces
+                    const regex = new RegExp(`(\\$\\b${t}\\b|\\b${t}\\b)`, 'i');
+                    return regex.test(content);
+                });
+
+                // If no tickers matched from our search list (rare for search results but possible), 
+                // skip or attribute to the first ticker as a fallback.
+                if (matchedTickers.length === 0) continue;
+
+                rows.push({
+                    feed_name: `r/${post.subreddit || SEARCH_SUBREDDIT}`,
+                    feed_category: 'retail_sentiment',
+                    title: post.title,
+                    link: post.permalink || post.url,
+                    description: post.selftext.substring(0, 1500) || post.title,
+                    published_at: post.created_utc
+                        ? new Date(post.created_utc * 1000).toISOString()
+                        : new Date().toISOString(),
+                    expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+                    tickers_mentioned: matchedTickers,
+                    keywords: [
+                        ...matchedTickers, 'reddit', post.subreddit || SEARCH_SUBREDDIT,
+                        post.author,
+                        `score:${post.score}`,
+                        `comments:${post.num_comments}`,
+                    ]
+                });
+            }
+
+            if (rows.length === 0) return 0;
+
+            console.log(`[RedditSentiment] Requesting Gemini sentiment for ${rows.length} posts...`);
+
+            // Limit to 20 posts max for Gemini to avoid massive prompts/timeouts in a single batched call
+            const postsToScore = rows.slice(0, 20);
+
+            const prompt = `
+Analyze the financial sentiment of the following Reddit posts.
+For each post, provide a sentiment score and a brief reasoning.
+- sentiment_score: Number from -1.0 (extremely bearish/negative) to 1.0 (extremely bullish/positive). 0.0 is neutral.
+- sentiment_reasoning: 1-2 succinct sentences explaining why, referencing the specific tickers mentioned.
+
+Posts:
+${postsToScore.map((r, i) => `[Post ${i}] Title: ${r.title}\nContent: ${r.description.substring(0, 300)}`).join('\n\n')}
+`;
+
+            const { GeminiService } = await import('@/services/gemini');
+
+            const geminiRes = await GeminiService.generate({
+                prompt,
+                systemInstruction: "You are a specialized retail sentiment analyzer. Output a JSON array with exactly as many items as the input posts, in the exact same order.",
+                model: 'gemini-2.5-flash',
+                temperature: 0.1,
+                responseSchema: {
+                    type: "ARRAY",
+                    description: "An array of sentiment analyses, one for each post in order.",
+                    items: {
+                        type: "OBJECT",
+                        properties: {
+                            sentiment_score: { type: "NUMBER", description: "Score from -1.0 to 1.0" },
+                            sentiment_reasoning: { type: "STRING", description: "1-2 sentence reasoning" }
+                        },
+                        required: ["sentiment_score", "sentiment_reasoning"]
+                    }
+                }
             });
 
+            if (geminiRes.success && Array.isArray(geminiRes.data)) {
+                const scores = geminiRes.data;
+                // Apply scores back to the rows
+                for (let i = 0; i < scores.length && i < postsToScore.length; i++) {
+                    const analysis = scores[i];
+                    postsToScore[i].sentiment_score = analysis.sentiment_score || 0;
+                    postsToScore[i].sentiment_reasoning = analysis.sentiment_reasoning || 'No reasoning provided.';
+                }
+            } else {
+                console.warn(`[RedditSentiment] Gemini scoring failed, proceeding without scores. Error:`, geminiRes.error);
+            }
+
             const { error } = await supabase.from('rss_cache').upsert(
-                uniqueRows as any[],
+                postsToScore, // Only insert the scored ones to keep db lean
                 { onConflict: 'link' }
             );
 
             if (error) {
-                console.error(`[RedditSentiment] DB insert error for ${ticker} r/${sub}:`, error.message);
+                console.error(`[RedditSentiment] DB insert error for batched run:`, error.message);
                 return 0;
             }
 
-            return uniqueRows.length;
+            return postsToScore.length;
 
         } catch (err) {
-            console.warn(`[RedditSentiment] Failed for ${ticker} in r/${sub}:`, err);
+            console.error('[RedditSentiment] Fatal batched error:', err);
             return 0;
         }
     }
