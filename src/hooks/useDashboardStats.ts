@@ -21,11 +21,11 @@ export function useDashboardStats() {
     useEffect(() => {
         async function fetchStats() {
             try {
-                // 1. Get active signals (status = 'open')
+                // 1. Get active signals
                 const { count: activeCount } = await supabase
                     .from('signals')
                     .select('*', { count: 'exact', head: true })
-                    .eq('status', 'open');
+                    .eq('status', 'active');
 
                 // 2. Get win rate & PnL from outcomes
                 const { data: outcomes } = await supabase
