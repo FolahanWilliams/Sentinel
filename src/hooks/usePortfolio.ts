@@ -69,7 +69,7 @@ export function usePortfolio(): PortfolioData {
                 .from('portfolio_config')
                 .select('*')
                 .limit(1)
-                .single();
+                .maybeSingle();
 
             setConfig(cfgData ? {
                 id: cfgData.id,

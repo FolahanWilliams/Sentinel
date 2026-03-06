@@ -175,7 +175,6 @@ export class ScannerService {
         const startTime = Date.now();
         let eventsFound = 0;
         let signalsGenerated = 0;
-        const errors: string[] = [];
         const skippedTickers: string[] = [];
 
         console.log(`[Scanner] Initiating ${scanType.toUpperCase()} scan...`);
@@ -431,7 +430,9 @@ If there is genuinely no major news, return: {"events": []}`,
                                 let quote: any;
                                 try {
                                     quote = await MarketDataService.getQuote(ev.ticker);
-                                } catch { /* ignore */ }
+                                } catch (e: any) {
+                                    console.warn(`[Scanner] Quote fetch failed for ${ev.ticker}:`, e.message);
+                                }
 
                                 const priceDrop = quote ? quote.changePercent : -10; // Mocked if api fails
 
@@ -731,7 +732,10 @@ If there is genuinely no major news, return: {"events": []}`,
                                                     let satQuote;
                                                     try {
                                                         satQuote = await MarketDataService.getQuote(sat.ticker);
-                                                    } catch { continue; } // skip if no quote
+                                                    } catch (e: any) {
+                                                        console.warn(`[Scanner] Contagion: skipping ${sat.ticker}, no quote:`, e.message);
+                                                        continue;
+                                                    }
 
                                                     const satDrop = satQuote.changePercent;
                                                     // Only evaluate if satellite is actually dropping
@@ -851,7 +855,6 @@ If there is genuinely no major news, return: {"events": []}`,
 
         } catch (e: any) {
             console.error('[Scanner] Fatal error:', e);
-            errors.push(e.message);
 
             // Attempt to update log as failed
             await supabase.from('scan_logs')
