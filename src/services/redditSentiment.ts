@@ -25,13 +25,18 @@ interface RedditPost {
     upvote_ratio: number;
 }
 
-// Subreddits to scan for each ticker search
-const SENTIMENT_SUBREDDITS = ['wallstreetbets', 'stocks', 'investing'] as const;
+// Primary subreddit for ticker-specific searches (highest retail volume).
+// Each Apify run takes 10-30s and costs compute credits, so we limit to
+// the single most impactful sub for searches. Hot-listing still supports all.
+const SEARCH_SUBREDDIT = 'wallstreetbets';
 
 export class RedditSentimentService {
     /**
-     * Fetch latest posts matching specific tickers from financial subreddits
+     * Fetch latest posts matching specific tickers from r/wallstreetbets
      * and cache them into the rss_cache table as 'retail_sentiment'.
+     *
+     * Runs up to 5 ticker searches in parallel to minimize latency.
+     * Each search is a separate Apify actor run (~10-30s).
      *
      * @param tickers Array of tickers to search for (e.g. ['AAPL', 'NVDA'])
      */
@@ -39,88 +44,28 @@ export class RedditSentimentService {
         if (!tickers || tickers.length === 0) return 0;
 
         console.log(`[RedditSentiment] Fetching retail sentiment for ${tickers.length} tickers...`);
-        let totalCached = 0;
 
         try {
             const session = await supabase.auth.getSession();
             const token = session.data.session?.access_token || '';
             const edgeUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/proxy-reddit`;
 
-            // Max 5 tickers per run to stay within rate limits
+            // Cap at 5 tickers to limit Apify compute usage
             const searchTickers = tickers.slice(0, 5);
 
-            for (const ticker of searchTickers) {
-                for (const sub of SENTIMENT_SUBREDDITS) {
-                    try {
-                        const res = await fetch(edgeUrl, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Authorization': `Bearer ${token}`
-                            },
-                            body: JSON.stringify({
-                                subreddit: sub,
-                                query: ticker,
-                                sort: 'new',
-                                limit: 10,
-                            })
-                        });
+            // Run all ticker searches in parallel — each is an independent Apify run
+            const results = await Promise.allSettled(
+                searchTickers.map(ticker =>
+                    RedditSentimentService.fetchAndCacheForTicker(
+                        edgeUrl, token, SEARCH_SUBREDDIT, ticker
+                    )
+                )
+            );
 
-                        if (!res.ok) {
-                            console.warn(`[RedditSentiment] proxy-reddit returned ${res.status} for ${ticker} in r/${sub}`);
-                            continue;
-                        }
-
-                        const data = await res.json();
-                        const posts: RedditPost[] = data.posts || [];
-
-                        if (posts.length > 0) {
-                            const rows = posts.map(post => ({
-                                feed_name: `r/${sub}`,
-                                feed_category: 'retail_sentiment',
-                                title: post.title,
-                                link: post.permalink || post.url,
-                                description: post.selftext.substring(0, 1500) || post.title,
-                                published_at: post.created_utc
-                                    ? new Date(post.created_utc * 1000).toISOString()
-                                    : new Date().toISOString(),
-                                expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-                                tickers_mentioned: [ticker],
-                                keywords: [
-                                    ticker, 'reddit', sub,
-                                    post.author,
-                                    ...(post.link_flair_text ? [post.link_flair_text] : []),
-                                    `score:${post.score}`,
-                                    `comments:${post.num_comments}`,
-                                ]
-                            }));
-
-                            // Deduplicate by link within this batch
-                            const seen = new Set<string>();
-                            const uniqueRows = rows.filter(r => {
-                                if (seen.has(r.link)) return false;
-                                seen.add(r.link);
-                                return true;
-                            });
-
-                            const { error } = await supabase.from('rss_cache').upsert(
-                                uniqueRows as any[],
-                                { onConflict: 'link' }
-                            );
-
-                            if (error) {
-                                console.error(`[RedditSentiment] DB insert error for ${ticker} r/${sub}:`, error.message);
-                            } else {
-                                totalCached += uniqueRows.length;
-                            }
-                        }
-
-                        // Rate-limit: 2s between requests (Reddit allows 100 QPM on OAuth)
-                        await new Promise(resolve => setTimeout(resolve, 2000));
-
-                    } catch (err) {
-                        console.warn(`[RedditSentiment] Failed for ${ticker} in r/${sub}:`, err);
-                    }
+            let totalCached = 0;
+            for (const result of results) {
+                if (result.status === 'fulfilled') {
+                    totalCached += result.value;
                 }
             }
 
@@ -129,6 +74,85 @@ export class RedditSentimentService {
 
         } catch (err) {
             console.error('[RedditSentiment] Fatal error:', err);
+            return 0;
+        }
+    }
+
+    /**
+     * Search a single subreddit for a single ticker and cache results.
+     */
+    private static async fetchAndCacheForTicker(
+        edgeUrl: string,
+        token: string,
+        sub: string,
+        ticker: string,
+    ): Promise<number> {
+        try {
+            const res = await fetch(edgeUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    subreddit: sub,
+                    query: ticker,
+                    sort: 'new',
+                    limit: 15,
+                })
+            });
+
+            if (!res.ok) {
+                console.warn(`[RedditSentiment] proxy-reddit returned ${res.status} for ${ticker} in r/${sub}`);
+                return 0;
+            }
+
+            const data = await res.json();
+            const posts: RedditPost[] = data.posts || [];
+
+            if (posts.length === 0) return 0;
+
+            const rows = posts.map(post => ({
+                feed_name: `r/${post.subreddit || sub}`,
+                feed_category: 'retail_sentiment',
+                title: post.title,
+                link: post.permalink || post.url,
+                description: post.selftext.substring(0, 1500) || post.title,
+                published_at: post.created_utc
+                    ? new Date(post.created_utc * 1000).toISOString()
+                    : new Date().toISOString(),
+                expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+                tickers_mentioned: [ticker],
+                keywords: [
+                    ticker, 'reddit', post.subreddit || sub,
+                    post.author,
+                    `score:${post.score}`,
+                    `comments:${post.num_comments}`,
+                ]
+            }));
+
+            // Deduplicate by link within this batch
+            const seen = new Set<string>();
+            const uniqueRows = rows.filter(r => {
+                if (seen.has(r.link)) return false;
+                seen.add(r.link);
+                return true;
+            });
+
+            const { error } = await supabase.from('rss_cache').upsert(
+                uniqueRows as any[],
+                { onConflict: 'link' }
+            );
+
+            if (error) {
+                console.error(`[RedditSentiment] DB insert error for ${ticker} r/${sub}:`, error.message);
+                return 0;
+            }
+
+            return uniqueRows.length;
+
+        } catch (err) {
+            console.warn(`[RedditSentiment] Failed for ${ticker} in r/${sub}:`, err);
             return 0;
         }
     }

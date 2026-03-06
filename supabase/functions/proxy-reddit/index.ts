@@ -35,14 +35,14 @@ interface RedditPost {
 }
 
 /**
- * Run the Apify Reddit Scraper actor synchronously and return results.
+ * Run the Apify Reddit Scraper actor and return results in a single call.
  *
- * Uses Apify's `waitForFinish` parameter to block until the actor completes
- * (up to 40s, well within the Supabase Edge Function 60s timeout).
+ * Uses the `run-sync-get-dataset-items` endpoint which:
+ *   1. Starts the actor run
+ *   2. Waits for completion (up to 300s max, we cap at 45s via AbortController)
+ *   3. Returns the dataset items directly in the response body
  *
- * Flow:
- *   1. POST /acts/{actorId}/runs?waitForFinish=40  → starts run & waits
- *   2. GET  /datasets/{datasetId}/items             → retrieves scraped data
+ * This eliminates the need for a separate dataset fetch call.
  */
 async function fetchViaApify(
   subreddit: string,
@@ -56,12 +56,18 @@ async function fetchViaApify(
   }
 
   // ── Build actor input ──
-  // The trudax/reddit-scraper accepts startUrls or searches
   const input: Record<string, unknown> = {
     maxItems: limit,
     maxPostCount: limit,
-    maxComments: 0,         // We only need posts, not comment threads
-    proxy: { useApifyProxy: true },
+    maxComments: 0,
+    skipComments: true,
+    sort,
+    time: 'day',
+    scrollTimeout: 40,
+    proxy: {
+      useApifyProxy: true,
+      apifyProxyGroups: ['RESIDENTIAL'],
+    },
   }
 
   if (query) {
@@ -76,15 +82,14 @@ async function fetchViaApify(
     }]
   }
 
-  // ── Step 1: Start actor run and wait for completion ──
-  const runUrl = `${APIFY_BASE}/acts/${APIFY_REDDIT_ACTOR}/runs?waitForFinish=40`
+  // ── Single call: run actor + get dataset items ──
+  const url = `${APIFY_BASE}/acts/${APIFY_REDDIT_ACTOR}/run-sync-get-dataset-items?format=json`
 
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 45_000)
 
-  let datasetId: string
   try {
-    const runRes = await fetch(runUrl, {
+    const res = await fetch(url, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apifyToken}`,
@@ -94,97 +99,77 @@ async function fetchViaApify(
       signal: controller.signal,
     })
 
-    if (!runRes.ok) {
-      const errText = await runRes.text()
-      throw new Error(`Apify actor run failed: ${runRes.status} ${errText.substring(0, 300)}`)
+    if (res.status === 408) {
+      throw new Error('Apify actor run timed out (exceeded sync limit)')
     }
 
-    const runData = await runRes.json()
-    const status = runData?.data?.status
-
-    if (status !== 'SUCCEEDED') {
-      throw new Error(`Apify actor run did not succeed: status=${status}`)
+    if (!res.ok) {
+      const errText = await res.text()
+      throw new Error(`Apify run-sync failed: ${res.status} ${errText.substring(0, 300)}`)
     }
 
-    datasetId = runData?.data?.defaultDatasetId
-    if (!datasetId) {
-      throw new Error('Apify run completed but no datasetId returned')
-    }
-  } finally {
-    clearTimeout(timeout)
-  }
-
-  // ── Step 2: Fetch results from the dataset ──
-  const datasetUrl = `${APIFY_BASE}/datasets/${datasetId}/items?format=json&limit=${limit}`
-
-  const dsController = new AbortController()
-  const dsTimeout = setTimeout(() => dsController.abort(), 10_000)
-
-  try {
-    const dsRes = await fetch(datasetUrl, {
-      headers: { 'Authorization': `Bearer ${apifyToken}` },
-      signal: dsController.signal,
-    })
-
-    if (!dsRes.ok) {
-      throw new Error(`Apify dataset fetch failed: ${dsRes.status}`)
-    }
-
-    const items: any[] = await dsRes.json()
+    const items: any[] = await res.json()
     return normalizeApifyItems(items, subreddit)
   } finally {
-    clearTimeout(dsTimeout)
+    clearTimeout(timeout)
   }
 }
 
 /**
  * Normalize Apify Reddit Scraper output into our standard RedditPost shape.
- * The scraper returns fields like: id, title, body, username, upVotes,
- * numberOfComments, url, createdAt, communityName, etc.
+ *
+ * Apify trudax/reddit-scraper returns items with dataType "post" or "comment".
+ * Post fields: id, parsedId, title, body, username, communityName,
+ *              parsedCommunityName, upVotes, numberOfComments, url,
+ *              createdAt (ISO 8601), over18, isVideo, isAd, scrapedAt
  */
 function normalizeApifyItems(items: any[], fallbackSubreddit: string): RedditPost[] {
   const posts: RedditPost[] = []
   const seenIds = new Set<string>()
 
   for (const item of items) {
-    const id = item.id || item.dataId || ''
+    // Skip comments — we only want posts
+    if (item.dataType === 'comment') continue
+
+    // Skip ads
+    if (item.isAd) continue
+
+    const id = item.parsedId || item.id || ''
     if (!id || seenIds.has(id)) continue
     seenIds.add(id)
 
-    // Apify fields vary slightly by actor version; handle common variants
     const title = item.title || ''
-    const selftext = (item.body || item.selftext || item.text || '').substring(0, 2000)
-    const author = item.username || item.author || item.parsedUser?.name || '[deleted]'
-    const score = item.upVotes ?? item.score ?? item.ups ?? 0
-    const numComments = item.numberOfComments ?? item.num_comments ?? item.numComments ?? 0
-    const postUrl = item.url || ''
-    const permalink = item.url?.startsWith('https://www.reddit.com')
-      ? item.url
-      : postUrl
-    const createdAt = item.createdAt || item.created_utc || item.scrapedAt || ''
-    const createdUtc = typeof createdAt === 'number'
-      ? createdAt
-      : Math.floor(new Date(createdAt).getTime() / 1000) || 0
-    const subreddit = item.communityName || item.subreddit || fallbackSubreddit
-    const flair = item.flair || item.link_flair_text || null
-    const upvoteRatio = item.upvoteRatio ?? item.upVoteRatio ?? 0
+    if (!title) continue
 
-    if (title) {
-      posts.push({
-        id,
-        title,
-        selftext,
-        author,
-        score,
-        num_comments: numComments,
-        url: postUrl,
-        permalink,
-        created_utc: createdUtc,
-        subreddit,
-        link_flair_text: flair,
-        upvote_ratio: upvoteRatio,
-      })
-    }
+    const selftext = (item.body || '').substring(0, 2000)
+    const author = item.username || '[deleted]'
+    const score = item.upVotes ?? 0
+    const numComments = item.numberOfComments ?? 0
+    const postUrl = item.url || ''
+
+    // createdAt is ISO 8601 string from Apify — convert to unix timestamp
+    const createdAt = item.createdAt || item.scrapedAt || ''
+    const createdUtc = createdAt
+      ? Math.floor(new Date(createdAt).getTime() / 1000) || 0
+      : 0
+
+    // communityName comes as "r/stocks", parsedCommunityName as "stocks"
+    const subreddit = item.parsedCommunityName || item.communityName?.replace(/^r\//, '') || fallbackSubreddit
+
+    posts.push({
+      id,
+      title,
+      selftext,
+      author,
+      score,
+      num_comments: numComments,
+      url: postUrl,
+      permalink: postUrl, // Apify url field is already the full permalink
+      created_utc: createdUtc,
+      subreddit,
+      link_flair_text: null, // Not provided by this actor
+      upvote_ratio: 0,       // Not provided by this actor
+    })
   }
 
   return posts
