@@ -21,9 +21,14 @@ export interface TASnapshot {
     atr14: number | null;
     volumeRatio: number | null;
     bollingerPosition: number | null;
+    zScore20: number | null;
+    gapPct: number | null;
+    gapType: GapType;
     trendDirection: 'bullish' | 'bearish' | 'neutral';
     taScore: number;
 }
+
+export type GapType = 'common' | 'breakaway' | 'exhaustion' | 'none';
 
 export interface Signal {
     id: string;
