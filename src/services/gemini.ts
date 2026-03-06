@@ -91,7 +91,10 @@ export class GeminiService {
             let parsedData: T | null = null;
             if (req.responseSchema && data.text) {
                 try {
-                    parsedData = JSON.parse(data.text) as T;
+                    // Strip markdown code fences — grounded search calls skip responseSchema
+                    // on the proxy side, so Gemini may wrap JSON in ```json ... ```
+                    const cleanText = data.text.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+                    parsedData = JSON.parse(cleanText) as T;
                 } catch {
                     console.error('[GeminiService] Failed to parse JSON response:', data.text?.slice(0, 200));
                     throw new Error('Gemini returned invalid JSON');
@@ -171,7 +174,8 @@ export class GeminiService {
             let parsedData: T | null = null;
             if (req.responseSchema && data.text) {
                 try {
-                    parsedData = JSON.parse(data.text) as T;
+                    const cleanText = data.text.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+                    parsedData = JSON.parse(cleanText) as T;
                 } catch {
                     console.error('[GeminiService] Multi-turn JSON parse failed:', data.text?.slice(0, 200));
                     throw new Error('Gemini returned invalid JSON in multi-turn');

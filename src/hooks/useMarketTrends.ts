@@ -79,7 +79,8 @@ export function useMarketTrends() {
             if (geminiErr) throw new Error(geminiErr.message);
 
             if (geminiRes?.text) {
-                const parsed = JSON.parse(geminiRes.text);
+                const cleanText = geminiRes.text.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+                const parsed = JSON.parse(cleanText);
                 const trendsData: MarketTrendsData = {
                     midTerm: (parsed.midTerm || []).slice(0, 3),
                     longTerm: (parsed.longTerm || []).slice(0, 3),

@@ -114,7 +114,8 @@ export function useUpcomingEvents() {
             if (geminiErr) throw new Error(geminiErr.message);
 
             if (geminiRes?.text) {
-                const parsed = JSON.parse(geminiRes.text);
+                const cleanText = geminiRes.text.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+                const parsed = JSON.parse(cleanText);
                 const eventsData: UpcomingEventsData = {
                     notable: (parsed.notable || []).slice(0, 3),
                     earnings: (parsed.earnings || []).slice(0, 5),

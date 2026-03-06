@@ -1081,7 +1081,8 @@ If there is genuinely no major news, return: {"events": []}`,
             if (geminiErr) throw new Error(geminiErr.message);
 
             if (geminiRes?.text) {
-                const parsed = JSON.parse(geminiRes.text);
+                const cleanText = geminiRes.text.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+                const parsed = JSON.parse(cleanText);
                 const discovered = (parsed.tickers || []).slice(0, count).map((t: any) => ({
                     ticker: (t.ticker || '').toUpperCase().replace(/[^A-Z]/g, ''),
                     reason: t.reason || 'Trending',
