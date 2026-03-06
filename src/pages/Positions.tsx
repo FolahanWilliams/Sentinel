@@ -6,6 +6,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo, Fragment } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
 import { MarketDataService } from '@/services/marketData';
 import { PostMortemService } from '@/services/postMortemService';
@@ -44,20 +45,26 @@ interface LiveQuote {
 }
 
 export function Positions() {
+    const [searchParams] = useSearchParams();
+    const prefillTicker = searchParams.get('ticker') || '';
+    const prefillEntry = searchParams.get('entry') || '';
+    const prefillSide = (searchParams.get('side') === 'short' ? 'short' : 'long') as 'long' | 'short';
+    const hasPrefill = !!prefillTicker;
+
     const [positions, setPositions] = useState<Position[]>([]);
     const [loading, setLoading] = useState(true);
-    const [showForm, setShowForm] = useState(false);
+    const [showForm, setShowForm] = useState(hasPrefill);
     const [showCloseModal, setShowCloseModal] = useState<string | null>(null);
     const [liveQuotes, setLiveQuotes] = useState<Record<string, LiveQuote>>({});
     const [quotesLoading, setQuotesLoading] = useState(false);
     const [generatingPostMortem, setGeneratingPostMortem] = useState<string | null>(null);
     const [expandedNotes, setExpandedNotes] = useState<string | null>(null);
 
-    // Form state
-    const [formTicker, setFormTicker] = useState('');
-    const [formSide, setFormSide] = useState<'long' | 'short'>('long');
+    // Form state — initialized from URL params when present
+    const [formTicker, setFormTicker] = useState(prefillTicker);
+    const [formSide, setFormSide] = useState<'long' | 'short'>(prefillSide);
     const [formShares, setFormShares] = useState('');
-    const [formEntryPrice, setFormEntryPrice] = useState('');
+    const [formEntryPrice, setFormEntryPrice] = useState(prefillEntry);
     const [formNotes, setFormNotes] = useState('');
 
     // Close form state

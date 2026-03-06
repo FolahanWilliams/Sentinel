@@ -20,7 +20,7 @@ export function SentinelPanel() {
     const [searchParams, setSearchParams] = useSearchParams();
 
     // Filter State
-    const [searchQuery, setSearchQuery] = useState('');
+    const [searchQuery, setSearchQuery] = useState(() => searchParams.get('q') || '');
     const [activeCategories, setActiveCategories] = useState<Set<ArticleCategory>>(new Set());
     const [activeSentiment, setActiveSentiment] = useState<'all' | 'bullish' | 'bearish'>('all');
     const [highImpactOnly, setHighImpactOnly] = useState(false);
