@@ -340,8 +340,16 @@ export class ScannerService {
                         const tickerSearchResult = await GeminiService.generate<any>({
                             prompt: `Find the most significant news event for stock ticker ${ticker} from the last 48 hours. Focus on earnings, analyst ratings, product launches, M&A, regulatory decisions, tariffs, partnerships, or any catalyst that could move the stock price.
 
+Severity scale (1-10):
+- 1-3: Minor news, unlikely to move stock
+- 4-5: Moderate news, could cause 2-5% move
+- 6-7: Major news, likely 5-10% move
+- 8-10: Extreme / breaking news, >10% move potential
+
+Assign severity based on actual market impact potential. Earnings surprises, analyst rating changes, regulatory decisions, and M&A activity should typically be severity 5+.
+
 Return your answer as a JSON object in this exact format (no markdown, no extra text):
-{"events": [{"ticker": "${ticker}", "event_type": "earnings_miss|analyst_upgrade|product_launch|m_and_a|regulatory|tariff|partnership|price_movement|other", "headline": "one-line headline", "severity": 5}]}
+{"events": [{"ticker": "${ticker}", "event_type": "earnings_miss|analyst_upgrade|product_launch|m_and_a|regulatory|tariff|partnership|price_movement|other", "headline": "one-line headline", "severity": 6}]}
 
 If there is genuinely no major news, return: {"events": []}`,
                             requireGroundedSearch: true,
@@ -408,7 +416,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                 event_type: ev.event_type,
                                 headline: ev.headline,
                                 severity: ev.severity,
-                                is_overreaction_candidate: ev.severity >= 5,
+                                is_overreaction_candidate: ev.severity >= 4,
                                 source_type: 'rss'
                             } as any).select('id').single();
 
@@ -426,7 +434,7 @@ If there is genuinely no major news, return: {"events": []}`,
                             }
 
                             // 6. Trigger Deep Analysis Pipeline if moderate-to-severe
-                            if (savedEvent && ev.severity >= 5) {
+                            if (savedEvent && ev.severity >= 4) {
                                 console.log(`[Scanner] Deep analysis triggered for ${ev.ticker} (severity=${ev.severity}): ${ev.headline}`);
                                 // Fetch live quote for context
                                 let quote: any;
