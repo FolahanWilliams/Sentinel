@@ -476,7 +476,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                     if (pastSignals && pastSignals.length > 0) {
                                         const lines = pastSignals.map((s: any) => {
                                             const outcome = s.signal_outcomes?.[0];
-                                            const ret = outcome?.return_at_5d != null ? `${outcome.return_at_5d > 0 ? '+' : ''}${outcome.return_at_5d.toFixed(1)}%` : 'pending';
+                                            const ret = outcome?.return_at_5d != null ? `${Number(outcome.return_at_5d) > 0 ? '+' : ''}${Number(outcome.return_at_5d).toFixed(1)}%` : 'pending';
                                             return `- ${s.signal_type} (conf: ${s.confidence_score}) → ${outcome?.outcome || 'pending'} (5d: ${ret})`;
                                         });
                                         historicalCtx = `\n\nHISTORICAL SIGNALS FOR ${ev.ticker} (last ${pastSignals.length}):\n${lines.join('\n')}\nUse this history to calibrate — if past signals for this ticker failed, be MORE skeptical.`;
@@ -596,7 +596,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                                 stopLoss = Math.round(atrStop * 100) / 100;
                                             }
                                             const breakevenTarget = entryPrice + taSnapshot.atr14;
-                                            trailingStopRule = `Move stop to breakeven ($${entryPrice.toFixed(2)}) after price reaches $${breakevenTarget.toFixed(2)} (+1x ATR). Trail by 1.5x ATR thereafter.`;
+                                            trailingStopRule = `Move stop to breakeven ($${Number(entryPrice).toFixed(2)}) after price reaches $${Number(breakevenTarget).toFixed(2)} (+1x ATR). Trail by 1.5x ATR thereafter.`;
                                         }
 
                                         // Calibrated confidence
@@ -1200,7 +1200,7 @@ If there is genuinely no major news, return: {"events": []}`,
                 .eq('id', scanLog.id);
         }
 
-        const summary = `Discovery scan complete: ${discovered.length} tickers found, ${totalSignals} signals generated in ${(duration / 1000).toFixed(1)}s`;
+        const summary = `Discovery scan complete: ${discovered.length} tickers found, ${totalSignals} signals generated in ${(Number(duration) / 1000).toFixed(1)}s`;
         console.log(`[Scanner] ${summary}`);
         onProgress?.(summary);
 

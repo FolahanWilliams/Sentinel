@@ -373,17 +373,17 @@ export class TechnicalAnalysisService {
             ? (snapshot.macd.histogram > 0 ? 'bullish momentum' : 'bearish momentum')
             : 'N/A';
         const volLabel = snapshot.volumeRatio !== null
-            ? `${snapshot.volumeRatio.toFixed(1)}x avg (${snapshot.volumeRatio > 1.2 ? 'confirming' : snapshot.volumeRatio < 0.5 ? 'weak' : 'normal'})`
+            ? `${Number(snapshot.volumeRatio).toFixed(1)}x avg (${Number(snapshot.volumeRatio) > 1.2 ? 'confirming' : Number(snapshot.volumeRatio) < 0.5 ? 'weak' : 'normal'})`
             : 'N/A';
 
         return `
 TECHNICAL ANALYSIS SNAPSHOT:
-- RSI(14): ${snapshot.rsi14?.toFixed(1) ?? 'N/A'} (${rsiLabel})
-- MACD: ${snapshot.macd?.value.toFixed(3) ?? 'N/A'} (Signal: ${snapshot.macd?.signal.toFixed(3) ?? 'N/A'}, Histogram: ${snapshot.macd?.histogram.toFixed(3) ?? 'N/A'} — ${macdLabel})
-- Trend: Price ${snapshot.sma50 !== null && snapshot.sma200 !== null ? `${snapshot.trendDirection} (SMA50: $${snapshot.sma50.toFixed(2)}, SMA200: $${snapshot.sma200.toFixed(2)})` : 'N/A'}
-- Volatility: ATR(14) = $${snapshot.atr14?.toFixed(2) ?? 'N/A'}
+- RSI(14): ${Number(snapshot.rsi14).toFixed(1) || 'N/A'} (${rsiLabel})
+- MACD: ${Number(snapshot.macd?.value).toFixed(3) || 'N/A'} (Signal: ${Number(snapshot.macd?.signal).toFixed(3) || 'N/A'}, Histogram: ${Number(snapshot.macd?.histogram).toFixed(3) || 'N/A'} — ${macdLabel})
+- Trend: Price ${snapshot.sma50 !== null && snapshot.sma200 !== null ? `${snapshot.trendDirection} (SMA50: $${Number(snapshot.sma50).toFixed(2)}, SMA200: $${Number(snapshot.sma200).toFixed(2)})` : 'N/A'}
+- Volatility: ATR(14) = $${Number(snapshot.atr14).toFixed(2) || 'N/A'}
 - Volume: ${volLabel}
-- Bollinger Position: ${snapshot.bollingerPosition !== null ? (snapshot.bollingerPosition * 100).toFixed(0) + '% (0=lower, 100=upper)' : 'N/A'}
+- Bollinger Position: ${snapshot.bollingerPosition !== null ? (Number(snapshot.bollingerPosition) * 100).toFixed(0) + '% (0=lower, 100=upper)' : 'N/A'}
 - Composite TA Score: ${snapshot.taScore} (-100 bearish to +100 bullish)
 
 Use this technical context to validate or invalidate the thesis. A bullish news catalyst with bearish technicals (RSI >70, below 200 SMA, declining volume) should significantly lower your confidence.`;

@@ -135,7 +135,7 @@ export class PositionSizer {
                 if (matching.length >= 5) {
                     const wins = matching.filter((o: any) => o.outcome === 'win').length;
                     actualWinRate = wins / matching.length;
-                    console.log(`[PositionSizer] Actual DB win rate for ${signalType}: ${(actualWinRate * 100).toFixed(1)}% (n=${matching.length})`);
+                    console.log(`[PositionSizer] Actual DB win rate for ${signalType}: ${(Number(actualWinRate) * 100).toFixed(1)}% (n=${matching.length})`);
                 }
             }
         } catch { /* fall through to calibrator */ }
@@ -182,7 +182,7 @@ export class PositionSizer {
             stopLoss = Math.round((entryPrice - taSnapshot.atr14 * 1.5) * 100) / 100;
             stopDistancePct = (taSnapshot.atr14 * 1.5) / entryPrice;
             const breakevenTarget = entryPrice + taSnapshot.atr14;
-            trailingStopRule = `Move stop to breakeven ($${entryPrice.toFixed(2)}) after price reaches $${breakevenTarget.toFixed(2)} (+1x ATR). Trail by 1.5x ATR thereafter.`;
+            trailingStopRule = `Move stop to breakeven ($${Number(entryPrice).toFixed(2)}) after price reaches $${Number(breakevenTarget).toFixed(2)} (+1x ATR). Trail by 1.5x ATR thereafter.`;
         }
 
         // 5. Method 1: Fixed percentage (simple)

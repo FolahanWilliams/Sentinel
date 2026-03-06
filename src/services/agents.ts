@@ -58,7 +58,7 @@ export class AgentService {
 
         const marketBlock = marketContext
             ? `\n\nMARKET CONTEXT:
-    52-Week High: $${marketContext.fiftyTwoWeekHigh?.toFixed(2) ?? 'N/A'} | 52-Week Low: $${marketContext.fiftyTwoWeekLow?.toFixed(2) ?? 'N/A'}
+    52-Week High: $${Number(marketContext.fiftyTwoWeekHigh).toFixed(2) || 'N/A'} | 52-Week Low: $${Number(marketContext.fiftyTwoWeekLow).toFixed(2) || 'N/A'}
     Average Volume: ${marketContext.avgVolume?.toLocaleString() ?? 'N/A'} | Current Volume: ${marketContext.currentVolume?.toLocaleString() ?? 'N/A'}
     Sector Performance: ${marketContext.sectorPerformance ?? 'N/A'}`
             : '';
@@ -68,7 +68,7 @@ export class AgentService {
 
         const prompt = `
     TICKER: ${ticker}
-    CURRENT PRICE: $${currentPrice.toFixed(2)} (Down ${priceDropPct.toFixed(2)}%)
+    CURRENT PRICE: $${Number(currentPrice).toFixed(2)} (Down ${Number(priceDropPct).toFixed(2)}%)
     EVENT HEADLINE: ${eventHeadline}
     EVENT DESCRIPTION: ${eventDesc}
     ${marketBlock}${taBlock}${histBlock}${perfBlock}
@@ -116,7 +116,7 @@ export class AgentService {
     EPICENTER NEWS: ${epicenterNews}
 
     SATELLITE TICKER: ${satelliteTicker}
-    SATELLITE DROP: ${satelliteDropPct.toFixed(2)}%
+    SATELLITE DROP: ${Number(satelliteDropPct).toFixed(2)}%
     ${marketBlock}${perfBlock}
     Evaluate if ${satelliteTicker} is dropping purely in sympathy and lacks real exposure to the Epicenter's core issue.
     Think step-by-step in your reasoning before reaching your verdict.
@@ -162,7 +162,7 @@ export class AgentService {
 
         const prompt = `
     TICKER: ${ticker}
-    PRICE DROP: ${priceDropPct.toFixed(2)}%
+    PRICE DROP: ${Number(priceDropPct).toFixed(2)}%
     
     EPS EXPECTED: ${epsEstimate} | EPS ACTUAL: ${epsActual}
     REV EXPECTED: ${revenueEstimate} | REV ACTUAL: ${revenueActual}
