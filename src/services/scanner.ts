@@ -733,7 +733,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                                     gap_fill_target: gapFill.gapFillTarget,
                                                 } : null,
                                             },
-                                            status: 'open',
+                                            status: 'active',
                                             secondary_biases: [],
                                             sources: [],
                                             is_paper: false
@@ -873,7 +873,9 @@ If there is genuinely no major news, return: {"events": []}`,
                                                                     red_team: contagionSanity.data,
                                                                     epicenter: { ticker: ev.ticker, headline: ev.headline }
                                                                 },
-                                                                status: 'open',
+                                                                status: 'active',
+                                                                calibrated_confidence: contagion.data.confidence_score,
+                                                                data_quality: 'partial',
                                                                 secondary_biases: ['herding'],
                                                                 sources: [],
                                                                 is_paper: false
@@ -1087,13 +1089,26 @@ If there is genuinely no major news, return: {"events": []}`,
                             overreaction: analysis.data,
                             red_team: sanity.data
                         },
-                        status: 'open',
+                        status: 'active',
+                        calibrated_confidence: analysis.data.confidence_score,
+                        data_quality: 'partial',
                         sources: [],
                         is_paper: isPaper
                     } as any).select().single();
 
                     if (savedSignal) {
                         NotificationService.checkAndDispatchAlerts(savedSignal);
+
+                        // Seed outcome tracking so OutcomeTracker can follow this signal
+                        const entryPrice = (analysis.data.suggested_entry_low + analysis.data.suggested_entry_high) / 2;
+                        await supabase.from('signal_outcomes').insert({
+                            signal_id: savedSignal.id,
+                            ticker: ticker,
+                            entry_price: entryPrice,
+                            outcome: 'pending',
+                            hit_stop_loss: false,
+                            hit_target: false,
+                        } as any);
                     }
                 }
             }
