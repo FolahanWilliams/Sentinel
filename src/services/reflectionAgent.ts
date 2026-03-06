@@ -214,7 +214,7 @@ Analyze this data and generate the Lessons Learned rules.`;
             const relevant = reflection.lessons.filter(lesson => {
                 const matchesBias = !biasType || lesson.bias_type === biasType || lesson.bias_type === 'all';
                 const matchesSector = !sector || lesson.sector === sector || lesson.sector === 'all';
-                return matchesBias || matchesSector;
+                return matchesBias && matchesSector;
             });
 
             if (relevant.length === 0) return '';

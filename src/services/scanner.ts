@@ -1068,18 +1068,59 @@ If there is genuinely no major news, return: {"events": []}`,
                 );
 
                 if (sanity.success && sanity.data?.passes_sanity_check) {
-                    // 7. Save Signal
+                    // 7. TA snapshot + self-critique + calibration (matching full scan pipeline)
                     signalsGenerated = 1;
 
-                    // Confluence for discovery scan signal
+                    // 7a. TA snapshot
+                    let singleTaSnapshot = null;
+                    let singleTaAlignment: string = 'unavailable';
+                    try {
+                        singleTaSnapshot = await TechnicalAnalysisService.getSnapshot(ticker);
+                        if (singleTaSnapshot) {
+                            const taScore = singleTaSnapshot.taScore;
+                            singleTaAlignment = taScore >= 60 ? 'confirmed' : taScore >= 40 ? 'partial' : 'conflicting';
+                        }
+                    } catch { /* non-fatal */ }
+
+                    // 7b. Self-critique
+                    let singleConfidence = analysis.data.confidence_score;
+                    let critiqueOutput = null;
+                    try {
+                        const critique = await SelfCritiqueAgent.critique(
+                            analysis.data, sanity.data, analysis.data.confidence_score
+                        );
+                        if (critique.success && critique.data) {
+                            critiqueOutput = critique.data;
+                            const rawAdj = critique.data.adjusted_confidence ?? singleConfidence;
+                            const maxReduction = 30;
+                            singleConfidence = Math.min(
+                                singleConfidence,
+                                Math.max(30, Math.max(rawAdj, singleConfidence - maxReduction))
+                            );
+                        }
+                    } catch { /* non-fatal */ }
+
+                    // Drop if self-critique pushed below threshold
+                    if (singleConfidence < 50) {
+                        console.log(`[Scanner] Single-ticker ${ticker} dropped by self-critique: ${analysis.data.confidence_score}→${singleConfidence}`);
+                    } else {
+                    // 7c. Calibrated confidence
+                    let calibratedConf = singleConfidence;
+                    try {
+                        const curve = await ConfidenceCalibrator.getCachedCurve();
+                        calibratedConf = ConfidenceCalibrator.getCalibratedWinRate(singleConfidence, curve);
+                    } catch { /* non-fatal */ }
+
+                    // 7d. Confluence with TA
                     const discConfluence = TechnicalAnalysisService.computeConfluence(
-                        null, 'long', analysis.data.confidence_score
+                        singleTaSnapshot, 'long', singleConfidence
                     );
 
                     const { data: savedSignal } = await supabase.from('signals').insert({
                         ticker: ticker,
                         signal_type: 'long_overreaction',
-                        confidence_score: analysis.data.confidence_score,
+                        confidence_score: singleConfidence,
+                        calibrated_confidence: calibratedConf,
                         risk_level: sanity.data.risk_score > 80 ? 'low' : 'medium',
                         bias_type: 'recency_bias',
                         thesis: analysis.data.thesis,
@@ -1088,15 +1129,17 @@ If there is genuinely no major news, return: {"events": []}`,
                         suggested_entry_high: analysis.data.suggested_entry_high,
                         stop_loss: analysis.data.stop_loss,
                         target_price: analysis.data.target_price,
+                        ta_snapshot: singleTaSnapshot,
+                        ta_alignment: singleTaAlignment,
                         confluence_score: discConfluence.score,
                         confluence_level: discConfluence.level,
                         agent_outputs: {
                             overreaction: analysis.data,
-                            red_team: sanity.data
+                            red_team: sanity.data,
+                            self_critique: critiqueOutput,
                         },
                         status: 'active',
-                        calibrated_confidence: analysis.data.confidence_score,
-                        data_quality: 'partial',
+                        data_quality: singleTaSnapshot ? 'full' : 'partial',
                         sources: [],
                         is_paper: isPaper
                     } as any).select().single();
@@ -1114,6 +1157,7 @@ If there is genuinely no major news, return: {"events": []}`,
                             hit_target: false,
                         } as any);
                     }
+                    } // end self-critique else
                 }
             }
 

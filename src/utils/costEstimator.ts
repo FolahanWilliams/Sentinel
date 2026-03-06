@@ -12,6 +12,8 @@ import { DEFAULT_DAILY_BUDGET, DEFAULT_MONTHLY_BUDGET } from '@/config/constants
 const GEMINI_FLASH_RATES = { inputPer1M: 0.075, outputPer1M: 0.30, groundedPer1M: 0.50 };
 const PRICING: Record<string, { inputPer1M: number; outputPer1M: number; groundedPer1M: number }> = {
     'gemini-3-flash-preview': GEMINI_FLASH_RATES,  // default model logged by proxy-gemini
+    'gemini-3.1-flash-lite': GEMINI_FLASH_RATES,  // used by PostMortemService
+    'gemini-3.1-flash-lite-preview': GEMINI_FLASH_RATES,
     'gemini-2.0-flash': GEMINI_FLASH_RATES,  // fallback, kept for historical usage logs
     'gemini-3-flash': GEMINI_FLASH_RATES,
     'ai-scraper': GEMINI_FLASH_RATES,
