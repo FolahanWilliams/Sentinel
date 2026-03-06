@@ -28,15 +28,17 @@ export const ScanResults: React.FC = () => {
             setLoading(true);
             // Show signals from the last 24 hours
             const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+            // Use select('*') because columns like confluence_level, ta_alignment exist
+            // in Postgres (added by migrations) but aren't in the generated Supabase types yet
             const { data, error } = await supabase
                 .from('signals')
-                .select('id, ticker, signal_type, confidence_score, thesis, target_price, stop_loss, suggested_entry_low, suggested_entry_high, confluence_level, ta_alignment, risk_level, created_at')
+                .select('*')
                 .gte('created_at', since)
                 .order('created_at', { ascending: false })
                 .limit(10);
 
             if (error) throw error;
-            setSignals(data || []);
+            setSignals((data as unknown as RecentSignal[]) || []);
         } catch (err) {
             console.error('[ScanResults] Fetch error:', err);
         } finally {
