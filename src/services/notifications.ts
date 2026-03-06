@@ -96,11 +96,16 @@ export class NotificationService {
                 return;
             }
 
-            // Check custom rules
+            // Check custom rules — if user has defined alert rules, only alert on matches.
+            // If no rules exist (default), the smart quality gates above are sufficient.
             const matches = getMatchingAlertRules(signal);
-            if (matches.length === 0) return;
+            const hasCustomRules = (() => { try { return !!localStorage.getItem('sentinel_alert_rules'); } catch { return false; } })();
+            if (hasCustomRules && matches.length === 0) {
+                console.log(`[NotificationService] Skipping alert for ${signal.ticker} — no matching custom alert rules`);
+                return;
+            }
 
-            console.log(`[NotificationService] Smart alert: ${signal.ticker} (conf=${conf}, TA=${taAlign}) matched ${matches.length} rule(s).`);
+            console.log(`[NotificationService] Smart alert: ${signal.ticker} (conf=${conf}, TA=${taAlign})${matches.length > 0 ? ` matched ${matches.length} rule(s)` : ' (no custom rules, using quality gates)'}.`);
 
             // Build TA summary for email
             let taSummary = '';

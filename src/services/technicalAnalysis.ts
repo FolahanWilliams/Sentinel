@@ -83,9 +83,14 @@ function computeMACD(closes: number[]): { value: number; signal: number; histogr
     let ema12Running = closes.slice(0, 12).reduce((a, b) => a + b, 0) / 12;
     let ema26Running = closes.slice(0, 26).reduce((a, b) => a + b, 0) / 26;
 
+    // Update EMA12 for bars 12-25 (these were skipped before, causing initial inaccuracy)
+    for (let i = 12; i < 26 && i < closes.length; i++) {
+        ema12Running = (closes[i] ?? 0) * k12 + ema12Running * (1 - k12);
+    }
+
     for (let i = 26; i < closes.length; i++) {
         const c = closes[i] ?? 0;
-        if (i >= 12) ema12Running = c * k12 + ema12Running * (1 - k12);
+        ema12Running = c * k12 + ema12Running * (1 - k12);
         ema26Running = c * k26 + ema26Running * (1 - k26);
         macdSeries.push(ema12Running - ema26Running);
     }

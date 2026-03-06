@@ -252,6 +252,17 @@ serve(async (req) => {
         const durationMs = Date.now() - startTime
 
         // 7. Phase 2 fix (Audit M3 detailed): Await the usage log insert instead of fire-and-forget
+        // Model-specific pricing (per 1M tokens)
+        const PRICING: Record<string, { input: number; output: number; grounded: number }> = {
+            'gemini-3-flash-preview': { input: 0.075, output: 0.30, grounded: 0.50 },
+            'gemini-3-flash': { input: 0.075, output: 0.30, grounded: 0.50 },
+            'gemini-3.1-flash-lite': { input: 0.02, output: 0.08, grounded: 0.08 },
+            'gemini-3.1-flash-lite-preview': { input: 0.02, output: 0.08, grounded: 0.08 },
+            'gemini-2.0-flash': { input: 0.075, output: 0.30, grounded: 0.50 },
+            'gemini-2.0-flash-lite': { input: 0.02, output: 0.08, grounded: 0.08 },
+        }
+        const rates = PRICING[effectiveModel] || PRICING['gemini-3-flash-preview']!
+        const outputRate = requireGroundedSearch ? rates.grounded : rates.output
         const { error: logError } = await supabaseAdmin.from('api_usage').insert({
             provider: effectiveModel,
             endpoint: 'generateContent',
@@ -260,7 +271,7 @@ serve(async (req) => {
             grounded_search_used: requireGroundedSearch,
             latency_ms: durationMs,
             success: true,
-            estimated_cost_usd: (totalInputTokens / 1_000_000 * 0.075) + (totalOutputTokens / 1_000_000 * 0.30)
+            estimated_cost_usd: (totalInputTokens / 1_000_000 * rates.input) + (totalOutputTokens / 1_000_000 * outputRate)
         })
         if (logError) console.error('[proxy-gemini] Failed to log usage:', logError)
 
