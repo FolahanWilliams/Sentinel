@@ -12,8 +12,9 @@ import {
     History, Play, BarChart3, TrendingUp, TrendingDown,
     Target, Shield, DollarSign, Activity,
     AlertTriangle, Loader2, Award, Flame, Zap,
-    Calendar, Filter, ArrowUpRight, ArrowDownRight,
+    Calendar, Filter, ArrowUpRight, ArrowDownRight, Radar,
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
 import { runBacktest, BacktestResult, BacktestParams, WinRateBreakdown, ConfidenceCalibrationPoint, MonthlyReturn } from '@/services/backtestEngine';
@@ -293,6 +294,22 @@ export function Backtest() {
                     <p className="text-sentinel-400 mt-1.5 text-sm">
                         Replay historical signal outcomes to evaluate AI agent accuracy and calibration
                     </p>
+                </div>
+                <div className="flex items-center gap-2">
+                    <Link
+                        to="/"
+                        className="flex items-center gap-2 px-4 py-2 bg-sentinel-800/60 hover:bg-sentinel-800 text-sentinel-200 text-sm font-medium rounded-lg border border-sentinel-700/50 transition-colors no-underline"
+                    >
+                        <Zap className="w-4 h-4" />
+                        Live Signals
+                    </Link>
+                    <Link
+                        to="/scanner"
+                        className="flex items-center gap-2 px-4 py-2 bg-sentinel-800/60 hover:bg-sentinel-800 text-sentinel-200 text-sm font-medium rounded-lg border border-sentinel-700/50 transition-colors no-underline"
+                    >
+                        <Radar className="w-4 h-4" />
+                        Scanner
+                    </Link>
                 </div>
             </div>
 

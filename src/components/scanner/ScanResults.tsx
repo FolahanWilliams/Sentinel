@@ -198,7 +198,7 @@ export const ScanResults: React.FC = () => {
                                     </span>
                                 )}
                                 <Link
-                                    to={`/analysis`}
+                                    to={`/analysis/${sig.ticker}`}
                                     className="ml-auto flex items-center text-indigo-400 hover:text-indigo-300 transition-colors no-underline"
                                 >
                                     Full Analysis <ChevronRight className="w-3 h-3 ml-0.5" />

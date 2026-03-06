@@ -19,7 +19,7 @@ import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 import {
     Activity, BookOpen, Clock, Filter, Loader2, RefreshCw,
     TrendingUp, ChevronDown, ChevronUp, X, Calculator, Shield,
-    XCircle, MessageSquare, CheckCircle2, BarChart3,
+    XCircle, MessageSquare, CheckCircle2, BarChart3, Newspaper, Radar,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePortfolio } from '@/hooks/usePortfolio';
@@ -742,6 +742,24 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                                             className="px-3 py-1.5 bg-emerald-600/15 hover:bg-emerald-600/25 text-emerald-400 rounded-lg text-xs font-medium transition-colors ring-1 ring-emerald-500/30 flex items-center gap-1.5 border-none cursor-pointer"
                                                         >
                                                             <BookOpen className="w-3 h-3" /> Log Trade
+                                                        </button>
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                navigate(`/intelligence?q=${signal.ticker}`);
+                                                            }}
+                                                            className="px-3 py-1.5 bg-purple-600/15 hover:bg-purple-600/25 text-purple-400 rounded-lg text-xs font-medium transition-colors ring-1 ring-purple-500/30 flex items-center gap-1.5 border-none cursor-pointer"
+                                                        >
+                                                            <Newspaper className="w-3 h-3" /> News
+                                                        </button>
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                navigate(`/research/${signal.ticker}`);
+                                                            }}
+                                                            className="px-3 py-1.5 bg-sentinel-800/70 hover:bg-sentinel-700/70 text-sentinel-300 rounded-lg text-xs font-medium transition-colors ring-1 ring-sentinel-700/50 flex items-center gap-1.5 border-none cursor-pointer"
+                                                        >
+                                                            <Radar className="w-3 h-3" /> Research
                                                         </button>
                                                         <button
                                                             onClick={(e) => {
