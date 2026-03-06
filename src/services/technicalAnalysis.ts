@@ -8,7 +8,7 @@
  */
 
 import { supabase } from '@/config/supabase';
-import type { TASnapshot, TAAlignment, ConfluenceLevel } from '@/types/signals';
+import type { TASnapshot, TAAlignment, ConfluenceLevel, GapType } from '@/types/signals';
 
 interface OHLCV {
     date: string;
@@ -148,6 +148,52 @@ function computeVolumeRatio(volumes: number[], period: number = 20): number | nu
     return (volumes[volumes.length - 1] ?? 0) / avgVol;
 }
 
+/**
+ * Z-Score: how many standard deviations the current price is from its SMA.
+ * Z < -2.0 = extremely oversold, Z > +2.0 = extremely overbought.
+ */
+function computeZScore(closes: number[], period: number = 20): number | null {
+    if (closes.length < period) return null;
+    const slice = closes.slice(-period);
+    const sma = slice.reduce((a, b) => a + b, 0) / period;
+    const variance = slice.reduce((sum, c) => sum + Math.pow(c - sma, 2), 0) / period;
+    const stdDev = Math.sqrt(variance);
+    if (stdDev === 0) return 0;
+    const currentPrice = closes[closes.length - 1] ?? 0;
+    return (currentPrice - sma) / stdDev;
+}
+
+/**
+ * Gap detection: % difference between today's open and yesterday's close.
+ * Also classifies the gap type based on volume.
+ */
+function computeGap(bars: OHLCV[]): { gapPct: number; gapType: GapType } {
+    if (bars.length < 2) return { gapPct: 0, gapType: 'none' };
+    const today = bars[bars.length - 1]!;
+    const yesterday = bars[bars.length - 2]!;
+    const gapPct = ((today.open - yesterday.close) / yesterday.close) * 100;
+
+    if (Math.abs(gapPct) < 1.0) return { gapPct, gapType: 'none' };
+
+    // Classify gap using volume context
+    const volumes = bars.map(b => b.volume);
+    const volRatio = computeVolumeRatio(volumes, 20);
+
+    if (volRatio !== null && volRatio > 2.0) {
+        // Extremely high volume — could be breakaway (new trend) or exhaustion (end of trend)
+        // Heuristic: if price was already trending in the gap direction, it's exhaustion
+        const recentCloses = bars.slice(-10).map(b => b.close);
+        const sma10 = recentCloses.reduce((a, b) => a + b, 0) / recentCloses.length;
+        const wasTrending = gapPct > 0
+            ? yesterday.close > sma10 * 1.02  // was already above 10-SMA — exhaustion gap up
+            : yesterday.close < sma10 * 0.98; // was already below 10-SMA — exhaustion gap down
+        return { gapPct, gapType: wasTrending ? 'exhaustion' : 'breakaway' };
+    }
+
+    // Low-to-moderate volume gap = common gap (high fill probability)
+    return { gapPct, gapType: 'common' };
+}
+
 // ─── Main Service ───
 
 export class TechnicalAnalysisService {
@@ -192,6 +238,8 @@ export class TechnicalAnalysisService {
         const atr14 = computeATR(bars, 14);
         const volumeRatio = computeVolumeRatio(volumes, 20);
         const bollingerPosition = computeBollingerPosition(closes, 20, 2);
+        const zScore20 = computeZScore(closes, 20);
+        const { gapPct, gapType } = computeGap(bars);
 
         // Determine trend direction
         const currentPrice = closes[closes.length - 1] ?? 0;
@@ -223,6 +271,18 @@ export class TechnicalAnalysisService {
             if (bollingerPosition < 0.1) taScore += 15;  // Near lower band = bullish
             else if (bollingerPosition > 0.9) taScore -= 15;  // Near upper band = bearish
         }
+        // Z-Score extreme: statistically significant deviation from mean
+        if (zScore20 !== null) {
+            if (zScore20 < -2.5) taScore += 20;          // Extreme oversold
+            else if (zScore20 < -2.0) taScore += 15;
+            else if (zScore20 > 2.5) taScore -= 20;       // Extreme overbought
+            else if (zScore20 > 2.0) taScore -= 15;
+        }
+        // Gap exhaustion = reversal signal
+        if (gapType === 'exhaustion') {
+            if (gapPct > 0) taScore -= 10;  // Exhaustion gap up = bearish signal
+            else taScore += 10;              // Exhaustion gap down = bullish signal
+        }
         // Clamp to -100..+100
         taScore = Math.max(-100, Math.min(100, taScore));
 
@@ -236,6 +296,9 @@ export class TechnicalAnalysisService {
             atr14,
             volumeRatio,
             bollingerPosition,
+            zScore20: zScore20 !== null ? Math.round(zScore20 * 100) / 100 : null,
+            gapPct: Math.round(gapPct * 100) / 100,
+            gapType,
             trendDirection,
             taScore,
         };
@@ -324,7 +387,7 @@ export class TechnicalAnalysisService {
         if (!snapshot) return { score: newsConfidence * 0.5, level: 'weak' };
 
         const alignment = this.evaluateAlignment(snapshot, signalDirection);
-        const { rsi14, volumeRatio, taScore } = snapshot;
+        const { rsi14, volumeRatio, zScore20, taScore } = snapshot;
 
         let taConfirmations = 0;
 
@@ -335,6 +398,15 @@ export class TechnicalAnalysisService {
         } else {
             if (rsi14 !== null && rsi14 > 65) taConfirmations += 25;
             else if (rsi14 !== null && rsi14 > 55) taConfirmations += 10;
+        }
+
+        // Z-Score confirmation (statistical extreme)
+        if (signalDirection === 'long') {
+            if (zScore20 !== null && zScore20 < -2.5) taConfirmations += 20;
+            else if (zScore20 !== null && zScore20 < -2.0) taConfirmations += 15;
+        } else {
+            if (zScore20 !== null && zScore20 > 2.5) taConfirmations += 20;
+            else if (zScore20 !== null && zScore20 > 2.0) taConfirmations += 15;
         }
 
         // Volume surge confirmation (>150% avg)
@@ -362,6 +434,40 @@ export class TechnicalAnalysisService {
     }
 
     /**
+     * Detect gap-fill opportunities.
+     * Returns a gap-fill target price if the gap is likely to fill, or null if no opportunity.
+     */
+    static evaluateGapFill(
+        snapshot: TASnapshot | null,
+        previousClose: number
+    ): { isCandidate: boolean; gapFillTarget: number | null; gapType: GapType; gapPct: number } {
+        if (!snapshot || snapshot.gapType === 'none' || snapshot.gapPct === null) {
+            return { isCandidate: false, gapFillTarget: null, gapType: 'none', gapPct: 0 };
+        }
+
+        const { gapType, gapPct } = snapshot;
+
+        // Common gaps have high fill probability (paper: "usually filled in 1-3 days")
+        // Exhaustion gaps also fill as they mark trend ends
+        // Breakaway gaps should NOT be faded — they indicate new trends
+        if (gapType === 'breakaway') {
+            return { isCandidate: false, gapFillTarget: null, gapType, gapPct };
+        }
+
+        // Only consider gaps > 2% magnitude
+        if (Math.abs(gapPct) < 2.0) {
+            return { isCandidate: false, gapFillTarget: null, gapType, gapPct };
+        }
+
+        return {
+            isCandidate: true,
+            gapFillTarget: previousClose,  // Target = fill the gap back to yesterday's close
+            gapType,
+            gapPct,
+        };
+    }
+
+    /**
      * Format a TA snapshot as a text block for injection into Gemini prompts.
      */
     static formatForPrompt(snapshot: TASnapshot | null): string {
@@ -376,6 +482,14 @@ export class TechnicalAnalysisService {
             ? `${Number(snapshot.volumeRatio).toFixed(1)}x avg (${Number(snapshot.volumeRatio) > 1.2 ? 'confirming' : Number(snapshot.volumeRatio) < 0.5 ? 'weak' : 'normal'})`
             : 'N/A';
 
+        const zLabel = snapshot.zScore20 !== null
+            ? (snapshot.zScore20 < -2.5 ? 'EXTREME oversold' : snapshot.zScore20 < -2.0 ? 'oversold' : snapshot.zScore20 > 2.5 ? 'EXTREME overbought' : snapshot.zScore20 > 2.0 ? 'overbought' : 'normal')
+            : 'N/A';
+
+        const gapLabel = snapshot.gapType !== 'none' && snapshot.gapPct !== null
+            ? `${snapshot.gapPct > 0 ? '+' : ''}${Number(snapshot.gapPct).toFixed(1)}% (${snapshot.gapType} gap — ${snapshot.gapType === 'common' ? 'high fill probability' : snapshot.gapType === 'exhaustion' ? 'reversal likely' : 'new trend signal'})`
+            : 'No significant gap';
+
         return `
 TECHNICAL ANALYSIS SNAPSHOT:
 - RSI(14): ${Number(snapshot.rsi14).toFixed(1) || 'N/A'} (${rsiLabel})
@@ -384,8 +498,10 @@ TECHNICAL ANALYSIS SNAPSHOT:
 - Volatility: ATR(14) = $${Number(snapshot.atr14).toFixed(2) || 'N/A'}
 - Volume: ${volLabel}
 - Bollinger Position: ${snapshot.bollingerPosition !== null ? (Number(snapshot.bollingerPosition) * 100).toFixed(0) + '% (0=lower, 100=upper)' : 'N/A'}
+- Z-Score(20): ${snapshot.zScore20 !== null ? Number(snapshot.zScore20).toFixed(2) : 'N/A'} (${zLabel}) — measures standard deviations from 20-day mean. Below -2.0 = statistically oversold. Above +2.0 = overbought.
+- Gap: ${gapLabel}
 - Composite TA Score: ${snapshot.taScore} (-100 bearish to +100 bullish)
 
-Use this technical context to validate or invalidate the thesis. A bullish news catalyst with bearish technicals (RSI >70, below 200 SMA, declining volume) should significantly lower your confidence.`;
+Use this technical context to validate or invalidate the thesis. A bullish news catalyst with bearish technicals (RSI >70, Z-Score >+2, below 200 SMA, declining volume) should significantly lower your confidence. Conversely, Z-Score < -2.0 with high volume confirms a selling climax — ideal for mean-reversion longs.`;
     }
 }

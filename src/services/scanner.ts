@@ -27,6 +27,7 @@ import { responseValidator } from '@/utils/responseValidator';
 import { TechnicalAnalysisService } from './technicalAnalysis';
 import { ConfidenceCalibrator } from './confidenceCalibrator';
 import { SelfCritiqueAgent } from './selfCritique';
+import { SentimentDivergenceDetector } from './sentimentDivergence';
 
 export class ScannerService {
 
@@ -493,6 +494,29 @@ If there is genuinely no major news, return: {"events": []}`,
                                     }
                                 } catch { /* non-fatal */ }
 
+                                // 6c. Sentiment-Price Divergence Analysis
+                                let divergenceCtx = '';
+                                let divergenceResult = null;
+                                try {
+                                    const zScore = earlyTaSnapshot?.zScore20 ?? null;
+                                    divergenceResult = await SentimentDivergenceDetector.analyze(ev.ticker, zScore);
+                                    divergenceCtx = SentimentDivergenceDetector.formatForPrompt(divergenceResult);
+                                    if (divergenceResult.divergenceType !== 'neutral') {
+                                        console.log(`[Scanner] Sentiment divergence for ${ev.ticker}: ${divergenceResult.divergenceType} (boost=${divergenceResult.confidenceBoost})`);
+                                    }
+                                } catch { /* non-fatal */ }
+
+                                // 6d. Gap-Fill Detection
+                                let gapCtx = '';
+                                const gapFill = TechnicalAnalysisService.evaluateGapFill(earlyTaSnapshot, quote.previousClose ?? 0);
+                                if (gapFill.isCandidate) {
+                                    gapCtx = `\nGAP ANALYSIS: ${ev.ticker} gapped ${gapFill.gapPct > 0 ? 'UP' : 'DOWN'} ${Math.abs(gapFill.gapPct).toFixed(1)}% (${gapFill.gapType} gap). Gap-fill target: $${Number(gapFill.gapFillTarget).toFixed(2)}. Common and exhaustion gaps have high fill probability within 1-3 days.`;
+                                    console.log(`[Scanner] Gap detected for ${ev.ticker}: ${gapFill.gapType} gap ${gapFill.gapPct.toFixed(1)}%`);
+                                }
+
+                                // Combine TA + divergence + gap into unified context for the agent
+                                const enrichedTaContext = earlyTaContext + divergenceCtx + gapCtx;
+
                                 // Pipeline A: Overreaction Analysis
                                 const analysis = await AgentService.evaluateOverreaction(
                                     ev.ticker,
@@ -502,7 +526,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                     priceDrop,
                                     perfContext,
                                     marketContext,
-                                    earlyTaContext,
+                                    enrichedTaContext,
                                     historicalCtx
                                 );
 
@@ -592,6 +616,15 @@ If there is genuinely no major news, return: {"events": []}`,
                                             console.warn(`[Scanner] Self-critique failed for ${ev.ticker} (non-fatal):`, critiqueErr);
                                         }
 
+                                        // 7.6. SENTIMENT DIVERGENCE BOOST — adjust confidence based on narrative-price divergence
+                                        if (divergenceResult && divergenceResult.confidenceBoost !== 0) {
+                                            const before = analysis.data.confidence_score;
+                                            analysis.data.confidence_score = Math.min(100, Math.max(30,
+                                                analysis.data.confidence_score + divergenceResult.confidenceBoost
+                                            ));
+                                            console.log(`[Scanner] Divergence ${divergenceResult.divergenceType} adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${divergenceResult.confidenceBoost > 0 ? '+' : ''}${divergenceResult.confidenceBoost})`);
+                                        }
+
                                         // 8. WINNER! WE HAVE A SIGNAL.
                                         signalsGenerated++;
 
@@ -608,6 +641,18 @@ If there is genuinely no major news, return: {"events": []}`,
                                             }
                                             const breakevenTarget = entryPrice + taSnapshot.atr14;
                                             trailingStopRule = `Move stop to breakeven ($${Number(entryPrice).toFixed(2)}) after price reaches $${Number(breakevenTarget).toFixed(2)} (+1x ATR). Trail by 1.5x ATR thereafter.`;
+                                        }
+
+                                        // Gap-fill target: if there's a fillable gap, use it as a conservative target
+                                        // when the Gemini target is further away
+                                        if (gapFill.isCandidate && gapFill.gapFillTarget && gapFill.gapPct < 0) {
+                                            // Gap DOWN with fill candidate — gap-fill target is above current price
+                                            const gapTarget = gapFill.gapFillTarget;
+                                            if (analysis.data.target_price && gapTarget < analysis.data.target_price) {
+                                                // Gap-fill is a closer, more conservative target — note it in the trailing stop
+                                                trailingStopRule = (trailingStopRule || '') +
+                                                    ` Gap-fill interim target: $${Number(gapTarget).toFixed(2)} (${gapFill.gapType} gap, ${Math.abs(gapFill.gapPct).toFixed(1)}%).`;
+                                            }
                                         }
 
                                         // Calibrated confidence
@@ -674,7 +719,19 @@ If there is genuinely no major news, return: {"events": []}`,
                                             agent_outputs: {
                                                 overreaction: analysis.data,
                                                 red_team: sanity.data,
-                                                self_critique: critiqueOutput
+                                                self_critique: critiqueOutput,
+                                                sentiment_divergence: divergenceResult ? {
+                                                    type: divergenceResult.divergenceType,
+                                                    sentiment_avg: divergenceResult.sentimentAvg,
+                                                    sentiment_trend: divergenceResult.sentimentTrend,
+                                                    confidence_boost: divergenceResult.confidenceBoost,
+                                                    article_count: divergenceResult.articleCount,
+                                                } : null,
+                                                gap_analysis: gapFill.isCandidate ? {
+                                                    gap_pct: gapFill.gapPct,
+                                                    gap_type: gapFill.gapType,
+                                                    gap_fill_target: gapFill.gapFillTarget,
+                                                } : null,
                                             },
                                             status: 'open',
                                             secondary_biases: [],
