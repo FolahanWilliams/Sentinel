@@ -7,7 +7,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
 import { Filter, ChevronDown, ChevronRight, Clock, ArrowLeft, Radar } from 'lucide-react';
 import { formatPrice } from '@/utils/formatters';
@@ -103,8 +103,6 @@ export function Analysis() {
     }
 
     if (loading) return <LoadingState message="Loading signals..." />;
-
-    const navigate = useNavigate();
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">

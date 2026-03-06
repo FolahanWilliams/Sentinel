@@ -13,6 +13,7 @@ import { ConfidenceCalibrator } from './confidenceCalibrator';
 export interface PositionSizeResult {
     recommendedPct: number;
     usdValue: number;
+    shares?: number;
     limitReason: string | null;
     method: 'fixed_pct' | 'risk_based' | 'kelly';
     stopLoss: number | null;
@@ -105,6 +106,7 @@ export class PositionSizer {
             return {
                 recommendedPct: 1.0,
                 usdValue: 0,
+                shares: 0,
                 limitReason: 'No portfolio config — conservative 1%',
                 method: 'fixed_pct',
                 stopLoss: null,
@@ -242,9 +244,12 @@ export class PositionSizer {
             riskRewardRatio = risk > 0 ? Math.round((reward / risk) * 10) / 10 : null;
         }
 
+        const finalUsdValue = Math.round((recommendedPct / 100) * totalCapital * 100) / 100;
+
         return {
             recommendedPct: Math.round(recommendedPct * 100) / 100,
-            usdValue: Math.round((recommendedPct / 100) * totalCapital * 100) / 100,
+            usdValue: finalUsdValue,
+            shares: entryPrice > 0 ? Math.floor(finalUsdValue / entryPrice) : 0,
             limitReason,
             method,
             stopLoss,
