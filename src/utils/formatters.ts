@@ -4,17 +4,22 @@ export function formatPrice(price: number): string {
 }
 
 // Phase 4 fix (Audit m10): Show "0.00%" without sign for exactly zero
-export function formatPercent(pct: number): string {
-    if (pct === 0) return '0.00%';
-    const sign = pct > 0 ? '+' : '';
-    return `${sign}${pct.toFixed(2)}%`;
+export function formatPercent(pct: number | null | undefined): string {
+    if (pct == null) return '0.00%';
+    const num = Number(pct);
+    if (isNaN(num) || num === 0) return '0.00%';
+    const sign = num > 0 ? '+' : '';
+    return `${sign}${num.toFixed(2)}%`;
 }
 
-export function formatNumber(n: number): string {
-    if (n >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
-    if (n >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
-    if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
-    return n.toFixed(0);
+export function formatNumber(n: number | null | undefined): string {
+    if (n == null) return '0';
+    const num = Number(n);
+    if (isNaN(num)) return '0';
+    if (num >= 1e9) return `${(num / 1e9).toFixed(1)}B`;
+    if (num >= 1e6) return `${(num / 1e6).toFixed(1)}M`;
+    if (num >= 1e3) return `${(num / 1e3).toFixed(1)}K`;
+    return num.toFixed(0);
 }
 
 export function formatVolume(vol: number): string { return formatNumber(vol); }

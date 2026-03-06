@@ -55,11 +55,10 @@ export function MarketSnapshot() {
     return (
         <div className="glass-panel-heavy overflow-hidden relative">
             {/* Subtle gradient background accent */}
-            <div className={`absolute inset-0 pointer-events-none opacity-[0.03] ${
-                broadDirection === 'bullish' ? 'bg-gradient-to-br from-emerald-500 to-transparent' :
-                broadDirection === 'bearish' ? 'bg-gradient-to-br from-red-500 to-transparent' :
-                'bg-gradient-to-br from-blue-500 to-transparent'
-            }`} />
+            <div className={`absolute inset-0 pointer-events-none opacity-[0.03] ${broadDirection === 'bullish' ? 'bg-gradient-to-br from-emerald-500 to-transparent' :
+                    broadDirection === 'bearish' ? 'bg-gradient-to-br from-red-500 to-transparent' :
+                        'bg-gradient-to-br from-blue-500 to-transparent'
+                }`} />
 
             <div className="relative z-10">
                 {/* Top bar: Title + Status + Refresh */}
@@ -190,16 +189,15 @@ export function MarketSnapshot() {
                                 )}
                                 <span className="text-xs font-medium text-sentinel-300">
                                     Broad market:
-                                    <span className={`ml-1 font-bold ${
-                                        broadDirection === 'bullish' ? 'text-emerald-400' :
-                                        broadDirection === 'bearish' ? 'text-red-400' : 'text-amber-400'
-                                    }`}>
+                                    <span className={`ml-1 font-bold ${broadDirection === 'bullish' ? 'text-emerald-400' :
+                                            broadDirection === 'bearish' ? 'text-red-400' : 'text-amber-400'
+                                        }`}>
                                         {broadDirection === 'bullish' ? 'Risk-On' : broadDirection === 'bearish' ? 'Risk-Off' : 'Mixed'}
                                     </span>
                                 </span>
                             </div>
                             <div className="flex items-center gap-3 text-[10px] font-mono text-sentinel-500">
-                                <span>VIX <span className={tickers.vix.changePercent > 5 ? 'text-red-400 font-bold' : tickers.vix.changePercent < -5 ? 'text-emerald-400' : 'text-sentinel-400'}>{tickers.vix.price.toFixed(1)}</span></span>
+                                <span>VIX <span className={tickers.vix.changePercent > 5 ? 'text-red-400 font-bold' : tickers.vix.changePercent < -5 ? 'text-emerald-400' : 'text-sentinel-400'}>{Number(tickers.vix.price || 0).toFixed(1)}</span></span>
                                 <span className="text-sentinel-700">|</span>
                                 <span>F&G <span className={fgColor}>{fearGreedValue}</span></span>
                             </div>
@@ -233,14 +231,18 @@ function TickerCard({
     const changeColor = isPositive ? 'text-emerald-400' : 'text-red-400';
     const bgAccent = isPositive ? 'border-emerald-500/10' : 'border-red-500/10';
 
-    const formattedPrice = price >= 10000
-        ? price.toLocaleString(undefined, { maximumFractionDigits: 0 })
-        : price >= 100
-        ? price.toLocaleString(undefined, { maximumFractionDigits: 1 })
-        : price.toFixed(2);
+    const numPrice = Number(price || 0);
+    const numChange = Number(change || 0);
+    const numChangePercent = Number(changePercent || 0);
 
-    const formattedChange = `${changePercent >= 0 ? '+' : ''}${changePercent.toFixed(2)}%`;
-    const sparkData = generateSparkData(price, changePercent);
+    const formattedPrice = numPrice >= 10000
+        ? numPrice.toLocaleString(undefined, { maximumFractionDigits: 0 })
+        : numPrice >= 100
+            ? numPrice.toLocaleString(undefined, { maximumFractionDigits: 1 })
+            : numPrice.toFixed(2);
+
+    const formattedChange = `${numChangePercent >= 0 ? '+' : ''}${numChangePercent.toFixed(2)}%`;
+    const sparkData = generateSparkData(numPrice, numChangePercent);
 
     return (
         <div className={`bg-sentinel-950/50 p-2.5 rounded-lg border ${bgAccent} border-sentinel-800/40 hover:border-sentinel-700/60 transition-colors group`}>
@@ -252,15 +254,15 @@ function TickerCard({
                 <span className="text-sm font-bold text-sentinel-100 font-mono">{prefix}{formattedPrice}{suffix}</span>
             </div>
             <div className="flex items-center gap-1 mt-0.5">
-                {changePercent !== 0 && (
-                    changePercent > 0
+                {numChangePercent !== 0 && (
+                    numChangePercent > 0
                         ? <TrendingUp className="w-2.5 h-2.5 text-emerald-500" />
                         : <TrendingDown className="w-2.5 h-2.5 text-red-500" />
                 )}
                 <span className={`text-[10px] font-bold font-mono ${changeColor}`}>{formattedChange}</span>
-                {change !== 0 && (
+                {numChange !== 0 && (
                     <span className="text-[9px] text-sentinel-600 font-mono ml-0.5">
-                        ({change >= 0 ? '+' : ''}{Math.abs(change) >= 100 ? change.toFixed(0) : change.toFixed(2)})
+                        ({numChange >= 0 ? '+' : ''}{Math.abs(numChange) >= 100 ? numChange.toFixed(0) : numChange.toFixed(2)})
                     </span>
                 )}
             </div>
