@@ -68,10 +68,10 @@ EVALUATION CRITERIA:
 1. Play Devil's Advocate: What is the absolute strongest argument against this trade?
 2. Macro Environment: Is the broader market trend actively fighting this setup?
 3. Hidden Risks: Are there pending lawsuits, regulatory cliffs, or massive debt maturities the other agents ignored?
-4. TA CONFLUENCE CHECK: Only pass signals where technicals CONFIRM the thesis:
-   - For LONG signals: RSI < 35 (oversold) OR volume surge > 150% average required. If RSI > 65 and MACD bearish, FAIL immediately.
-   - For SHORT signals: RSI > 65 (overbought) OR breakdown below SMA200. If RSI < 35 and MACD bullish, FAIL immediately.
-   - If no TA data is available, note this as a risk factor but do not auto-fail.
+4. TA CONFLUENCE CHECK: If technical analysis data is provided, use it to evaluate confluence:
+   - For LONG signals: Oversold conditions (RSI < 35) or volume surges are supportive. RSI > 65 with bearish MACD is a strong red flag.
+   - For SHORT signals: Overbought conditions (RSI > 65) or breakdowns below SMA200 are supportive. RSI < 35 with bullish MACD is a strong red flag.
+   - If no TA data is provided, do NOT fail the signal for lack of TA — focus on fundamental and macro risks instead.
 
 If you find a fatal flaw, fail the sanity check immediately and provide the exact reason.
 Give a final 'pass/fail' verdict and a risk score (0-100).`;

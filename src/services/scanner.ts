@@ -545,7 +545,8 @@ If there is genuinely no major news, return: {"events": []}`,
                                         analysis.data.target_price,
                                         analysis.data.stop_loss,
                                         'OVERREACTION_AGENT',
-                                        perfContext
+                                        perfContext,
+                                        earlyTaContext
                                     );
 
                                     // Log sanity check result
