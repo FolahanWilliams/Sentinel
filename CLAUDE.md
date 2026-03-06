@@ -43,3 +43,10 @@ Sentinel is an AI-powered trading intelligence platform built with:
 - RSS feeds are defined in `src/config/rssFeeds.ts` (42 feeds)
 - Constants and budget defaults in `src/config/constants.ts`
 - Sentinel color palette uses `sentinel-*` Tailwind classes (sentinel-100 through sentinel-950)
+
+## Gemini API Constraints
+
+- **Model split:** `gemini-3-flash-preview` for reasoning/analysis, `gemini-2.0-flash` for grounded search calls. The proxy (`proxy-gemini/index.ts`) auto-switches based on `requireGroundedSearch`.
+- **responseSchema + Google Search are incompatible.** The Gemini API rejects requests that combine controlled generation (`responseSchema`) with the Search tool. The proxy skips `responseSchema` when grounded search is enabled.
+- **Supabase Edge Function timeout is ~60s.** The proxy uses a 45s `AbortController` to fail gracefully before the gateway kills the request (which strips CORS headers).
+- **Default model is set in two places:** `src/config/constants.ts` (`GEMINI_MODEL`) and the `model` default in `proxy-gemini/index.ts`. Keep them in sync.

@@ -206,7 +206,8 @@ serve(async (req) => {
             }
         }
 
-        if (responseSchema) {
+        // Controlled generation (responseSchema) is incompatible with Google Search tool
+        if (responseSchema && !requireGroundedSearch) {
             payload.generationConfig.responseMimeType = 'application/json'
             payload.generationConfig.responseSchema = responseSchema
         }
