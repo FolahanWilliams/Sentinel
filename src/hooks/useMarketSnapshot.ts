@@ -28,7 +28,9 @@ export interface MarketSnapshotData {
 }
 
 const CACHE_KEY = 'sentinel_market_snapshot_v2';
+const AI_CACHE_KEY = 'sentinel_market_ai_v1';
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const AI_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes — AI-generated content cached longer to prevent hallucination flicker
 
 function getCached(): MarketSnapshotData | null {
     try {
@@ -43,6 +45,32 @@ function getCached(): MarketSnapshotData | null {
 function setCache(data: MarketSnapshotData) {
     try {
         sessionStorage.setItem(CACHE_KEY, JSON.stringify({ data, timestamp: Date.now() }));
+    } catch { /* ignore */ }
+}
+
+// Separate cache for AI-generated content (headline, Fear & Greed, bullets)
+// to prevent hallucination flicker — these change less often than quotes
+interface AiContent {
+    headline: string;
+    description: string;
+    fearGreedValue: number;
+    fearGreedLabel: string;
+    summaryBullets: { color: string; text: string }[];
+}
+
+function getCachedAi(): AiContent | null {
+    try {
+        const raw = sessionStorage.getItem(AI_CACHE_KEY);
+        if (!raw) return null;
+        const { data, timestamp } = JSON.parse(raw);
+        if (Date.now() - timestamp < AI_CACHE_TTL_MS) return data;
+    } catch { /* ignore */ }
+    return null;
+}
+
+function setCachedAi(data: AiContent) {
+    try {
+        sessionStorage.setItem(AI_CACHE_KEY, JSON.stringify({ data, timestamp: Date.now() }));
     } catch { /* ignore */ }
 }
 
@@ -106,10 +134,22 @@ export function useMarketSnapshot() {
             const tnx = tickerResults.tnx ?? EMPTY_TICKER;
 
             // --- 2. Generate AI headline, summary, and get CNN Fear & Greed via Gemini ---
+            // Use cached AI content if available (30-min TTL) to prevent hallucination flicker
             let headline = 'Markets in Motion';
             let description = 'Loading market intelligence...';
             let summaryBullets: { color: string; text: string }[] = [];
+            const cachedAi = getCachedAi();
 
+            if (cachedAi) {
+                headline = cachedAi.headline;
+                description = cachedAi.description;
+                fearGreedValue = cachedAi.fearGreedValue;
+                fearGreedLabel = cachedAi.fearGreedLabel;
+                summaryBullets = cachedAi.summaryBullets;
+            }
+
+            // Only call Gemini if no cached AI content
+            if (!cachedAi) {
             try {
                 const { data: geminiRes, error: geminiErr } = await supabase.functions.invoke('proxy-gemini', {
                     body: {
@@ -151,10 +191,13 @@ export function useMarketSnapshot() {
                         color: `text-${b.color === 'gray' ? 'sentinel' : b.color}-400`,
                         text: b.text
                     }));
+                    // Cache AI content separately with longer TTL to prevent flicker
+                    setCachedAi({ headline, description, fearGreedValue, fearGreedLabel, summaryBullets });
                 }
             } catch (e) {
                 console.warn('[useMarketSnapshot] Gemini headline generation failed', e);
             }
+            } // end if (!cachedAi)
 
             // If Gemini didn't produce bullets, make simple fallback
             if (summaryBullets.length === 0) {

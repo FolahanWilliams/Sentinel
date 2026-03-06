@@ -84,6 +84,12 @@ export class MarketDataService {
                 await new Promise(res => setTimeout(res, 1000 + retryCount * 1000)); // Exponential backoff
                 return this.getQuote(ticker, forceRefresh, retryCount + 1);
             }
+            // Return stale cached data if available (prevents 0-value flicker in UI)
+            const stale = cache.get(cacheKey);
+            if (stale) {
+                console.warn(`[MarketDataService] Returning stale cache for ${ticker} after fetch failure`);
+                return stale.data as Quote;
+            }
             throw e;
         }
     }
