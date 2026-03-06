@@ -80,7 +80,9 @@ export class AgentService {
         return GeminiService.generate({
             prompt,
             systemInstruction: OVERREACTION_AGENT_PROMPT,
-            requireGroundedSearch: true,
+            // Grounded search is incompatible with responseSchema in the Gemini API.
+            // All real-time context (price, TA, market data) is already in the prompt.
+            requireGroundedSearch: false,
             responseSchema: OVERREACTION_SCHEMA,
             temperature: 0.4,
             model: GEMINI_MODEL,
@@ -126,7 +128,7 @@ export class AgentService {
         return GeminiService.generate({
             prompt,
             systemInstruction: CONTAGION_AGENT_PROMPT,
-            requireGroundedSearch: true,
+            requireGroundedSearch: false,
             responseSchema: CONTAGION_SCHEMA,
             temperature: 0.4,
             model: GEMINI_MODEL,
@@ -163,7 +165,7 @@ export class AgentService {
         const prompt = `
     TICKER: ${ticker}
     PRICE DROP: ${Number(priceDropPct).toFixed(2)}%
-    
+
     EPS EXPECTED: ${epsEstimate} | EPS ACTUAL: ${epsActual}
     REV EXPECTED: ${revenueEstimate} | REV ACTUAL: ${revenueActual}
     FORWARD GUIDANCE CONTEXT: ${guidanceDetails}
@@ -176,7 +178,7 @@ export class AgentService {
         return GeminiService.generate({
             prompt,
             systemInstruction: EARNINGS_AGENT_PROMPT,
-            requireGroundedSearch: true,
+            requireGroundedSearch: false,
             responseSchema: EARNINGS_SCHEMA,
             temperature: 0.3,
             model: GEMINI_MODEL,
@@ -203,7 +205,7 @@ export class AgentService {
         const prompt = `
     PROPOSED TRADE FOR TICKER: ${ticker}
     ORIGINATING AGENT: ${agentType}
-    
+
     THESIS: "${originalThesis}"
     TARGET: $${targetPrice} | STOP LOSS: $${stopLoss}
     ${perfBlock}
@@ -216,7 +218,7 @@ export class AgentService {
         return GeminiService.generate({
             prompt,
             systemInstruction: SANITY_CHECK_AGENT_PROMPT,
-            requireGroundedSearch: true,
+            requireGroundedSearch: false,
             responseSchema: SANITY_CHECK_SCHEMA,
             temperature: 0.5,
             model: GEMINI_MODEL,
@@ -254,7 +256,7 @@ export class AgentService {
         return GeminiService.generate({
             prompt,
             systemInstruction: CONTAGION_AGENT_PROMPT,
-            requireGroundedSearch: true,
+            requireGroundedSearch: false,
             responseSchema: SATELLITE_DISCOVERY_SCHEMA,
             temperature: 0.4,
             model: GEMINI_MODEL,
