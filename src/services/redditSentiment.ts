@@ -136,7 +136,7 @@ ${postsToScore.map((r, i) => `[Post ${i}] Title: ${r.title}\nContent: ${r.descri
             const geminiRes = await GeminiService.generate({
                 prompt,
                 systemInstruction: "You are a specialized retail sentiment analyzer. Output a JSON array with exactly as many items as the input posts, in the exact same order.",
-                model: 'gemini-2.5-flash',
+                model: 'gemini-3-flash-preview',
                 temperature: 0.1,
                 responseSchema: {
                     type: "ARRAY",
