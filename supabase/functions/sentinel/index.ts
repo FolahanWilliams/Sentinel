@@ -369,7 +369,7 @@ serve(async (req) => {
 
             // Phase 1 fix (Audit C7): Move API key from URL query param to request header
             const geminiController = new AbortController()
-            const geminiTimeout = setTimeout(() => geminiController.abort(), 30_000)
+            const geminiTimeout = setTimeout(() => geminiController.abort(), 45_000)
             let geminiRes: Response
             try {
                 geminiRes = await fetch(

@@ -41,10 +41,11 @@ async function callGemini(
     payload: any,
     apiKey: string
 ): Promise<{ data: any; text: string; inputTokens: number; outputTokens: number }> {
-    // 25s timeout — fail fast before Supabase's 60s gateway timeout kills us
+    // 45s timeout — fail fast before Supabase's 60s gateway timeout kills us
     // (gateway timeout strips CORS headers, causing client-side CORS errors)
+    // Increased from 25s: grounded search requests need more time
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 25_000)
+    const timeoutId = setTimeout(() => controller.abort(), 45_000)
 
     try {
         const geminiRes = await fetch(
