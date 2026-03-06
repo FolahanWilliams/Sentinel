@@ -19,6 +19,7 @@ import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 import {
     Activity, BookOpen, Clock, Filter, Loader2, RefreshCw,
     TrendingUp, ChevronDown, ChevronUp, X, Calculator, Shield,
+    XCircle, MessageSquare, CheckCircle2, BarChart3,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePortfolio } from '@/hooks/usePortfolio';
@@ -42,6 +43,10 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
     const [scanning, setScanning] = useState(false);
     const [scanStatus, setScanStatus] = useState<string | null>(null);
     const [expandedId, setExpandedId] = useState<string | null>(null);
+    const [notesId, setNotesId] = useState<string | null>(null);
+    const [notesText, setNotesText] = useState('');
+    const [savingNotes, setSavingNotes] = useState(false);
+    const [closingId, setClosingId] = useState<string | null>(null);
 
     // Filters
     const [showFilters, setShowFilters] = useState(false);
@@ -182,6 +187,41 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
             setScanning(false);
         }
     }, [scanning, fetchSignals]);
+
+    const handleCloseSignal = useCallback(async (signalId: string) => {
+        setClosingId(signalId);
+        try {
+            await supabase.from('signals').update({ status: 'manually_closed' } as any).eq('id', signalId);
+            setSignals(prev => prev.filter(s => s.id !== signalId));
+            setExpandedId(null);
+        } catch (err) {
+            console.error('[SignalsSection] Failed to close signal:', err);
+        } finally {
+            setClosingId(null);
+        }
+    }, []);
+
+    const handleSaveNotes = useCallback(async (signalId: string) => {
+        setSavingNotes(true);
+        try {
+            await supabase.from('signals').update({ user_notes: notesText } as any).eq('id', signalId);
+            setSignals(prev => prev.map(s => s.id === signalId ? { ...s, user_notes: notesText } : s));
+            setNotesId(null);
+        } catch (err) {
+            console.error('[SignalsSection] Failed to save notes:', err);
+        } finally {
+            setSavingNotes(false);
+        }
+    }, [notesText]);
+
+    const handleMarkTriggered = useCallback(async (signalId: string) => {
+        try {
+            await supabase.from('signals').update({ status: 'triggered' } as any).eq('id', signalId);
+            setSignals(prev => prev.map(s => s.id === signalId ? { ...s, status: 'triggered' as any } : s));
+        } catch (err) {
+            console.error('[SignalsSection] Failed to mark signal triggered:', err);
+        }
+    }, []);
 
     const confluenceColor = (level: ConfluenceLevel | null): string => {
         switch (level) {
@@ -453,7 +493,14 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                         <div className="mb-3">
                                             <div className="flex items-center justify-between mb-1">
                                                 <span className="text-[10px] text-sentinel-500 uppercase tracking-wider">Confidence</span>
-                                                <span className="text-xs font-bold font-mono text-sentinel-200">{signal.confidence_score}%</span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs font-bold font-mono text-sentinel-200">{signal.confidence_score}%</span>
+                                                    {signal.calibrated_confidence != null && (
+                                                        <span className="text-[10px] font-mono text-sentinel-500" title="Calibrated win probability based on historical accuracy">
+                                                            Cal: {Math.round(signal.calibrated_confidence)}%
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </div>
                                             <div className="h-1.5 bg-sentinel-800 rounded-full overflow-hidden">
                                                 <div
@@ -492,6 +539,44 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                                     {signal.similar_events_count != null && ` (${signal.similar_events_count})`}
                                                 </span>
                                             )}
+                                            {/* Z-Score badge */}
+                                            {signal.ta_snapshot?.zScore20 != null && Math.abs(Number(signal.ta_snapshot.zScore20)) >= 1.5 && (
+                                                <span className={`px-2 py-0.5 text-[10px] font-bold font-mono rounded ring-1 ${
+                                                    Number(signal.ta_snapshot.zScore20) < -2.0
+                                                        ? 'bg-emerald-500/10 text-emerald-400 ring-emerald-500/20'
+                                                        : Number(signal.ta_snapshot.zScore20) > 2.0
+                                                            ? 'bg-red-500/10 text-red-400 ring-red-500/20'
+                                                            : 'bg-sentinel-800/50 text-sentinel-400 ring-sentinel-700/30'
+                                                }`} title={`Z-Score: ${Number(signal.ta_snapshot.zScore20).toFixed(2)} standard deviations from 20-day mean`}>
+                                                    Z: {Number(signal.ta_snapshot.zScore20).toFixed(1)}
+                                                </span>
+                                            )}
+                                            {/* Sentiment divergence badge */}
+                                            {(() => {
+                                                const div = (signal.agent_outputs as any)?.sentiment_divergence;
+                                                if (!div || div.type === 'neutral' || div.type === 'rational') return null;
+                                                const isPanic = div.type === 'panic_exhaustion';
+                                                return (
+                                                    <span className={`px-2 py-0.5 text-[10px] font-bold rounded ring-1 ${
+                                                        isPanic
+                                                            ? 'bg-emerald-500/10 text-emerald-400 ring-emerald-500/20'
+                                                            : 'bg-red-500/10 text-red-400 ring-red-500/20'
+                                                    }`} title={isPanic ? 'Sentiment improving while price oversold — bullish divergence' : 'Sentiment worsening while price overbought — bearish divergence'}>
+                                                        {isPanic ? 'PANIC EXHAUSTION' : 'EUPHORIA CLIMAX'}
+                                                    </span>
+                                                );
+                                            })()}
+                                            {/* Gap badge */}
+                                            {(() => {
+                                                const gap = (signal.agent_outputs as any)?.gap_analysis;
+                                                if (!gap) return null;
+                                                return (
+                                                    <span className="px-2 py-0.5 text-[10px] font-bold font-mono rounded ring-1 bg-violet-500/10 text-violet-400 ring-violet-500/20"
+                                                        title={`${gap.gap_type} gap — fill target: $${Number(gap.gap_fill_target).toFixed(2)}`}>
+                                                        GAP {gap.gap_pct > 0 ? '+' : ''}{Number(gap.gap_pct).toFixed(1)}%
+                                                    </span>
+                                                );
+                                            })()}
                                         </div>
 
                                         {/* Live price + entry/target/stop */}
@@ -548,6 +633,22 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                                                     Vol: {Number(signal.ta_snapshot.volumeRatio).toFixed(1)}x
                                                                 </span>
                                                             )}
+                                                            {signal.ta_snapshot.zScore20 != null && !isNaN(Number(signal.ta_snapshot.zScore20)) && (
+                                                                <span className={`text-[10px] font-mono px-2 py-0.5 rounded ring-1 ${
+                                                                    Number(signal.ta_snapshot.zScore20) < -2.0
+                                                                        ? 'bg-emerald-800/50 text-emerald-400 ring-emerald-700/30'
+                                                                        : Number(signal.ta_snapshot.zScore20) > 2.0
+                                                                            ? 'bg-red-800/50 text-red-400 ring-red-700/30'
+                                                                            : 'bg-sentinel-800/50 text-sentinel-400 ring-sentinel-700/30'
+                                                                }`}>
+                                                                    Z: {Number(signal.ta_snapshot.zScore20).toFixed(2)}
+                                                                </span>
+                                                            )}
+                                                            {signal.ta_snapshot.gapType && signal.ta_snapshot.gapType !== 'none' && (
+                                                                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-violet-800/50 text-violet-400 ring-1 ring-violet-700/30">
+                                                                    Gap: {signal.ta_snapshot.gapPct != null ? `${Number(signal.ta_snapshot.gapPct) > 0 ? '+' : ''}${Number(signal.ta_snapshot.gapPct).toFixed(1)}%` : ''} ({signal.ta_snapshot.gapType})
+                                                                </span>
+                                                            )}
                                                         </div>
                                                     )}
 
@@ -578,8 +679,43 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                                         );
                                                     })()}
 
+                                                    {/* User notes (inline editor) */}
+                                                    {notesId === signal.id ? (
+                                                        <div className="p-2.5 rounded-lg bg-sentinel-950/30 border border-sentinel-800/30" onClick={(e) => e.stopPropagation()}>
+                                                            <textarea
+                                                                value={notesText}
+                                                                onChange={(e) => setNotesText(e.target.value)}
+                                                                placeholder="Add notes about this signal..."
+                                                                className="w-full bg-sentinel-900 text-sentinel-200 text-xs rounded-lg p-2 border border-sentinel-700/50 outline-none resize-none"
+                                                                rows={3}
+                                                                autoFocus
+                                                            />
+                                                            <div className="flex items-center gap-2 mt-2">
+                                                                <button
+                                                                    onClick={() => handleSaveNotes(signal.id)}
+                                                                    disabled={savingNotes}
+                                                                    className="px-3 py-1 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 rounded text-xs font-medium ring-1 ring-emerald-500/30 border-none cursor-pointer disabled:opacity-50"
+                                                                >
+                                                                    {savingNotes ? 'Saving...' : 'Save'}
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => setNotesId(null)}
+                                                                    className="px-3 py-1 bg-sentinel-800/50 hover:bg-sentinel-700/50 text-sentinel-400 rounded text-xs ring-1 ring-sentinel-700/50 border-none cursor-pointer"
+                                                                >
+                                                                    Cancel
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    ) : signal.user_notes ? (
+                                                        <div className="p-2 rounded-lg bg-sentinel-950/30 border border-sentinel-800/30 cursor-text"
+                                                            onClick={(e) => { e.stopPropagation(); setNotesText(signal.user_notes || ''); setNotesId(signal.id); }}>
+                                                            <span className="text-[10px] text-sentinel-500 uppercase tracking-wider">Notes</span>
+                                                            <p className="text-xs text-sentinel-400 mt-0.5">{signal.user_notes}</p>
+                                                        </div>
+                                                    ) : null}
+
                                                     {/* Action buttons */}
-                                                    <div className="flex items-center gap-2 pt-1">
+                                                    <div className="flex items-center gap-2 pt-1 flex-wrap">
                                                         <button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
@@ -587,7 +723,7 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                                             }}
                                                             className="px-3 py-1.5 bg-sentinel-800/70 hover:bg-sentinel-700/70 text-sentinel-300 rounded-lg text-xs font-medium transition-colors ring-1 ring-sentinel-700/50 flex items-center gap-1.5 border-none cursor-pointer"
                                                         >
-                                                            <TrendingUp className="w-3 h-3" /> Full Analysis
+                                                            <BarChart3 className="w-3 h-3" /> Full Analysis
                                                         </button>
                                                         <button
                                                             onClick={(e) => {
@@ -606,6 +742,35 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                                             className="px-3 py-1.5 bg-emerald-600/15 hover:bg-emerald-600/25 text-emerald-400 rounded-lg text-xs font-medium transition-colors ring-1 ring-emerald-500/30 flex items-center gap-1.5 border-none cursor-pointer"
                                                         >
                                                             <BookOpen className="w-3 h-3" /> Log Trade
+                                                        </button>
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setNotesText(signal.user_notes || '');
+                                                                setNotesId(signal.id);
+                                                            }}
+                                                            className="px-3 py-1.5 bg-sentinel-800/70 hover:bg-sentinel-700/70 text-sentinel-300 rounded-lg text-xs font-medium transition-colors ring-1 ring-sentinel-700/50 flex items-center gap-1.5 border-none cursor-pointer"
+                                                        >
+                                                            <MessageSquare className="w-3 h-3" /> Notes
+                                                        </button>
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleMarkTriggered(signal.id);
+                                                            }}
+                                                            className="px-3 py-1.5 bg-amber-600/15 hover:bg-amber-600/25 text-amber-400 rounded-lg text-xs font-medium transition-colors ring-1 ring-amber-500/30 flex items-center gap-1.5 border-none cursor-pointer"
+                                                        >
+                                                            <CheckCircle2 className="w-3 h-3" /> Took Trade
+                                                        </button>
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleCloseSignal(signal.id);
+                                                            }}
+                                                            disabled={closingId === signal.id}
+                                                            className="px-3 py-1.5 bg-red-600/10 hover:bg-red-600/20 text-red-400 rounded-lg text-xs font-medium transition-colors ring-1 ring-red-500/20 flex items-center gap-1.5 border-none cursor-pointer disabled:opacity-50 ml-auto"
+                                                        >
+                                                            <XCircle className="w-3 h-3" /> {closingId === signal.id ? 'Closing...' : 'Dismiss'}
                                                         </button>
                                                     </div>
                                                 </motion.div>

@@ -765,6 +765,24 @@ If there is genuinely no major news, return: {"events": []}`,
                                                 ev.ticker
                                             );
                                             console.log(`[Scanner] Position size for ${ev.ticker}: ${sizing.recommendedPct}% ($${sizing.usdValue}) via ${sizing.method}${sizing.stopLoss ? ` | SL: $${sizing.stopLoss}` : ''}`);
+
+                                            // Persist position sizing into agent_outputs
+                                            if (savedSignal) {
+                                                const existingOutputs = (savedSignal as any).agent_outputs || {};
+                                                await supabase.from('signals').update({
+                                                    agent_outputs: {
+                                                        ...existingOutputs,
+                                                        position_sizing: {
+                                                            recommended_pct: sizing.recommendedPct,
+                                                            usd_value: sizing.usdValue,
+                                                            shares: sizing.shares,
+                                                            method: sizing.method,
+                                                            stop_loss: sizing.stopLoss,
+                                                            risk_reward_ratio: sizing.riskRewardRatio,
+                                                        },
+                                                    },
+                                                } as any).eq('id', savedSignal.id);
+                                            }
                                         } catch { /* non-fatal */ }
                                     }
 
