@@ -6,7 +6,7 @@ import { ScanConfiguration } from '@/components/scanner/ScanConfiguration';
 import { ScanLogsTable } from '@/components/scanner/ScanLogsTable';
 import { ManualScanForm } from '@/components/scanner/ManualScanForm';
 import { ScanResults } from '@/components/scanner/ScanResults';
-import { Newspaper } from 'lucide-react';
+import { Newspaper, Zap, History } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 export function Scanner() {
@@ -20,13 +20,29 @@ export function Scanner() {
                     <h1 className="text-3xl font-bold text-white mb-2">Scanner Control Panel</h1>
                     <p className="text-gray-400">Monitor and configure the automated market analysis pipeline.</p>
                 </div>
-                <Link
-                    to="/intelligence"
-                    className="flex items-center gap-2 px-4 py-2 bg-sentinel-800/60 hover:bg-sentinel-800 text-sentinel-200 text-sm font-medium rounded-lg border border-sentinel-700/50 transition-colors no-underline"
-                >
-                    <Newspaper className="w-4 h-4" />
-                    Intelligence Feed
-                </Link>
+                <div className="flex items-center gap-2">
+                    <Link
+                        to="/"
+                        className="flex items-center gap-2 px-4 py-2 bg-sentinel-800/60 hover:bg-sentinel-800 text-sentinel-200 text-sm font-medium rounded-lg border border-sentinel-700/50 transition-colors no-underline"
+                    >
+                        <Zap className="w-4 h-4" />
+                        Live Signals
+                    </Link>
+                    <Link
+                        to="/backtest"
+                        className="flex items-center gap-2 px-4 py-2 bg-sentinel-800/60 hover:bg-sentinel-800 text-sentinel-200 text-sm font-medium rounded-lg border border-sentinel-700/50 transition-colors no-underline"
+                    >
+                        <History className="w-4 h-4" />
+                        Backtest
+                    </Link>
+                    <Link
+                        to="/intelligence"
+                        className="flex items-center gap-2 px-4 py-2 bg-sentinel-800/60 hover:bg-sentinel-800 text-sentinel-200 text-sm font-medium rounded-lg border border-sentinel-700/50 transition-colors no-underline"
+                    >
+                        <Newspaper className="w-4 h-4" />
+                        Intelligence
+                    </Link>
+                </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">

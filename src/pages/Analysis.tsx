@@ -7,9 +7,9 @@
  */
 
 import { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
-import { Filter, ChevronDown, ChevronRight, Clock } from 'lucide-react';
+import { Filter, ChevronDown, ChevronRight, Clock, ArrowLeft, Radar } from 'lucide-react';
 import { formatPrice } from '@/utils/formatters';
 import { BiasBreakdown } from '@/components/analysis/BiasBreakdown';
 import { EventTimeline } from '@/components/analysis/EventTimeline';
@@ -104,8 +104,27 @@ export function Analysis() {
 
     if (loading) return <LoadingState message="Loading signals..." />;
 
+    const navigate = useNavigate();
+
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
+            {/* Breadcrumb navigation */}
+            <nav className="flex items-center gap-2 text-sm text-sentinel-500">
+                <Link to="/" className="hover:text-sentinel-300 transition-colors no-underline flex items-center gap-1">
+                    <ArrowLeft className="w-3.5 h-3.5" /> Signals
+                </Link>
+                <span>/</span>
+                {urlTicker ? (
+                    <>
+                        <Link to="/analysis" className="hover:text-sentinel-300 transition-colors no-underline">Analysis</Link>
+                        <span>/</span>
+                        <span className="text-sentinel-300 font-medium">{urlTicker.toUpperCase()}</span>
+                    </>
+                ) : (
+                    <span className="text-sentinel-300">Analysis</span>
+                )}
+            </nav>
+
             <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
                 <div>
                     <h1 className="text-3xl font-bold font-display tracking-tight text-sentinel-100">
@@ -116,6 +135,12 @@ export function Analysis() {
                     </p>
                 </div>
                 <div className="flex gap-2">
+                    <Link
+                        to="/scanner"
+                        className="px-3 py-2 bg-sentinel-800 hover:bg-sentinel-700 text-sentinel-100 rounded-lg text-sm transition-colors ring-1 ring-sentinel-700 flex items-center gap-2 no-underline"
+                    >
+                        <Radar className="w-4 h-4" /> Scanner
+                    </Link>
                     <button className="px-3 py-2 bg-sentinel-800 hover:bg-sentinel-700 text-sentinel-100 rounded-lg text-sm transition-colors ring-1 ring-sentinel-700 flex items-center gap-2">
                         <Filter className="w-4 h-4" /> Filter
                     </button>
