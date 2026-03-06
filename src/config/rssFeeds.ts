@@ -94,6 +94,7 @@ export const RSS_CATEGORIES = [
     'social',
     'regulatory',
     'earnings',
+    'retail_sentiment',
 ] as const;
 
 export type RSSCategory = (typeof RSS_CATEGORIES)[number];
