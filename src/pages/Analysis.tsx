@@ -146,13 +146,27 @@ export function Analysis() {
             </div>
 
             {signals.length === 0 ? (
-                <div className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 p-12 text-center">
+                <div className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 p-12 text-center space-y-4">
                     <p className="text-sentinel-400">
                         {urlTicker
                             ? `No signals generated for ${urlTicker.toUpperCase()} yet.`
                             : 'No signals generated yet. The agents are watching.'
                         }
                     </p>
+                    <div className="flex items-center justify-center gap-3">
+                        <Link
+                            to={urlTicker ? `/scanner?ticker=${urlTicker}` : '/scanner'}
+                            className="px-4 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 rounded-lg text-sm font-medium transition-colors ring-1 ring-blue-500/30 no-underline flex items-center gap-2"
+                        >
+                            <Radar className="w-4 h-4" /> Run Scanner
+                        </Link>
+                        <Link
+                            to="/"
+                            className="px-4 py-2 bg-sentinel-800 hover:bg-sentinel-700 text-sentinel-300 rounded-lg text-sm font-medium transition-colors ring-1 ring-sentinel-700 no-underline flex items-center gap-2"
+                        >
+                            <ArrowLeft className="w-4 h-4" /> Back to Signals
+                        </Link>
+                    </div>
                 </div>
             ) : (
                 <div className="space-y-4">

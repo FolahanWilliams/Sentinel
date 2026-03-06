@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
 import { BookOpen, Plus, Search, Download, X, Tag } from 'lucide-react';
 import { CalendarHeatmap } from '@/components/journal/CalendarHeatmap';
@@ -24,6 +24,7 @@ const STORAGE_KEYS = {
 
 export function Journal() {
     const [searchParams] = useSearchParams();
+    const navigate = useNavigate();
     const [entries, setEntries] = useState<any[]>([]);
     const [macroEvents, setMacroEvents] = useState<Record<string, string>>({});
     const [loading, setLoading] = useState(true);
@@ -201,6 +202,8 @@ export function Journal() {
             setShowForm(false);
             setTicker(''); setEntryPrice(''); setExitPrice(''); setNotes('');
             setMood('😐'); setTags([]); setTagInput('');
+            // Clear URL params so refresh doesn't re-open with stale data
+            if (hasPrefill) navigate('/journal', { replace: true });
             fetchEntries();
         } else {
             alert("Failed to save entry: " + error.message);
