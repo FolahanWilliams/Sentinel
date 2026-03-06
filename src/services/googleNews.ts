@@ -102,6 +102,9 @@ Return your answer as a JSON object in this exact format (no markdown, no extra 
                     ...article.tickers_mentioned,
                 ].filter(Boolean);
 
+                // Map sentiment label to numeric score for downstream consumers
+                const sentimentScoreMap: Record<string, number> = { bullish: 0.5, bearish: -0.5, neutral: 0 };
+
                 return {
                     feed_name: `Google: ${article.source || 'News'}`,
                     feed_category: 'market_moving',
@@ -112,6 +115,7 @@ Return your answer as a JSON object in this exact format (no markdown, no extra 
                     expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
                     tickers_mentioned: article.tickers_mentioned || [],
                     keywords,
+                    sentiment_score: sentimentScoreMap[article.sentiment] ?? 0,
                 };
             });
 

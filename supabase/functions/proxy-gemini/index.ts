@@ -41,11 +41,10 @@ async function callGemini(
     payload: any,
     apiKey: string
 ): Promise<{ data: any; text: string; inputTokens: number; outputTokens: number }> {
-    // 45s timeout — fail fast before Supabase's 60s gateway timeout kills us
-    // (gateway timeout strips CORS headers, causing client-side CORS errors)
-    // Increased from 25s: grounded search requests need more time
+    // 25s timeout per call — leaves room for a retry (25+25=50s < 60s gateway)
+    // Supabase gateway kills at 60s and strips CORS headers, causing client errors
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 45_000)
+    const timeoutId = setTimeout(() => controller.abort(), 25_000)
 
     try {
         const geminiRes = await fetch(
@@ -221,8 +220,9 @@ serve(async (req) => {
             totalInputTokens += result.inputTokens
             totalOutputTokens += result.outputTokens
 
-            // If JSON is expected, verify it parses. If not, retry once.
-            if (responseSchema && result.text) {
+            // If JSON is expected (schema provided AND not grounded search), verify it parses. If not, retry once.
+            // Skip retry when requireGroundedSearch — no schema was sent, so JSON failure is expected.
+            if (responseSchema && !requireGroundedSearch && result.text) {
                 try {
                     JSON.parse(result.text)
                 } catch (_parseErr) {

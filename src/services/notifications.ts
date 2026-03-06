@@ -84,8 +84,8 @@ export class NotificationService {
                 return;
             }
 
-            if (!SMART_ALERT_THRESHOLDS.taAlignmentRequired.includes(taAlign)) {
-                console.log(`[NotificationService] Skipping alert for ${signal.ticker} — TA alignment '${taAlign}' not in required set`);
+            if (!SMART_ALERT_THRESHOLDS.taAlignmentRequired.includes(taAlign) && taAlign !== 'unavailable') {
+                console.log(`[NotificationService] Skipping alert for ${signal.ticker} — TA alignment '${taAlign}' conflicting`);
                 return;
             }
 

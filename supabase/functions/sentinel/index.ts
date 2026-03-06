@@ -367,9 +367,13 @@ serve(async (req) => {
         if (newArticles.length > 0) {
             const prompt = buildPrompt(newArticles)
 
-            // Phase 1 fix (Audit C7): Move API key from URL query param to request header
+            // Dynamic timeout: use whatever time is left minus 8s for DB writes + response
+            // This prevents feed fetch (variable) + Gemini call from exceeding 60s gateway
+            const elapsedMs = Date.now() - startTime
+            const geminiTimeoutMs = Math.max(5_000, 52_000 - elapsedMs) // floor at 5s, ceiling at 52s
+            console.log(`[Sentinel] Gemini timeout: ${geminiTimeoutMs}ms (${elapsedMs}ms elapsed on feeds)`)
             const geminiController = new AbortController()
-            const geminiTimeout = setTimeout(() => geminiController.abort(), 45_000)
+            const geminiTimeout = setTimeout(() => geminiController.abort(), geminiTimeoutMs)
             let geminiRes: Response
             try {
                 geminiRes = await fetch(

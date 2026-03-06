@@ -27,6 +27,10 @@ export interface CalibrationCurve {
 const APP_SETTINGS_KEY = 'confidence_calibration';
 
 export class ConfidenceCalibrator {
+    // In-memory cache — avoids repeated DB hits during a single scan cycle
+    private static cachedCurve: CalibrationCurve | null = null;
+    private static cacheTimestamp = 0;
+    private static readonly CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
     /**
      * Build calibration curve from historical signal outcomes.
@@ -98,6 +102,11 @@ export class ConfidenceCalibrator {
      * Returns empty curve if none exists.
      */
     static async getCachedCurve(): Promise<CalibrationCurve> {
+        // Return in-memory cache if fresh
+        if (this.cachedCurve && (Date.now() - this.cacheTimestamp) < this.CACHE_TTL_MS) {
+            return this.cachedCurve;
+        }
+
         try {
             const { data, error } = await supabase
                 .from('app_settings')
@@ -105,8 +114,13 @@ export class ConfidenceCalibrator {
                 .eq('key', APP_SETTINGS_KEY)
                 .maybeSingle();
 
-            if (error || !data?.value) return this.emptyCurve();
-            return data.value as unknown as CalibrationCurve;
+            if (error || !data?.value) {
+                this.cachedCurve = this.emptyCurve();
+            } else {
+                this.cachedCurve = data.value as unknown as CalibrationCurve;
+            }
+            this.cacheTimestamp = Date.now();
+            return this.cachedCurve;
         } catch {
             return this.emptyCurve();
         }
