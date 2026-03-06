@@ -6,53 +6,9 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// ─── Reddit OAuth Token Cache ────────────────────────────────────────────────
-// Persists across invocations within the same Deno isolate (~5min on Supabase).
-let cachedToken: string | null = null
-let tokenExpiresAt = 0
-
-/**
- * Obtain a Reddit OAuth token using the client_credentials grant.
- * This is a "script" / "application-only" flow — no user login needed.
- * Datacenter IPs are explicitly allowed by Reddit for OAuth API access.
- */
-async function getRedditToken(): Promise<string> {
-  if (cachedToken && Date.now() < tokenExpiresAt) {
-    return cachedToken
-  }
-
-  const clientId = Deno.env.get('REDDIT_CLIENT_ID') || ''
-  const clientSecret = Deno.env.get('REDDIT_CLIENT_SECRET') || ''
-
-  if (!clientId || !clientSecret) {
-    throw new Error('REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET must be set')
-  }
-
-  const basicAuth = btoa(`${clientId}:${clientSecret}`)
-
-  const res = await fetch('https://www.reddit.com/api/v1/access_token', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Basic ${basicAuth}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'User-Agent': 'Sentinel/1.0 (by /u/SentinelTrading)',
-    },
-    body: 'grant_type=client_credentials',
-  })
-
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(`Reddit token request failed: ${res.status} ${text}`)
-  }
-
-  const data = await res.json()
-  cachedToken = data.access_token
-  // Expire 60s early to avoid edge-case failures
-  tokenExpiresAt = Date.now() + (data.expires_in - 60) * 1000
-
-  console.log('[proxy-reddit] OAuth token acquired successfully')
-  return cachedToken!
-}
+// ─── Apify Config ────────────────────────────────────────────────────────────
+const APIFY_REDDIT_ACTOR = 'trudax~reddit-scraper'
+const APIFY_BASE = 'https://api.apify.com/v2'
 
 // ─── Allowed subreddits (SSRF prevention) ────────────────────────────────────
 const ALLOWED_SUBREDDITS = new Set([
@@ -61,7 +17,6 @@ const ALLOWED_SUBREDDITS = new Set([
   'ValueInvesting', 'Daytrading', 'thetagang',
 ])
 
-// ─── Allowed sort modes ──────────────────────────────────────────────────────
 const ALLOWED_SORTS = new Set(['hot', 'new', 'top', 'rising'])
 
 interface RedditPost {
@@ -80,121 +35,156 @@ interface RedditPost {
 }
 
 /**
- * Method 1 (Primary): Fetch via Reddit OAuth API (oauth.reddit.com)
- * Works from datacenter IPs because it's the official authenticated API.
+ * Run the Apify Reddit Scraper actor synchronously and return results.
+ *
+ * Uses Apify's `waitForFinish` parameter to block until the actor completes
+ * (up to 40s, well within the Supabase Edge Function 60s timeout).
+ *
+ * Flow:
+ *   1. POST /acts/{actorId}/runs?waitForFinish=40  → starts run & waits
+ *   2. GET  /datasets/{datasetId}/items             → retrieves scraped data
  */
-async function fetchViaOAuth(
+async function fetchViaApify(
   subreddit: string,
   sort: string,
   limit: number,
-  query?: string
+  query?: string,
 ): Promise<RedditPost[]> {
-  const token = await getRedditToken()
-
-  let url: string
-  if (query) {
-    // Search within subreddit
-    url = `https://oauth.reddit.com/r/${subreddit}/search.json?q=${encodeURIComponent(query)}&restrict_sr=1&sort=new&limit=${limit}`
-  } else {
-    // Browse subreddit listings
-    url = `https://oauth.reddit.com/r/${subreddit}/${sort}.json?limit=${limit}`
+  const apifyToken = Deno.env.get('APIFY_TOKEN') || ''
+  if (!apifyToken) {
+    throw new Error('APIFY_TOKEN environment variable is not set')
   }
 
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 15_000)
+  // ── Build actor input ──
+  // The trudax/reddit-scraper accepts startUrls or searches
+  const input: Record<string, unknown> = {
+    maxItems: limit,
+    maxPostCount: limit,
+    maxComments: 0,         // We only need posts, not comment threads
+    proxy: { useApifyProxy: true },
+  }
 
+  if (query) {
+    // Search mode: search within the subreddit for the query term
+    input.startUrls = [{
+      url: `https://www.reddit.com/r/${subreddit}/search/?q=${encodeURIComponent(query)}&restrict_sr=1&sort=${sort}`
+    }]
+  } else {
+    // Listing mode: browse the subreddit
+    input.startUrls = [{
+      url: `https://www.reddit.com/r/${subreddit}/${sort}/`
+    }]
+  }
+
+  // ── Step 1: Start actor run and wait for completion ──
+  const runUrl = `${APIFY_BASE}/acts/${APIFY_REDDIT_ACTOR}/runs?waitForFinish=40`
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 45_000)
+
+  let datasetId: string
   try {
-    const res = await fetch(url, {
+    const runRes = await fetch(runUrl, {
+      method: 'POST',
       headers: {
-        'Authorization': `Bearer ${token}`,
-        'User-Agent': 'Sentinel/1.0 (by /u/SentinelTrading)',
+        'Authorization': `Bearer ${apifyToken}`,
+        'Content-Type': 'application/json',
       },
+      body: JSON.stringify(input),
       signal: controller.signal,
     })
 
-    if (!res.ok) {
-      const text = await res.text()
-      throw new Error(`Reddit OAuth API returned ${res.status}: ${text.substring(0, 200)}`)
+    if (!runRes.ok) {
+      const errText = await runRes.text()
+      throw new Error(`Apify actor run failed: ${runRes.status} ${errText.substring(0, 300)}`)
     }
 
-    const json = await res.json()
-    return extractPosts(json)
+    const runData = await runRes.json()
+    const status = runData?.data?.status
+
+    if (status !== 'SUCCEEDED') {
+      throw new Error(`Apify actor run did not succeed: status=${status}`)
+    }
+
+    datasetId = runData?.data?.defaultDatasetId
+    if (!datasetId) {
+      throw new Error('Apify run completed but no datasetId returned')
+    }
   } finally {
     clearTimeout(timeout)
+  }
+
+  // ── Step 2: Fetch results from the dataset ──
+  const datasetUrl = `${APIFY_BASE}/datasets/${datasetId}/items?format=json&limit=${limit}`
+
+  const dsController = new AbortController()
+  const dsTimeout = setTimeout(() => dsController.abort(), 10_000)
+
+  try {
+    const dsRes = await fetch(datasetUrl, {
+      headers: { 'Authorization': `Bearer ${apifyToken}` },
+      signal: dsController.signal,
+    })
+
+    if (!dsRes.ok) {
+      throw new Error(`Apify dataset fetch failed: ${dsRes.status}`)
+    }
+
+    const items: any[] = await dsRes.json()
+    return normalizeApifyItems(items, subreddit)
+  } finally {
+    clearTimeout(dsTimeout)
   }
 }
 
 /**
- * Method 3 (Fallback): Fetch via Reddit's native .json endpoint
- * Lighter weight, no auth needed, but may be blocked from some datacenter IPs.
+ * Normalize Apify Reddit Scraper output into our standard RedditPost shape.
+ * The scraper returns fields like: id, title, body, username, upVotes,
+ * numberOfComments, url, createdAt, communityName, etc.
  */
-async function fetchViaJsonEndpoint(
-  subreddit: string,
-  sort: string,
-  limit: number,
-  query?: string
-): Promise<RedditPost[]> {
-  let url: string
-  if (query) {
-    url = `https://www.reddit.com/r/${subreddit}/search.json?q=${encodeURIComponent(query)}&restrict_sr=1&sort=new&limit=${limit}`
-  } else {
-    url = `https://www.reddit.com/r/${subreddit}/${sort}.json?limit=${limit}`
-  }
-
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 10_000)
-
-  try {
-    const res = await fetch(url, {
-      headers: {
-        'User-Agent': 'Sentinel/1.0 (by /u/SentinelTrading)',
-        'Accept': 'application/json',
-      },
-      signal: controller.signal,
-    })
-
-    if (!res.ok) {
-      throw new Error(`Reddit .json endpoint returned ${res.status}`)
-    }
-
-    const json = await res.json()
-    return extractPosts(json)
-  } finally {
-    clearTimeout(timeout)
-  }
-}
-
-/**
- * Extract posts from Reddit's listing JSON structure.
- * Works for both OAuth and .json endpoint responses.
- */
-function extractPosts(json: any): RedditPost[] {
-  const listing = json?.data?.children || []
+function normalizeApifyItems(items: any[], fallbackSubreddit: string): RedditPost[] {
   const posts: RedditPost[] = []
   const seenIds = new Set<string>()
 
-  for (const child of listing) {
-    const d = child?.data
-    if (!d || !d.id) continue
+  for (const item of items) {
+    const id = item.id || item.dataId || ''
+    if (!id || seenIds.has(id)) continue
+    seenIds.add(id)
 
-    // Deduplicate by post ID
-    if (seenIds.has(d.id)) continue
-    seenIds.add(d.id)
+    // Apify fields vary slightly by actor version; handle common variants
+    const title = item.title || ''
+    const selftext = (item.body || item.selftext || item.text || '').substring(0, 2000)
+    const author = item.username || item.author || item.parsedUser?.name || '[deleted]'
+    const score = item.upVotes ?? item.score ?? item.ups ?? 0
+    const numComments = item.numberOfComments ?? item.num_comments ?? item.numComments ?? 0
+    const postUrl = item.url || ''
+    const permalink = item.url?.startsWith('https://www.reddit.com')
+      ? item.url
+      : postUrl
+    const createdAt = item.createdAt || item.created_utc || item.scrapedAt || ''
+    const createdUtc = typeof createdAt === 'number'
+      ? createdAt
+      : Math.floor(new Date(createdAt).getTime() / 1000) || 0
+    const subreddit = item.communityName || item.subreddit || fallbackSubreddit
+    const flair = item.flair || item.link_flair_text || null
+    const upvoteRatio = item.upvoteRatio ?? item.upVoteRatio ?? 0
 
-    posts.push({
-      id: d.id,
-      title: d.title || '',
-      selftext: (d.selftext || '').substring(0, 2000),
-      author: d.author || '[deleted]',
-      score: d.score || 0,
-      num_comments: d.num_comments || 0,
-      url: d.url || '',
-      permalink: d.permalink ? `https://www.reddit.com${d.permalink}` : '',
-      created_utc: d.created_utc || 0,
-      subreddit: d.subreddit || subreddit,
-      link_flair_text: d.link_flair_text || null,
-      upvote_ratio: d.upvote_ratio || 0,
-    })
+    if (title) {
+      posts.push({
+        id,
+        title,
+        selftext,
+        author,
+        score,
+        num_comments: numComments,
+        url: postUrl,
+        permalink,
+        created_utc: createdUtc,
+        subreddit,
+        link_flair_text: flair,
+        upvote_ratio: upvoteRatio,
+      })
+    }
   }
 
   return posts
@@ -235,7 +225,7 @@ Deno.serve(async (req) => {
     const body = await req.json()
     const subreddit = body?.subreddit || 'wallstreetbets'
     const sort = body?.sort || 'hot'
-    const limit = Math.min(body?.limit || 25, 100) // Cap at 100
+    const limit = Math.min(body?.limit || 25, 100)
     const query: string | undefined = body?.query
 
     // ── Validate inputs ──
@@ -252,34 +242,28 @@ Deno.serve(async (req) => {
       })
     }
 
-    console.log(`[proxy-reddit] Fetching r/${subreddit}/${sort} (limit=${limit}${query ? `, q=${query}` : ''})`)
+    console.log(`[proxy-reddit] Apify scrape: r/${subreddit}/${sort} (limit=${limit}${query ? `, q=${query}` : ''})`)
 
-    // ── Try OAuth first, fall back to .json endpoint ──
-    let posts: RedditPost[]
-    try {
-      posts = await fetchViaOAuth(subreddit, sort, limit, query)
-      console.log(`[proxy-reddit] OAuth succeeded: ${posts.length} posts from r/${subreddit}`)
-    } catch (oauthErr) {
-      console.warn(`[proxy-reddit] OAuth failed: ${oauthErr instanceof Error ? oauthErr.message : oauthErr}`)
-      console.log('[proxy-reddit] Falling back to .json endpoint...')
+    const posts = await fetchViaApify(subreddit, sort, limit, query)
 
-      try {
-        posts = await fetchViaJsonEndpoint(subreddit, sort, limit, query)
-        console.log(`[proxy-reddit] .json fallback succeeded: ${posts.length} posts from r/${subreddit}`)
-      } catch (jsonErr) {
-        console.error(`[proxy-reddit] .json fallback also failed: ${jsonErr instanceof Error ? jsonErr.message : jsonErr}`)
-        return new Response(JSON.stringify({ error: 'All Reddit fetch methods failed' }), {
-          status: 502,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        })
-      }
-    }
+    console.log(`[proxy-reddit] Apify returned ${posts.length} posts from r/${subreddit}`)
 
     return new Response(JSON.stringify({ posts, count: posts.length }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
 
   } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
+
+    // Surface Apify-specific errors as 502 (upstream failure)
+    if (msg.includes('Apify')) {
+      console.warn(`[proxy-reddit] ${msg}`)
+      return new Response(JSON.stringify({ error: 'Reddit scrape failed via Apify' }), {
+        status: 502,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     console.error('[proxy-reddit] Error:', error)
     return new Response(JSON.stringify({ error: 'Internal proxy error' }), {
       status: 500,

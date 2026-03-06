@@ -2,8 +2,8 @@
  * Sentinel — Reddit Sentiment Service
  *
  * Fetches retail sentiment from Reddit via the proxy-reddit Edge Function,
- * which uses the Reddit OAuth API (client_credentials grant) to bypass
- * datacenter IP blocks. Falls back to the .json endpoint if OAuth is unavailable.
+ * which uses the Apify Reddit Scraper actor to bypass datacenter IP blocks.
+ * Apify handles proxy rotation and browser emulation internally.
  *
  * Caches parsed posts into the `rss_cache` table to feed the Agent Scanner pipeline.
  */
