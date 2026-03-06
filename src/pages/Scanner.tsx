@@ -5,6 +5,7 @@ import { ScanActivity } from '@/components/scanner/ScanActivity';
 import { ScanConfiguration } from '@/components/scanner/ScanConfiguration';
 import { ScanLogsTable } from '@/components/scanner/ScanLogsTable';
 import { ManualScanForm } from '@/components/scanner/ManualScanForm';
+import { ScanResults } from '@/components/scanner/ScanResults';
 import { Newspaper } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -41,6 +42,11 @@ export function Scanner() {
                     <ManualScanForm initialTicker={initialTicker} />
                     <ScanActivity />
                 </div>
+            </div>
+
+            {/* Generated Signals — the actual results */}
+            <div className="w-full mb-6">
+                <ScanResults />
             </div>
 
             {/* Full Width Table */}
