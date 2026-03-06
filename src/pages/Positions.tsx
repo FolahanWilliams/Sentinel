@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect, useCallback, useMemo, Fragment } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
 import { MarketDataService } from '@/services/marketData';
 import { PostMortemService } from '@/services/postMortemService';
@@ -46,6 +46,7 @@ interface LiveQuote {
 
 export function Positions() {
     const [searchParams] = useSearchParams();
+    const navigate = useNavigate();
     const prefillTicker = searchParams.get('ticker') || '';
     const prefillEntry = searchParams.get('entry') || '';
     const prefillSide = (searchParams.get('side') === 'short' ? 'short' : 'long') as 'long' | 'short';
@@ -183,6 +184,8 @@ export function Positions() {
             setShowForm(false);
             setFormTicker(''); setFormShares(''); setFormEntryPrice('');
             setFormNotes('');
+            // Clear URL params so refresh doesn't re-open with stale data
+            if (hasPrefill) navigate('/positions', { replace: true });
             fetchPositions();
         }
     }

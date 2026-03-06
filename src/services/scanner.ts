@@ -874,7 +874,12 @@ If there is genuinely no major news, return: {"events": []}`,
                                                                     epicenter: { ticker: ev.ticker, headline: ev.headline }
                                                                 },
                                                                 status: 'active',
-                                                                calibrated_confidence: contagion.data.confidence_score,
+                                                                calibrated_confidence: await (async () => {
+                                                                    try {
+                                                                        const curve = await ConfidenceCalibrator.getCachedCurve();
+                                                                        return ConfidenceCalibrator.getCalibratedWinRate(contagion.data.confidence_score, curve);
+                                                                    } catch { return contagion.data.confidence_score; }
+                                                                })(),
                                                                 data_quality: 'partial',
                                                                 secondary_biases: ['herding'],
                                                                 sources: [],
@@ -1100,11 +1105,10 @@ If there is genuinely no major news, return: {"events": []}`,
                         NotificationService.checkAndDispatchAlerts(savedSignal);
 
                         // Seed outcome tracking so OutcomeTracker can follow this signal
-                        const entryPrice = (analysis.data.suggested_entry_low + analysis.data.suggested_entry_high) / 2;
                         await supabase.from('signal_outcomes').insert({
                             signal_id: savedSignal.id,
                             ticker: ticker,
-                            entry_price: entryPrice,
+                            entry_price: currentPrice,
                             outcome: 'pending',
                             hit_stop_loss: false,
                             hit_target: false,

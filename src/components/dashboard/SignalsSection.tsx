@@ -88,10 +88,19 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
         // Realtime subscription for new signals
         const channel = supabase.channel('unified_signals')
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'signals' }, (payload) => {
-                setSignals(prev => [payload.new as Signal, ...prev]);
+                const newSignal = payload.new as Signal;
+                if (newSignal.status === 'active') {
+                    setSignals(prev => [newSignal, ...prev]);
+                }
             })
             .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'signals' }, (payload) => {
-                setSignals(prev => prev.map(s => s.id === (payload.new as Signal).id ? payload.new as Signal : s));
+                const updated = payload.new as Signal;
+                if (updated.status === 'active') {
+                    setSignals(prev => prev.map(s => s.id === updated.id ? updated : s));
+                } else {
+                    // Signal was closed/expired/triggered — remove from active list
+                    setSignals(prev => prev.filter(s => s.id !== updated.id));
+                }
             })
             .subscribe();
 
@@ -569,21 +578,21 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                             {/* Gap badge */}
                                             {(() => {
                                                 const gap = (signal.agent_outputs as any)?.gap_analysis;
-                                                if (!gap) return null;
+                                                if (!gap || gap.gap_pct == null) return null;
                                                 return (
                                                     <span className="px-2 py-0.5 text-[10px] font-bold font-mono rounded ring-1 bg-violet-500/10 text-violet-400 ring-violet-500/20"
-                                                        title={`${gap.gap_type} gap — fill target: $${Number(gap.gap_fill_target).toFixed(2)}`}>
-                                                        GAP {gap.gap_pct > 0 ? '+' : ''}{Number(gap.gap_pct).toFixed(1)}%
+                                                        title={`${gap.gap_type ?? 'unknown'} gap${gap.gap_fill_target != null ? ` — fill target: $${Number(gap.gap_fill_target).toFixed(2)}` : ''}`}>
+                                                        GAP {Number(gap.gap_pct) > 0 ? '+' : ''}{Number(gap.gap_pct).toFixed(1)}%
                                                     </span>
                                                 );
                                             })()}
                                             {/* Position sizing badge */}
                                             {(() => {
                                                 const ps = (signal.agent_outputs as any)?.position_sizing;
-                                                if (!ps) return null;
+                                                if (!ps || ps.recommended_pct == null || ps.usd_value == null) return null;
                                                 return (
                                                     <span className="px-2 py-0.5 text-[10px] font-bold font-mono rounded ring-1 bg-cyan-500/10 text-cyan-400 ring-cyan-500/20"
-                                                        title={`${ps.method} — ${ps.recommended_pct}% of portfolio ($${Number(ps.usd_value).toLocaleString()}) | ${ps.shares} shares${ps.risk_reward_ratio ? ` | R:R ${Number(ps.risk_reward_ratio).toFixed(1)}` : ''}`}>
+                                                        title={`${ps.method ?? 'auto'} — ${ps.recommended_pct}% of portfolio ($${Number(ps.usd_value).toLocaleString()})${ps.shares ? ` | ${ps.shares} shares` : ''}${ps.risk_reward_ratio ? ` | R:R ${Number(ps.risk_reward_ratio).toFixed(1)}` : ''}`}>
                                                         SIZE {ps.recommended_pct}% · ${Number(ps.usd_value).toLocaleString()}
                                                     </span>
                                                 );

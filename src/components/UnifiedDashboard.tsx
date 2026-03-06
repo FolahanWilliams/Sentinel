@@ -10,7 +10,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
 import { usePortfolio } from '@/hooks/usePortfolio';
-import { useSignalStore } from '@/stores/signalStore';
 import { MarketDataService } from '@/services/marketData';
 import { formatPrice, formatPercent } from '@/utils/formatters';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
@@ -40,7 +39,6 @@ export function UnifiedDashboard() {
 
     // Top-bar live data
     const { config, openPositions } = usePortfolio();
-    const { signals } = useSignalStore();
     const [portfolioValue, setPortfolioValue] = useState<number | null>(null);
     const [dailyRoi, setDailyRoi] = useState<number | null>(null);
     const [activeSignalCount, setActiveSignalCount] = useState(0);
@@ -53,8 +51,8 @@ export function UnifiedDashboard() {
             .from('signals')
             .select('*', { count: 'exact', head: true })
             .eq('status', 'active');
-        setActiveSignalCount(count ?? signals.length);
-    }, [signals.length]);
+        setActiveSignalCount(count ?? 0);
+    }, []);
 
     useEffect(() => {
         fetchActiveCount();
