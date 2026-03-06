@@ -1087,17 +1087,20 @@ If there is genuinely no major news, return: {"events": []}`,
                     let critiqueOutput = null;
                     try {
                         const critique = await SelfCritiqueAgent.critique(
-                            analysis.data, sanity.data, analysis.data.confidence_score
+                            ticker,
+                            analysis.data.thesis,
+                            analysis.data.reasoning || analysis.data.thesis,
+                            analysis.data.confidence_score,
+                            sanity.data?.counter_thesis,
+                            'long_overreaction'
                         );
-                        if (critique.success && critique.data) {
-                            critiqueOutput = critique.data;
-                            const rawAdj = critique.data.adjusted_confidence ?? singleConfidence;
-                            const maxReduction = 30;
-                            singleConfidence = Math.min(
-                                singleConfidence,
-                                Math.max(30, Math.max(rawAdj, singleConfidence - maxReduction))
-                            );
-                        }
+                        critiqueOutput = critique;
+                        const rawAdj = critique.adjustedConfidence ?? singleConfidence;
+                        const maxReduction = 30;
+                        singleConfidence = Math.min(
+                            singleConfidence,
+                            Math.max(30, Math.max(rawAdj, singleConfidence - maxReduction))
+                        );
                     } catch { /* non-fatal */ }
 
                     // Drop if self-critique pushed below threshold
