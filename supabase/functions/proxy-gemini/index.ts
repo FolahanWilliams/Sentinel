@@ -28,7 +28,6 @@ const ALLOWED_MODELS = new Set([
     'gemini-3.1-flash-lite-preview',
     'gemini-3-flash-preview',
     'gemini-3-flash',
-    'gemini-2.5-flash',
     'gemini-2.0-flash',
     'gemini-2.0-flash-lite',
 ])
@@ -148,10 +147,9 @@ serve(async (req) => {
             )
         }
 
-        // Use gemini-2.0-flash for grounded search — Google Search does the heavy lifting,
-        // so the faster model avoids timeouts without sacrificing search quality.
-        // Reserve gemini-3-flash-preview for reasoning/analysis calls.
-        const effectiveModel = requireGroundedSearch ? 'gemini-2.0-flash' : model
+        // Use gemini-3-flash-preview for all calls including grounded search —
+        // better reasoning and logic quality outweighs the speed difference.
+        const effectiveModel = requireGroundedSearch ? 'gemini-3-flash-preview' : model
 
         // 4. Initialize clients
         const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
