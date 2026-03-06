@@ -5,7 +5,7 @@
  * These rules are persisted in app_settings and injected into agent prompts
  * on future analyses, creating a self-improving feedback loop.
  *
- * Uses gemini-3-flash-preview for deep pattern analysis.
+ * Uses gemini-2.0-flash for deep pattern analysis.
  */
 
 import { supabase } from '@/config/supabase';
