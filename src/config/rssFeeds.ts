@@ -54,10 +54,8 @@ export const RSS_FEEDS: RSSFeedConfig[] = [
     { name: 'SecurityWeek', url: 'https://www.securityweek.com/feed/', category: 'cybersecurity', priority: 'medium' },
 
     // === Fintech ===
-    { name: 'Finextra', url: 'https://www.finextra.com/rss/headlines.aspx', category: 'fintech', priority: 'high' },
     { name: 'CoinDesk', url: 'https://www.coindesk.com/arc/outboundfeeds/rss/', category: 'fintech', priority: 'high' },
     { name: 'Pymnts', url: 'https://www.pymnts.com/feed/', category: 'fintech', priority: 'medium' },
-    { name: 'American Banker', url: 'https://www.americanbanker.com/feed', category: 'fintech', priority: 'medium' },
 
     // === Macro & Economics ===
     { name: 'Fed Reserve', url: 'https://www.federalreserve.gov/feeds/press_all.xml', category: 'macro', priority: 'high' },
@@ -67,13 +65,9 @@ export const RSS_FEEDS: RSSFeedConfig[] = [
     // === Analyst/Editorial ===
     { name: 'Seeking Alpha', url: 'https://seekingalpha.com/market_currents.xml', category: 'analyst', priority: 'medium' },
     { name: 'Motley Fool', url: 'https://www.fool.com/feeds/index.aspx', category: 'analyst', priority: 'low' },
-    { name: 'Investor\'s Business Daily', url: 'https://www.investors.com/feed/', category: 'analyst', priority: 'medium' },
     { name: 'CNBC Investing', url: 'https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=15839069', category: 'analyst', priority: 'medium' },
 
     // === Social & Community ===
-    { name: 'Reddit r/wallstreetbets', url: 'https://www.reddit.com/r/wallstreetbets/.rss', category: 'social', priority: 'low' },
-    { name: 'Reddit r/stocks', url: 'https://www.reddit.com/r/stocks/.rss', category: 'social', priority: 'low' },
-    { name: 'Reddit r/investing', url: 'https://www.reddit.com/r/investing/.rss', category: 'social', priority: 'low' },
     { name: 'Hacker News', url: 'https://hnrss.org/newest?points=100', category: 'social', priority: 'medium' },
     { name: 'Techmeme', url: 'https://www.techmeme.com/feed.xml', category: 'social', priority: 'medium' },
 
@@ -100,6 +94,7 @@ export const RSS_CATEGORIES = [
     'social',
     'regulatory',
     'earnings',
+    'retail_sentiment',
 ] as const;
 
 export type RSSCategory = (typeof RSS_CATEGORIES)[number];

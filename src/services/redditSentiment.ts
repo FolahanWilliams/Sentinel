@@ -1,25 +1,42 @@
 /**
  * Sentinel — Reddit Sentiment Service
  *
- * Fetches retail sentiment from Reddit (e.g. r/wallstreetbets) using the ATOM RSS format.
- * Caches the parsed posts into the `rss_cache` table to feed the Agent Scanner pipeline.
+ * Fetches retail sentiment from Reddit via the proxy-reddit Edge Function,
+ * which uses the Apify Reddit Scraper actor to bypass datacenter IP blocks.
+ * Apify handles proxy rotation and browser emulation internally.
+ *
+ * Caches parsed posts into the `rss_cache` table to feed the Agent Scanner pipeline.
  */
 
 import { supabase } from '@/config/supabase';
 
-interface RedditFeedItem {
+interface RedditPost {
     id: string;
     title: string;
-    link: string;
-    content: string;
-    updated: string;
+    selftext: string;
     author: string;
+    score: number;
+    num_comments: number;
+    url: string;
+    permalink: string;
+    created_utc: number;
+    subreddit: string;
+    link_flair_text: string | null;
+    upvote_ratio: number;
 }
+
+// Primary subreddit for ticker-specific searches (highest retail volume).
+// Each Apify run takes 10-30s and costs compute credits, so we limit to
+// the single most impactful sub for searches. Hot-listing still supports all.
+const SEARCH_SUBREDDIT = 'wallstreetbets';
 
 export class RedditSentimentService {
     /**
      * Fetch latest posts matching specific tickers from r/wallstreetbets
      * and cache them into the rss_cache table as 'retail_sentiment'.
+     *
+     * Runs up to 5 ticker searches in parallel to minimize latency.
+     * Each search is a separate Apify actor run (~10-30s).
      *
      * @param tickers Array of tickers to search for (e.g. ['AAPL', 'NVDA'])
      */
@@ -27,77 +44,28 @@ export class RedditSentimentService {
         if (!tickers || tickers.length === 0) return 0;
 
         console.log(`[RedditSentiment] Fetching retail sentiment for ${tickers.length} tickers...`);
-        let totalCached = 0;
 
         try {
             const session = await supabase.auth.getSession();
             const token = session.data.session?.access_token || '';
-            const edgeUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/proxy-rss`;
+            const edgeUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/proxy-reddit`;
 
-            // Max 5 tickers per run to avoid spamming the proxy/Reddit
+            // Cap at 5 tickers to limit Apify compute usage
             const searchTickers = tickers.slice(0, 5);
 
-            for (const ticker of searchTickers) {
-                try {
-                    // Fetch Atom feed via proxy (uses allorigins fallback if Reddit blocks direct)
-                    const feedUrl = `https://www.reddit.com/r/wallstreetbets/search.rss?q=${ticker}&restrict_sr=1&sort=new`;
+            // Run all ticker searches in parallel — each is an independent Apify run
+            const results = await Promise.allSettled(
+                searchTickers.map(ticker =>
+                    RedditSentimentService.fetchAndCacheForTicker(
+                        edgeUrl, token, SEARCH_SUBREDDIT, ticker
+                    )
+                )
+            );
 
-                    const res = await fetch(edgeUrl, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${token}`
-                        },
-                        body: JSON.stringify({ feedUrl })
-                    });
-
-                    if (!res.ok) {
-                        console.warn(`[RedditSentiment] Proxy returned ${res.status} for ${ticker}`);
-                        continue;
-                    }
-
-                    const xmlText = await res.text();
-                    const items = this.parseAtomFeed(xmlText);
-
-                    if (items.length > 0) {
-                        // Transform to rss_cache format
-                        const rows = items.map(item => {
-                            // Strip HTML tags from content
-                            const cleanContent = (item.content || '')
-                                .replace(/<[^>]*>?/gm, '')
-                                .substring(0, 1500);
-
-                            return {
-                                feed_name: 'r/wallstreetbets',
-                                feed_category: 'retail_sentiment',
-                                title: item.title,
-                                link: item.link,
-                                description: cleanContent,
-                                published_at: item.updated || new Date().toISOString(),
-                                // Cache for 24 hours
-                                expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-                                tickers_mentioned: [ticker],
-                                keywords: [ticker, 'reddit', 'wallstreetbets', item.author]
-                            };
-                        });
-
-                        const { error } = await supabase.from('rss_cache').upsert(
-                            rows as any[],
-                            { onConflict: 'link' }
-                        );
-
-                        if (error) {
-                            console.error(`[RedditSentiment] DB insert error for ${ticker}:`, error.message);
-                        } else {
-                            totalCached += rows.length;
-                        }
-                    }
-
-                    // Add a tiny delay between requests to be polite to the proxy
-                    await new Promise(resolve => setTimeout(resolve, 500));
-
-                } catch (tickerErr) {
-                    console.warn(`[RedditSentiment] Failed to fetch sentiment for ${ticker}:`, tickerErr);
+            let totalCached = 0;
+            for (const result of results) {
+                if (result.status === 'fulfilled') {
+                    totalCached += result.value;
                 }
             }
 
@@ -105,78 +73,119 @@ export class RedditSentimentService {
             return totalCached;
 
         } catch (err) {
-            console.error('[RedditSentiment] Fatal error fetching sentiment:', err);
+            console.error('[RedditSentiment] Fatal error:', err);
             return 0;
         }
     }
 
     /**
-     * Helper to extract title, link, content, and updated time from Reddit's ATOM XML.
+     * Search a single subreddit for a single ticker and cache results.
      */
-    private static parseAtomFeed(xml: string): RedditFeedItem[] {
-        const items: RedditFeedItem[] = [];
-        const entryRegex = /<entry>([\s\S]*?)<\/entry>/g;
-        let match;
+    private static async fetchAndCacheForTicker(
+        edgeUrl: string,
+        token: string,
+        sub: string,
+        ticker: string,
+    ): Promise<number> {
+        try {
+            const res = await fetch(edgeUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    subreddit: sub,
+                    query: ticker,
+                    sort: 'new',
+                    limit: 15,
+                })
+            });
 
-        while ((match = entryRegex.exec(xml)) !== null) {
-            const entryXml = match[1];
-
-            // Extract ID
-            const idMatch = /<id(?:[^>]*)>([\s\S]*?)<\/id>/.exec(entryXml || '');
-            const id = idMatch && idMatch[1] ? idMatch[1].trim() : '';
-
-            // Extract title
-            const titleMatch = /<title(?:[^>]*)>([\s\S]*?)<\/title>/.exec(entryXml || '');
-            const title = titleMatch && titleMatch[1] ? titleMatch[1].trim() : '';
-
-            // Extract link (href attribute)
-            const linkMatch = /<link[^>]*href=["']([^"']+)["'][^>]*>/.exec(entryXml || '');
-            const link = linkMatch && linkMatch[1] ? linkMatch[1].trim() : '';
-
-            // Extract content
-            const contentMatch = /<content(?:[^>]*)>([\s\S]*?)<\/content>/.exec(entryXml || '');
-            const content = contentMatch && contentMatch[1] ? contentMatch[1].trim() : '';
-
-            // Extract updated time
-            const updatedMatch = /<updated(?:[^>]*)>([\s\S]*?)<\/updated>/.exec(entryXml || '');
-            let updated = '';
-            if (updatedMatch && updatedMatch[1]) {
-                const d = new Date(updatedMatch[1].trim());
-                updated = !isNaN(d.getTime()) ? d.toISOString() : new Date().toISOString();
-            } else {
-                updated = new Date().toISOString();
+            if (!res.ok) {
+                console.warn(`[RedditSentiment] proxy-reddit returned ${res.status} for ${ticker} in r/${sub}`);
+                return 0;
             }
 
-            // Extract author name
-            let author = 'unknown';
-            const authorMatch = /<author>[\s\S]*?<name>([\s\S]*?)<\/name>[\s\S]*?<\/author>/.exec(entryXml || '');
-            if (authorMatch && authorMatch[1]) {
-                author = authorMatch[1].trim();
+            const data = await res.json();
+            const posts: RedditPost[] = data.posts || [];
+
+            if (posts.length === 0) return 0;
+
+            const rows = posts.map(post => ({
+                feed_name: `r/${post.subreddit || sub}`,
+                feed_category: 'retail_sentiment',
+                title: post.title,
+                link: post.permalink || post.url,
+                description: post.selftext.substring(0, 1500) || post.title,
+                published_at: post.created_utc
+                    ? new Date(post.created_utc * 1000).toISOString()
+                    : new Date().toISOString(),
+                expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+                tickers_mentioned: [ticker],
+                keywords: [
+                    ticker, 'reddit', post.subreddit || sub,
+                    post.author,
+                    `score:${post.score}`,
+                    `comments:${post.num_comments}`,
+                ]
+            }));
+
+            // Deduplicate by link within this batch
+            const seen = new Set<string>();
+            const uniqueRows = rows.filter(r => {
+                if (seen.has(r.link)) return false;
+                seen.add(r.link);
+                return true;
+            });
+
+            const { error } = await supabase.from('rss_cache').upsert(
+                uniqueRows as any[],
+                { onConflict: 'link' }
+            );
+
+            if (error) {
+                console.error(`[RedditSentiment] DB insert error for ${ticker} r/${sub}:`, error.message);
+                return 0;
             }
 
-            // Exclude empty junk entries
-            if (title && link) {
-                // Decode basic HTML entities that Reddit might leave in titles/content
-                const decodeHtml = (text: string) => {
-                    return text
-                        .replace(/&amp;/g, '&')
-                        .replace(/&lt;/g, '<')
-                        .replace(/&gt;/g, '>')
-                        .replace(/&quot;/g, '"')
-                        .replace(/&#39;/g, "'");
-                };
+            return uniqueRows.length;
 
-                items.push({
-                    id,
-                    title: decodeHtml(title),
-                    link,
-                    content: decodeHtml(content),
-                    updated,
-                    author
-                });
-            }
+        } catch (err) {
+            console.warn(`[RedditSentiment] Failed for ${ticker} in r/${sub}:`, err);
+            return 0;
         }
+    }
 
-        return items;
+    /**
+     * Fetch hot/trending posts from a subreddit (no ticker filter).
+     * Useful for getting a general retail sentiment pulse.
+     */
+    static async fetchSubredditHot(subreddit: string, limit = 25): Promise<RedditPost[]> {
+        try {
+            const session = await supabase.auth.getSession();
+            const token = session.data.session?.access_token || '';
+            const edgeUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/proxy-reddit`;
+
+            const res = await fetch(edgeUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ subreddit, sort: 'hot', limit })
+            });
+
+            if (!res.ok) {
+                console.warn(`[RedditSentiment] Hot fetch failed for r/${subreddit}: ${res.status}`);
+                return [];
+            }
+
+            const data = await res.json();
+            return data.posts || [];
+        } catch (err) {
+            console.error(`[RedditSentiment] Error fetching r/${subreddit} hot:`, err);
+            return [];
+        }
     }
 }

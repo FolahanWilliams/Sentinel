@@ -48,9 +48,17 @@ export class RSSReaderService {
                     const items = this.parseSimpleRSS(xmlText);
 
                     if (items.length > 0) {
+                        // Deduplicate by link to avoid "ON CONFLICT DO UPDATE cannot affect row a second time"
+                        const seen = new Set<string>();
+                        const uniqueItems = items.filter(item => {
+                            if (seen.has(item.link)) return false;
+                            seen.add(item.link);
+                            return true;
+                        });
+
                         // Upsert into our rss_cache table
                         const { error } = await supabase.from('rss_cache').upsert(
-                            items.map(item => ({
+                            uniqueItems.map(item => ({
                                 feed_name: feed.name,
                                 feed_category: feed.category,
                                 title: item.title,
@@ -68,7 +76,7 @@ export class RSSReaderService {
                         if (error) {
                             console.error(`[RSSReader] DB insert error for ${feed.name}:`, error.message);
                         } else {
-                            totalAdded += items.length;
+                            totalAdded += uniqueItems.length;
                         }
                     }
                 } catch (err) {

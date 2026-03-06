@@ -7,7 +7,7 @@
  */
 
 import { supabase } from '@/config/supabase';
-import type { Quote } from '@/types/market';
+import type { Quote, NewsItem } from '@/types/market';
 
 // Simple in-memory cache for the client session (clears on reload)
 // TTL: 15 minutes for basic quotes
@@ -113,5 +113,41 @@ export class MarketDataService {
         }
 
         return results;
+    }
+
+    /**
+     * Fetch recent news for a ticker via the Apify yahoo-finance-news-ai actor.
+     * Uses the same proxy-market-data Edge Function with endpoint='news'.
+     */
+    static async getTickerNews(ticker: string): Promise<NewsItem[]> {
+        const cacheKey = `news_${ticker.toUpperCase()}`;
+
+        // Check cache (5 min TTL for news)
+        const cached = cache.get(cacheKey);
+        if (cached && (Date.now() - cached.timestamp < 5 * 60 * 1000)) {
+            return cached.data as NewsItem[];
+        }
+
+        try {
+            const { data, error } = await supabase.functions.invoke('proxy-market-data', {
+                body: {
+                    endpoint: 'news',
+                    ticker: ticker.toUpperCase(),
+                }
+            });
+
+            if (error || !data?.success) {
+                console.warn(`[MarketDataService] News fetch failed for ${ticker}:`, error || data?.error);
+                return [];
+            }
+
+            const newsItems: NewsItem[] = data.data || [];
+
+            cache.set(cacheKey, { data: newsItems, timestamp: Date.now() });
+            return newsItems;
+        } catch (err) {
+            console.error(`[MarketDataService] News error for ${ticker}:`, err);
+            return [];
+        }
     }
 }
