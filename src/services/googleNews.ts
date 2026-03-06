@@ -84,8 +84,18 @@ Return your answer as a JSON object in this exact format (no markdown, no extra 
                 return 0;
             }
 
+            // Deduplicate by URL — Gemini sometimes returns the same article twice,
+            // which causes Postgres "ON CONFLICT DO UPDATE cannot affect row a second time"
+            const seen = new Set<string>();
+            const uniqueArticles = articles.filter(a => {
+                const url = a.url || a.title;
+                if (seen.has(url)) return false;
+                seen.add(url);
+                return true;
+            });
+
             // Transform to rss_cache format and upsert
-            const rows = articles.map((article) => {
+            const rows = uniqueArticles.map((article) => {
                 const keywords = [
                     article.sentiment,
                     article.source,

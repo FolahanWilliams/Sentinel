@@ -39,7 +39,7 @@ export class RedditSentimentService {
 
             for (const ticker of searchTickers) {
                 try {
-                    // Fetch Atom feed via proxy
+                    // Fetch Atom feed via proxy (uses allorigins fallback if Reddit blocks direct)
                     const feedUrl = `https://www.reddit.com/r/wallstreetbets/search.rss?q=${ticker}&restrict_sr=1&sort=new`;
 
                     const res = await fetch(edgeUrl, {

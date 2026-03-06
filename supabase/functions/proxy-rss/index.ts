@@ -38,6 +38,68 @@ function isAllowedUrl(urlString: string): boolean {
   }
 }
 
+/**
+ * Fetch an RSS feed directly, falling back to an intermediary proxy
+ * (allorigins) if the direct fetch fails (e.g. datacenter IP block).
+ */
+async function fetchWithFallback(feedUrl: string): Promise<string> {
+  // Attempt 1: Direct fetch
+  try {
+    const xmlText = await directFetch(feedUrl)
+    if (xmlText) return xmlText
+  } catch {
+    // Fall through to fallback
+  }
+
+  // Attempt 2: allorigins proxy (routes through different IPs)
+  console.log(`[proxy-rss] Direct fetch failed, trying allorigins fallback for: ${feedUrl}`)
+  try {
+    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(feedUrl)}`
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 12_000)
+    try {
+      const res = await fetch(proxyUrl, {
+        headers: { 'Accept': 'application/rss+xml, application/xml, text/xml, */*' },
+        signal: controller.signal,
+      })
+      if (res.ok) {
+        const text = await res.text()
+        if (text && (text.includes('<rss') || text.includes('<feed') || text.includes('<entry') || text.includes('<item'))) {
+          console.log(`[proxy-rss] allorigins fallback succeeded for: ${feedUrl}`)
+          return text
+        }
+      }
+    } finally {
+      clearTimeout(timeout)
+    }
+  } catch {
+    // Fall through
+  }
+
+  throw new Error(`All fetch methods failed for ${feedUrl}`)
+}
+
+async function directFetch(feedUrl: string): Promise<string | null> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 10_000)
+  try {
+    const response = await fetch(feedUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/rss+xml, application/xml, text/xml, */*'
+      },
+      signal: controller.signal,
+    })
+    if (!response.ok) {
+      console.warn(`[proxy-rss] Direct fetch returned ${response.status} for ${feedUrl}`)
+      return null
+    }
+    return await response.text()
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -87,31 +149,8 @@ Deno.serve(async (req) => {
 
     console.log(`[proxy-rss] Fetching: ${feedUrl}`)
 
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 10_000) // 10s timeout
-    let response: Response
-    try {
-      response = await fetch(feedUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'application/rss+xml, application/xml, text/xml, */*'
-        },
-        signal: controller.signal,
-      })
-    } finally {
-      clearTimeout(timeout)
-    }
-
-    if (!response.ok) {
-      console.warn(`[proxy-rss] Downstream error ${response.status} for ${feedUrl}`)
-      // Phase 2 fix (Audit m15): Normalize upstream status to 502
-      return new Response(JSON.stringify({ error: 'Upstream feed returned an error' }), {
-        status: 502,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    const xmlText = await response.text()
+    // Try direct fetch first, then fall back to intermediary proxy if blocked
+    const xmlText = await fetchWithFallback(feedUrl)
 
     return new Response(xmlText, {
       headers: {
@@ -120,6 +159,15 @@ Deno.serve(async (req) => {
       },
     })
   } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
+    // Distinguish upstream failures from internal proxy errors
+    if (msg.includes('All fetch methods failed')) {
+      console.warn(`[proxy-rss] ${msg}`)
+      return new Response(JSON.stringify({ error: 'All fetch methods failed for this feed' }), {
+        status: 502,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
     console.error('[proxy-rss] Error:', error)
     // Phase 2 fix (Audit m18): Don't leak internal error details
     return new Response(JSON.stringify({ error: 'Internal proxy error' }), {
