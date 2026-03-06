@@ -196,11 +196,14 @@ export class AgentService {
         targetPrice: number,
         stopLoss: number,
         agentType: string,
-        performanceContext?: string
+        performanceContext?: string,
+        taContext?: string
     ): Promise<AgentResult<any>> {
         const perfBlock = performanceContext
             ? `\n\n${performanceContext}\n\nAs the Red Team, use this performance history to identify systemic weaknesses. If the originating agent type or sector has a poor track record, be EXTRA skeptical and demand stronger evidence.`
             : '';
+
+        const taBlock = taContext || '';
 
         const prompt = `
     PROPOSED TRADE FOR TICKER: ${ticker}
@@ -208,7 +211,7 @@ export class AgentService {
 
     THESIS: "${originalThesis}"
     TARGET: $${targetPrice} | STOP LOSS: $${stopLoss}
-    ${perfBlock}
+    ${taBlock}${perfBlock}
     You are the RED TEAM. Tear this thesis apart. Find the fatal flaw.
     Research macro conditions, pending lawsuits, or sector rot.
     Think step-by-step in your reasoning — explore multiple counterarguments.
