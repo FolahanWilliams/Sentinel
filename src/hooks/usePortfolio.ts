@@ -34,6 +34,7 @@ export interface Position {
     closed_at: string | null;
     close_reason: string | null;
     notes: string | null;
+    currency: string;
 }
 
 export interface PortfolioData {

@@ -1,6 +1,6 @@
-/** Number formatting for trading data */
-export function formatPrice(price: number): string {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 }).format(price);
+/** Number formatting for trading data. Accepts optional ISO 4217 currency code. */
+export function formatPrice(price: number, currency: string = 'USD'): string {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency, minimumFractionDigits: 2 }).format(price);
 }
 
 // Phase 4 fix (Audit m10): Show "0.00%" without sign for exactly zero
