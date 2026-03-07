@@ -73,12 +73,12 @@ export class DynamicCalibrator {
     while (changed) {
       changed = false;
       for (let i = 0; i < blocks.length - 1; i++) {
-        const meanI = blocks[i].sumWY / blocks[i].sumW;
-        const meanNext = blocks[i + 1].sumWY / blocks[i + 1].sumW;
+        const meanI = blocks[i]!.sumWY / blocks[i]!.sumW;
+        const meanNext = blocks[i + 1]!.sumWY / blocks[i + 1]!.sumW;
         if (meanI > meanNext) {
           // Merge block i+1 into i
-          blocks[i].sumWY += blocks[i + 1].sumWY;
-          blocks[i].sumW += blocks[i + 1].sumW;
+          blocks[i]!.sumWY += blocks[i + 1]!.sumWY;
+          blocks[i]!.sumW += blocks[i + 1]!.sumW;
           // Keep the midpoint x between merged blocks
           blocks[i]!.x = (blocks[i]!.x + blocks[i + 1]!.x) / 2;
           blocks.splice(i + 1, 1);

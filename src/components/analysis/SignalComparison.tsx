@@ -141,7 +141,7 @@ const rows: RowDef[] = [
             return (
                 <Badge
                     text={alignment.charAt(0).toUpperCase() + alignment.slice(1)}
-                    colorClass={TA_COLORS[alignment] ?? TA_COLORS.unavailable}
+                    colorClass={TA_COLORS[alignment] ?? TA_COLORS.unavailable ?? ''}
                 />
             );
         },
@@ -157,7 +157,7 @@ const rows: RowDef[] = [
                     )}
                     <Badge
                         text={level.charAt(0).toUpperCase() + level.slice(1)}
-                        colorClass={CONFLUENCE_COLORS[level] ?? CONFLUENCE_COLORS.none}
+                        colorClass={CONFLUENCE_COLORS[level] ?? CONFLUENCE_COLORS.none ?? ''}
                     />
                 </div>
             );
@@ -190,7 +190,7 @@ const rows: RowDef[] = [
         render: (s) => (
             <Badge
                 text={s.risk_level.charAt(0).toUpperCase() + s.risk_level.slice(1)}
-                colorClass={RISK_COLORS[s.risk_level] ?? RISK_COLORS.extreme}
+                colorClass={RISK_COLORS[s.risk_level] ?? RISK_COLORS.extreme ?? ''}
             />
         ),
         bestIndex: (sigs) => lowestRiskIndex(sigs),
