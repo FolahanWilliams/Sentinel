@@ -477,6 +477,11 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                                 <span className="px-2.5 py-1 bg-sentinel-800 text-sentinel-100 text-sm font-bold font-mono rounded ring-1 ring-sentinel-700 shadow-sm">
                                                     {signal.ticker}
                                                 </span>
+                                                {quote?.resolvedTicker && quote.resolvedTicker !== signal.ticker && (
+                                                    <span className="px-1.5 py-0.5 text-[9px] font-mono bg-blue-500/10 text-blue-400 rounded ring-1 ring-blue-500/20" title={`Resolved to ${quote.resolvedTicker} on exchange`}>
+                                                        {quote.resolvedTicker}
+                                                    </span>
+                                                )}
                                                 <span className={`px-2 py-0.5 text-[10px] font-bold rounded ring-1 ${isLong
                                                         ? 'bg-emerald-500/15 text-emerald-400 ring-emerald-500/30'
                                                         : 'bg-red-500/15 text-red-400 ring-red-500/30'

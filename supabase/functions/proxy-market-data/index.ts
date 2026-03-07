@@ -310,8 +310,145 @@ Deno.serve(async (req) => {
         const startTime = Date.now()
         let responseData: any = null
 
-        // ─── QUOTE endpoint ──────────────────────────────────────────────
-        if (endpoint === 'quote') {
+        // ─── BULK QUOTE endpoint ─────────────────────────────────────────
+        // Accepts an array of tickers, returns all quotes in a single response.
+        // Reduces N edge-function invocations to 1 from the client.
+        if (endpoint === 'bulk_quote') {
+            const bulkTickers: string[] = (tickersParam || [])
+                .map((t: string) => (t || '').toUpperCase())
+                .filter((t: string) => t.length > 0)
+                .slice(0, 30) // cap at 30 to prevent abuse
+
+            if (bulkTickers.length === 0) {
+                return new Response(
+                    JSON.stringify({ success: false, error: 'Missing tickers array for bulk_quote' }),
+                    { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+                )
+            }
+
+            // Check per-ticker cache, collect misses
+            const results: Record<string, any> = {}
+            const cacheMisses: string[] = []
+
+            for (const t of bulkTickers) {
+                const ck = `quote:${t}`
+                const hit = getCached(ck)
+                if (hit) {
+                    results[t] = hit.data || hit
+                } else {
+                    cacheMisses.push(t)
+                }
+            }
+
+            console.log(`[proxy-market-data] bulk_quote: ${bulkTickers.length} requested, ${cacheMisses.length} cache misses`)
+
+            // Fetch all misses in a single Apify batch call
+            if (cacheMisses.length > 0 && APIFY_TOKEN) {
+                try {
+                    const quotes = await fetchQuoteViaApify(cacheMisses, APIFY_TOKEN)
+
+                    for (const t of cacheMisses) {
+                        // Try exact match, then any key that starts with the base ticker
+                        let quote = quotes.get(t)
+                        if (!quote) {
+                            // Apify may resolve e.g. "FRES" → "FRES.L"
+                            for (const [resolvedKey, q] of quotes) {
+                                if (resolvedKey.startsWith(t.replace(/\.[A-Z]+$/, ''))) {
+                                    quote = q
+                                    break
+                                }
+                            }
+                        }
+                        if (quote) {
+                            const quoteData = {
+                                ticker: t,
+                                ...(quote.ticker !== t ? { resolvedTicker: quote.ticker } : {}),
+                                price: quote.price,
+                                change: quote.change,
+                                changePercent: quote.changePercent,
+                                volume: quote.volume,
+                                previousClose: quote.previousClose,
+                                open: quote.open,
+                                high: quote.high,
+                                low: quote.low,
+                                marketCap: quote.marketCap,
+                                peRatio: quote.peRatio,
+                                fiftyTwoWeekHigh: quote.fiftyTwoWeekHigh,
+                                fiftyTwoWeekLow: quote.fiftyTwoWeekLow,
+                                lastUpdated: new Date().toISOString(),
+                            }
+                            results[t] = quoteData
+                            setCache(`quote:${t}`, { success: true, data: quoteData }, 'quote')
+                        }
+                    }
+                } catch (batchErr: any) {
+                    console.warn(`[proxy-market-data] Apify batch quote failed, falling back to sequential:`, batchErr.message)
+                }
+            }
+
+            // For any remaining misses (Apify failed or no token), try Yahoo direct sequentially
+            const stillMissing = cacheMisses.filter(t => !results[t])
+            for (const t of stillMissing) {
+                try {
+                    const suffixes = /\.[A-Z]{1,3}$/.test(t) || t.startsWith('^')
+                        ? ['']
+                        : ['', '.L', '.TO', '.V', '.DE', '.PA', '.AX']
+
+                    for (const suffix of suffixes) {
+                        const testTicker = t + suffix
+                        try {
+                            const yf2Url = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(testTicker)}`
+                            const yf2Controller = new AbortController()
+                            const yf2Timeout = setTimeout(() => yf2Controller.abort(), 8000)
+                            const yf2Res = await fetch(yf2Url, {
+                                headers: {
+                                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                                    'Accept': 'application/json'
+                                },
+                                signal: yf2Controller.signal,
+                            })
+                            clearTimeout(yf2Timeout)
+                            if (yf2Res.ok) {
+                                const yf2Data = await yf2Res.json()
+                                const result = yf2Data?.quoteResponse?.result?.[0]
+                                if (result && result.regularMarketPrice) {
+                                    const quoteData = {
+                                        ticker: t,
+                                        ...(testTicker !== t ? { resolvedTicker: testTicker } : {}),
+                                        price: result.regularMarketPrice || 0,
+                                        change: result.regularMarketChange || 0,
+                                        changePercent: result.regularMarketChangePercent || 0,
+                                        volume: result.regularMarketVolume || 0,
+                                        previousClose: result.regularMarketPreviousClose || 0,
+                                        open: result.regularMarketOpen || 0,
+                                        high: result.regularMarketDayHigh || 0,
+                                        low: result.regularMarketDayLow || 0,
+                                        lastUpdated: new Date().toISOString(),
+                                    }
+                                    results[t] = quoteData
+                                    setCache(`quote:${t}`, { success: true, data: quoteData }, 'quote')
+                                    break
+                                }
+                            }
+                        } catch { /* try next suffix */ }
+                    }
+                } catch { /* skip this ticker */ }
+            }
+
+            responseData = { success: true, data: results }
+
+            const durationMs = Date.now() - startTime
+            await supabaseAdmin.from('api_usage').insert({
+                provider: APIFY_TOKEN ? 'apify-yahoo-finance' : 'yahoo-finance-v7',
+                endpoint: 'bulk_quote',
+                ticker: bulkTickers.join(',').substring(0, 50),
+                latency_ms: durationMs,
+                success: true,
+                estimated_cost_usd: APIFY_TOKEN ? 0.005 : 0
+            })
+
+        // ─── QUOTE endpoint (single ticker) ─────────────────────────────
+        } else if (endpoint === 'quote') {
             const tickerUpper = ticker?.toUpperCase() || ''
 
             // Rate limit check (per-user or per-IP)

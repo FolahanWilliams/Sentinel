@@ -1205,30 +1205,70 @@ If there is genuinely no major news, return: {"events": []}`,
         try {
             const { data: geminiRes, error: geminiErr } = await supabase.functions.invoke('proxy-gemini', {
                 body: {
-                    systemInstruction: `You are an elite market analyst for a quantitative trading desk. Today is ${new Date().toISOString().split('T')[0]}. Your job is to identify US equities experiencing significant catalytic events RIGHT NOW that could create short-term trading opportunities. Focus on: earnings surprises, FDA decisions, analyst upgrades/downgrades, unusual volume spikes, sector rotation, insider activity, and geopolitical events affecting specific companies. Only suggest liquid US equities (no penny stocks, no OTC).`,
-                    prompt: `Identify the top ${count} most actionable US stock tickers to analyze right now based on today's market conditions. For each, explain the specific catalyst driving the opportunity. To ensure diverse coverage, focus on different sectors than your previous scans. (Random seed for variance: ${Math.random()}). Return JSON matching the schema exactly.`,
+                    systemInstruction: `You are an elite market analyst for a quantitative trading desk. Today is ${new Date().toISOString().split('T')[0]}. Your job is to identify equities experiencing significant catalytic events RIGHT NOW that could create short-term trading opportunities. Focus on: earnings surprises, FDA decisions, analyst upgrades/downgrades, unusual volume spikes, sector rotation, insider activity, and geopolitical events affecting specific companies. You may include both US and international equities (e.g. FRES.L, AAF.L, THX.V) — preserve exchange suffixes. No penny stocks, no OTC.`,
+                    prompt: `Identify the top ${count} most actionable stock tickers to analyze right now based on today's market conditions. Include both US and major international equities where catalysts are strongest. For each, explain the specific catalyst driving the opportunity. To ensure diverse coverage, focus on different sectors than your previous scans. (Random seed for variance: ${Math.random()}).
+
+You MUST respond with ONLY a JSON object — no markdown, no commentary, no code fences. Use this exact format:
+{"tickers": [{"ticker": "NVDA", "reason": "Earnings beat expectations by 15%", "catalyst": "earnings_beat"}, {"ticker": "FRES.L", "reason": "Gold price surge lifting miners", "catalyst": "sector_rotation"}]}`,
                     requireGroundedSearch: true,
                     temperature: 0.8,
                     // responseSchema is intentionally omitted — incompatible with grounded search.
-                    // The prompt asks for JSON and manual parsing below handles the response.
+                    // The prompt gives an explicit JSON format and robust parsing below handles the response.
                 }
             });
 
             if (geminiErr) throw new Error(geminiErr.message);
 
             if (geminiRes?.text) {
-                const cleanText = geminiRes.text.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
-                const parsed = JSON.parse(cleanText);
-                const discovered = (parsed.tickers || []).slice(0, count).map((t: any) => ({
-                    ticker: (t.ticker || '').toUpperCase().replace(/[^A-Z]/g, ''),
+                const rawText = geminiRes.text;
+
+                // Robust JSON extraction: strip code fences, find the JSON object in the response
+                let jsonText = rawText.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+
+                // If the model returned prose around the JSON, extract the JSON object
+                const jsonMatch = jsonText.match(/\{[\s\S]*"tickers"\s*:\s*\[[\s\S]*\]\s*\}/);
+                if (jsonMatch) {
+                    jsonText = jsonMatch[0];
+                }
+
+                let parsed: any;
+                try {
+                    parsed = JSON.parse(jsonText);
+                } catch (parseErr) {
+                    // Fallback: try to extract individual ticker objects via regex
+                    console.warn('[Scanner] JSON parse failed, attempting regex extraction from:', rawText.substring(0, 200));
+                    const tickerMatches = rawText.matchAll(/"ticker"\s*:\s*"([^"]+)"[\s\S]*?"reason"\s*:\s*"([^"]+)"[\s\S]*?"catalyst"\s*:\s*"([^"]+)"/g);
+                    const extracted: { ticker: string; reason: string; catalyst: string }[] = [];
+                    for (const m of tickerMatches) {
+                        extracted.push({ ticker: m[1], reason: m[2], catalyst: m[3] });
+                    }
+                    if (extracted.length > 0) {
+                        console.log(`[Scanner] Regex extraction recovered ${extracted.length} tickers`);
+                        parsed = { tickers: extracted };
+                    } else {
+                        console.error('[Scanner] Ticker discovery failed: could not parse AI response as JSON');
+                        return [];
+                    }
+                }
+
+                // Accept both { tickers: [...] } and bare array formats
+                const tickerArray = Array.isArray(parsed) ? parsed : (parsed.tickers || []);
+
+                const discovered = tickerArray.slice(0, count).map((t: any) => ({
+                    // Preserve exchange suffixes like .L, .TO, .V, .DE — only strip truly invalid chars
+                    ticker: (t.ticker || '').toUpperCase().replace(/[^A-Z0-9.]/g, ''),
                     reason: t.reason || 'Trending',
                     catalyst: t.catalyst || 'other',
-                })).filter((t: any) => t.ticker.length >= 1 && t.ticker.length <= 5);
+                })).filter((t: any) => {
+                    const base = t.ticker.replace(/\.[A-Z]{1,3}$/, '');
+                    return base.length >= 1 && base.length <= 5 && t.ticker.length <= 8;
+                });
 
                 console.log(`[Scanner] Discovered ${discovered.length} trending tickers:`, discovered.map((d: any) => `${d.ticker} (${d.catalyst})`).join(', '));
                 return discovered;
             }
 
+            console.warn('[Scanner] Ticker discovery returned empty response (no text in AI reply)');
             return [];
         } catch (e: any) {
             console.error('[Scanner] Ticker discovery failed:', e.message);
