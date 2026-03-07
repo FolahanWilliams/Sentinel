@@ -210,8 +210,19 @@ Analyze this data and generate the Lessons Learned rules.`;
             const reflection = data.value as unknown as ReflectionResult;
             if (!reflection.lessons || reflection.lessons.length === 0) return '';
 
-            // Filter lessons relevant to the context
+            // Skip stale lessons (older than 7 days) — market conditions change
+            if (reflection.generated_at) {
+                const ageMs = Date.now() - new Date(reflection.generated_at).getTime();
+                const MAX_LESSON_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+                if (ageMs > MAX_LESSON_AGE_MS) {
+                    console.warn(`[ReflectionAgent] Lessons are ${(ageMs / 86400000).toFixed(1)} days old, skipping stale context`);
+                    return '';
+                }
+            }
+
+            // Filter lessons relevant to the context (require minimum sample size for reliability)
             const relevant = reflection.lessons.filter(lesson => {
+                if (lesson.sample_size < 3) return false; // Too few samples to be reliable
                 const matchesBias = !biasType || lesson.bias_type === biasType || lesson.bias_type === 'all';
                 const matchesSector = !sector || lesson.sector === sector || lesson.sector === 'all';
                 return matchesBias && matchesSector;

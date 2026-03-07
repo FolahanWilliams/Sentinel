@@ -96,7 +96,12 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
             .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'signals' }, (payload) => {
                 const updated = payload.new as Signal;
                 if (updated.status === 'active') {
-                    setSignals(prev => prev.map(s => s.id === updated.id ? updated : s));
+                    // Update existing or add back if it was removed
+                    setSignals(prev => {
+                        const exists = prev.some(s => s.id === updated.id);
+                        if (exists) return prev.map(s => s.id === updated.id ? updated : s);
+                        return [updated, ...prev];
+                    });
                 } else {
                     // Signal was closed/expired/triggered — remove from active list
                     setSignals(prev => prev.filter(s => s.id !== updated.id));
