@@ -145,8 +145,9 @@ export class OutcomeTracker {
                         .select('*', { count: 'exact', head: true })
                         .neq('outcome', 'pending');
 
-                    // Run reflection every 10 completed outcomes
-                    if (count && count >= 5 && count % 10 < updatedCount) {
+                    // Run reflection every 10 completed outcomes (trigger when we cross a 10-boundary)
+                    const crossed10 = count != null && count >= 5 && Math.floor(count / 10) > Math.floor((count - updatedCount) / 10);
+                    if (crossed10) {
                         console.log(`[OutcomeTracker] Triggering auto-reflection (${count} completed outcomes)...`);
                         const reflection = await ReflectionAgent.runReflection();
                         console.log(`[OutcomeTracker] Auto-reflection generated ${reflection.lessons.length} lessons from ${reflection.outcomes_analyzed} outcomes.`);
@@ -156,7 +157,7 @@ export class OutcomeTracker {
                     await DynamicCalibrator.refitIfNeeded();
 
                     // Rebuild static calibration curve
-                    if (count && count >= 10 && count % 10 < updatedCount) {
+                    if (count != null && count >= 10 && Math.floor(count / 10) > Math.floor((count - updatedCount) / 10)) {
                         await ConfidenceCalibrator.buildCalibrationCurve();
                         console.log('[OutcomeTracker] Calibration curves refitted.');
                     }

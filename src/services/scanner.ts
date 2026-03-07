@@ -307,9 +307,11 @@ export class ScannerService {
 
             // 3d-2. Adaptive Thresholds — adjust based on market regime
             let adaptiveMinConfidence = 50;
+            let adaptiveMinPriceDrop = -5;
             try {
                 const thresholds = await AdaptiveThresholds.getThresholds();
                 adaptiveMinConfidence = thresholds.minConfidence;
+                adaptiveMinPriceDrop = thresholds.minPriceDropPct;
                 console.log(`[Scanner] Adaptive thresholds: minDrop=${thresholds.minPriceDropPct}%, minConf=${thresholds.minConfidence} (${thresholds.regime})`);
             } catch { /* non-fatal, use defaults */ }
 
@@ -527,6 +529,13 @@ If there is genuinely no major news, return: {"events": []}`,
                                 if (!quote?.price) {
                                     console.warn(`[Scanner] Skipping ${ev.ticker} — no live quote available (data_quality: no_quote)`);
                                     skippedTickers.push(ev.ticker);
+                                    continue;
+                                }
+
+                                // Skip if price drop doesn't meet adaptive threshold for current regime
+                                // Only gate negative moves — positive or flat prices pass through
+                                if (priceDrop < 0 && priceDrop > adaptiveMinPriceDrop) {
+                                    console.log(`[Scanner] Skipping ${ev.ticker} — price drop ${priceDrop.toFixed(1)}% doesn't meet adaptive threshold ${adaptiveMinPriceDrop}%`);
                                     continue;
                                 }
 
@@ -829,8 +838,9 @@ If there is genuinely no major news, return: {"events": []}`,
                                         } catch { /* non-fatal */ }
 
                                         // 7.12b. PRICE CORRELATION — check actual price correlation with existing signals
+                                        let priceCorr: { highlyCorrelatedTickers: Array<{ ticker: string; correlation: number }>; maxCorrelation: number; confidencePenalty: number; reason: string } | null = null;
                                         try {
-                                            const priceCorr = await PriceCorrelationMatrix.check(ev.ticker);
+                                            priceCorr = await PriceCorrelationMatrix.check(ev.ticker);
                                             if (priceCorr.confidencePenalty !== 0) {
                                                 const before = analysis.data.confidence_score;
                                                 analysis.data.confidence_score = Math.max(30,
@@ -1044,7 +1054,12 @@ If there is genuinely no major news, return: {"events": []}`,
                                                     total_active: correlationResult.totalActiveSignals,
                                                     penalty: correlationResult.confidencePenalty,
                                                 } : null,
-                                                // Price correlation data populated async after save
+                                                price_correlation: priceCorr && priceCorr.highlyCorrelatedTickers.length > 0 ? {
+                                                    highly_correlated: priceCorr.highlyCorrelatedTickers,
+                                                    max_correlation: priceCorr.maxCorrelation,
+                                                    penalty: priceCorr.confidencePenalty,
+                                                    reason: priceCorr.reason,
+                                                } : null,
                                                 options_flow: optionsFlowResult?.hasUnusualActivity ? {
                                                     has_unusual_activity: true,
                                                     sentiment: optionsFlowResult.sentiment,
@@ -1077,6 +1092,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                             // Invalidate correlation + conflict caches
                                             CorrelationGuard.invalidateCache();
                                             ConflictDetector.invalidateCache();
+                                            PriceCorrelationMatrix.invalidateCache();
 
                                             // Dispatch alert rules
                                             NotificationService.checkAndDispatchAlerts(savedSignal);

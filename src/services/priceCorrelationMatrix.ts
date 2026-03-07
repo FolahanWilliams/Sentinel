@@ -275,8 +275,9 @@ export class PriceCorrelationMatrix {
             varY += dy * dy;
         }
 
-        const denom = Math.sqrt(varX * varY);
-        if (denom === 0) return 0;
+        // Guard against negative values from floating-point rounding
+        const denom = Math.sqrt(Math.max(0, varX) * Math.max(0, varY));
+        if (denom === 0 || isNaN(denom)) return 0;
 
         return cov / denom;
     }

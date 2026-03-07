@@ -38,6 +38,9 @@ export function RiskRewardChart({
     const entryMid = (effectiveEntryLow + effectiveEntryHigh) / 2;
 
     // Calculate risk/reward metrics
+    // Guard against zero entry midpoint (degenerate data)
+    if (entryMid === 0) return null;
+
     const riskDistance = Math.abs(entryMid - stopLoss);
     const rewardDistance = Math.abs(targetPrice - entryMid);
     const riskPct = (riskDistance / entryMid) * 100;
