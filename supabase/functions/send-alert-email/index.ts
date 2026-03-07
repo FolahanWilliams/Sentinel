@@ -93,19 +93,28 @@ serve(async (req) => {
       <p><small>Generated entirely by Sentinel AI Agents.</small></p>
     `
 
-        const res = await fetch('https://api.resend.com/emails', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${RESEND_API_KEY}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                from: 'Sentinel Engine <sentinel@resend.dev>',
-                to: [ALERT_EMAIL],
-                subject: `[SENTINEL ${escapeHtml(confidenceScore)}] ${escapeHtml(ticker)} - High Conviction Alert`,
-                html: htmlBody,
-            }),
-        })
+        const emailController = new AbortController()
+        const emailTimeout = setTimeout(() => emailController.abort(), 45_000)
+
+        let res: Response
+        try {
+            res = await fetch('https://api.resend.com/emails', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${RESEND_API_KEY}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    from: 'Sentinel Engine <sentinel@resend.dev>',
+                    to: [ALERT_EMAIL],
+                    subject: `[SENTINEL ${escapeHtml(confidenceScore)}] ${escapeHtml(ticker)} - High Conviction Alert`,
+                    html: htmlBody,
+                }),
+                signal: emailController.signal,
+            })
+        } finally {
+            clearTimeout(emailTimeout)
+        }
 
         const resData = await res.json()
         if (!res.ok) {
