@@ -28,6 +28,8 @@ import { TechnicalAnalysisService } from './technicalAnalysis';
 import { ConfidenceCalibrator } from './confidenceCalibrator';
 import { SelfCritiqueAgent } from './selfCritique';
 import { SentimentDivergenceDetector } from './sentimentDivergence';
+import { EarningsGuard } from './earningsGuard';
+import { calculateWeightedRoi } from '@/utils/weightedRoi';
 
 export class ScannerService {
 
@@ -516,8 +518,40 @@ If there is genuinely no major news, return: {"events": []}`,
                                     console.log(`[Scanner] Gap detected for ${ev.ticker}: ${gapFill.gapType} gap ${gapFill.gapPct.toFixed(1)}%`);
                                 }
 
-                                // Combine TA + divergence + gap into unified context for the agent
-                                const enrichedTaContext = earlyTaContext + divergenceCtx + gapCtx;
+                                // 6e. Earnings Calendar Guard — block/penalize signals near earnings
+                                let earningsCtx = '';
+                                let earningsGuardResult = null;
+                                try {
+                                    earningsGuardResult = await EarningsGuard.check(ev.ticker);
+                                    if (earningsGuardResult.shouldBlock) {
+                                        console.warn(`[Scanner] EARNINGS GUARD blocked ${ev.ticker}: ${earningsGuardResult.reason}`);
+                                        continue;
+                                    }
+                                    earningsCtx = EarningsGuard.formatForPrompt(earningsGuardResult);
+                                } catch { /* non-fatal */ }
+
+                                // 6f. Fundamental Data Enrichment — fetch P/E, debt/equity, etc.
+                                let fundamentalsCtx = '';
+                                let fundamentalsData = null;
+                                try {
+                                    fundamentalsData = await MarketDataService.getFundamentals(ev.ticker);
+                                    fundamentalsCtx = MarketDataService.formatFundamentalsForPrompt(fundamentalsData);
+
+                                    // Fundamental red flags: auto-penalize confidence later
+                                    if (fundamentalsData) {
+                                        const de = fundamentalsData.debt_to_equity;
+                                        const pm = fundamentalsData.profit_margin;
+                                        if (de !== null && de > 3) {
+                                            console.log(`[Scanner] Fundamental warning for ${ev.ticker}: debt/equity=${de} (high leverage)`);
+                                        }
+                                        if (pm !== null && pm < -0.1) {
+                                            console.log(`[Scanner] Fundamental warning for ${ev.ticker}: profit_margin=${(pm * 100).toFixed(1)}% (negative)`);
+                                        }
+                                    }
+                                } catch { /* non-fatal */ }
+
+                                // Combine TA + divergence + gap + earnings + fundamentals into unified context
+                                const enrichedTaContext = earlyTaContext + divergenceCtx + gapCtx + earningsCtx + fundamentalsCtx;
 
                                 // Pipeline A: Overreaction Analysis
                                 const analysis = await AgentService.evaluateOverreaction(
@@ -627,22 +661,68 @@ If there is genuinely no major news, return: {"events": []}`,
                                             console.log(`[Scanner] Divergence ${divergenceResult.divergenceType} adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${divergenceResult.confidenceBoost > 0 ? '+' : ''}${divergenceResult.confidenceBoost})`);
                                         }
 
+                                        // 7.7. EARNINGS CALENDAR PENALTY — reduce confidence near earnings
+                                        if (earningsGuardResult && earningsGuardResult.confidencePenalty !== 0) {
+                                            const before = analysis.data.confidence_score;
+                                            analysis.data.confidence_score = Math.min(100, Math.max(30,
+                                                analysis.data.confidence_score + earningsGuardResult.confidencePenalty
+                                            ));
+                                            console.log(`[Scanner] Earnings guard adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${earningsGuardResult.confidencePenalty})`);
+                                        }
+
+                                        // 7.8. FUNDAMENTALS PENALTY — reduce confidence for weak fundamentals
+                                        if (fundamentalsData) {
+                                            let fundPenalty = 0;
+                                            const de = fundamentalsData.debt_to_equity;
+                                            const pm = fundamentalsData.profit_margin;
+                                            const pe = fundamentalsData.pe_ratio;
+                                            const peAvg = fundamentalsData.pe_sector_avg;
+
+                                            if (de !== null && de > 3) fundPenalty -= 10; // high leverage
+                                            if (pm !== null && pm < -0.1) fundPenalty -= 10; // negative margins
+                                            if (pe !== null && peAvg !== null && pe > peAvg * 3) fundPenalty -= 5; // extreme P/E vs sector
+
+                                            if (fundPenalty !== 0) {
+                                                const before = analysis.data.confidence_score;
+                                                analysis.data.confidence_score = Math.max(30, analysis.data.confidence_score + fundPenalty);
+                                                console.log(`[Scanner] Fundamentals penalty for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${fundPenalty})`);
+                                            }
+                                        }
+
+                                        // Drop signal if all adjustments brought it below threshold
+                                        if (analysis.data.confidence_score < 50) {
+                                            console.warn(`[Scanner] Signal for ${ev.ticker} dropped — confidence ${analysis.data.confidence_score} below 50 after all adjustments`);
+                                            continue;
+                                        }
+
                                         // 8. WINNER! WE HAVE A SIGNAL.
                                         signalsGenerated++;
 
                                         const entryPrice = quote.price;
 
-                                        // ATR-based stop-loss and trailing stop
+                                        // TA Confluence scoring — computed early for dynamic stop sizing
+                                        const confluence = TechnicalAnalysisService.computeConfluence(
+                                            taSnapshot, 'long', analysis.data.confidence_score
+                                        );
+                                        console.log(`[Scanner] Confluence for ${ev.ticker}: score=${confluence.score}, level=${confluence.level}`);
+
+                                        // ATR-based stop-loss with DYNAMIC multiplier based on confluence
                                         let stopLoss = analysis.data.stop_loss;
                                         let trailingStopRule: string | null = null;
                                         if (taSnapshot?.atr14) {
-                                            const atrStop = entryPrice - (taSnapshot.atr14 * 1.5);
-                                            // Use ATR stop if it's tighter than Gemini's suggestion (or if Gemini's is missing)
+                                            // Dynamic stop: tighter for strong confluence, wider for weak
+                                            let atrMult = 1.5;
+                                            if (confluence.score >= 75) atrMult = 1.0;
+                                            else if (confluence.score >= 55) atrMult = 1.25;
+                                            else if (confluence.score >= 35) atrMult = 1.75;
+                                            else atrMult = 2.0;
+
+                                            const atrStop = entryPrice - (taSnapshot.atr14 * atrMult);
                                             if (!stopLoss || atrStop > stopLoss) {
                                                 stopLoss = Math.round(atrStop * 100) / 100;
                                             }
                                             const breakevenTarget = entryPrice + taSnapshot.atr14;
-                                            trailingStopRule = `Move stop to breakeven ($${Number(entryPrice).toFixed(2)}) after price reaches $${Number(breakevenTarget).toFixed(2)} (+1x ATR). Trail by 1.5x ATR thereafter.`;
+                                            trailingStopRule = `Dynamic stop (${atrMult}x ATR, confluence=${confluence.level}). Move to breakeven ($${Number(entryPrice).toFixed(2)}) after +1x ATR ($${Number(breakevenTarget).toFixed(2)}). Trail by ${atrMult}x ATR.`;
                                         }
 
                                         // Gap-fill target: if there's a fillable gap, use it as a conservative target
@@ -664,35 +744,24 @@ If there is genuinely no major news, return: {"events": []}`,
                                             calibratedConfidence = ConfidenceCalibrator.getCalibratedWinRate(analysis.data.confidence_score, curve);
                                         } catch { /* non-fatal */ }
 
-                                        // TA Confluence scoring — news + technicals combined
-                                        const confluence = TechnicalAnalysisService.computeConfluence(
-                                            taSnapshot, 'long', analysis.data.confidence_score
-                                        );
-                                        console.log(`[Scanner] Confluence for ${ev.ticker}: score=${confluence.score}, level=${confluence.level}`);
-
-                                        // Projected ROI from historical matching
+                                        // Weighted Similarity ROI — multi-factor matching
                                         let projectedRoi: number | null = null;
                                         let projectedWinRate: number | null = null;
                                         let similarEventsCount: number | null = null;
                                         try {
-                                            const { data: pastOutcomes } = await supabase
-                                                .from('signal_outcomes')
-                                                .select('outcome, return_at_5d, return_at_10d, signals!inner(signal_type, bias_type)')
-                                                .not('outcome', 'eq', 'pending')
-                                                .limit(100);
-                                            if (pastOutcomes && pastOutcomes.length >= 3) {
-                                                // Filter to similar signal types
-                                                const similar = pastOutcomes.filter((o: any) =>
-                                                    o.signals?.signal_type === 'long_overreaction'
-                                                );
-                                                if (similar.length >= 3) {
-                                                    similarEventsCount = similar.length;
-                                                    const wins = similar.filter((o: any) => o.outcome === 'win');
-                                                    projectedWinRate = Math.round((wins.length / similar.length) * 100);
-                                                    const avgReturn = similar.reduce((sum: number, o: any) =>
-                                                        sum + (o.return_at_5d || o.return_at_10d || 0), 0) / similar.length;
-                                                    projectedRoi = Math.round(avgReturn * 10) / 10;
-                                                }
+                                            const taAlignStr = typeof taAlignment === 'string' ? taAlignment : 'unavailable';
+                                            const roiResult = await calculateWeightedRoi(
+                                                'long_overreaction',
+                                                'recency_bias',
+                                                analysis.data.confidence_score,
+                                                taAlignStr,
+                                                confluence.level
+                                            );
+                                            projectedRoi = roiResult.projectedRoi;
+                                            projectedWinRate = roiResult.projectedWinRate;
+                                            similarEventsCount = roiResult.similarEventsCount;
+                                            if (roiResult.avgSimilarity !== null) {
+                                                console.log(`[Scanner] Weighted ROI for ${ev.ticker}: ${projectedRoi}% (${roiResult.bestHorizon}, sim=${roiResult.avgSimilarity}, n=${similarEventsCount})`);
                                             }
                                         } catch { /* non-fatal */ }
 
@@ -734,6 +803,18 @@ If there is genuinely no major news, return: {"events": []}`,
                                                     gap_type: gapFill.gapType,
                                                     gap_fill_target: gapFill.gapFillTarget,
                                                 } : null,
+                                                earnings_guard: earningsGuardResult?.hasUpcomingEarnings ? {
+                                                    earnings_date: earningsGuardResult.earningsDate,
+                                                    days_until: earningsGuardResult.daysUntilEarnings,
+                                                    penalty: earningsGuardResult.confidencePenalty,
+                                                } : null,
+                                                fundamentals: fundamentalsData ? {
+                                                    pe_ratio: fundamentalsData.pe_ratio,
+                                                    debt_to_equity: fundamentalsData.debt_to_equity,
+                                                    profit_margin: fundamentalsData.profit_margin,
+                                                    revenue_growth_yoy: fundamentalsData.revenue_growth_yoy,
+                                                    short_interest_pct: (fundamentalsData as any).short_interest_pct,
+                                                } : null,
                                             },
                                             status: 'active',
                                             secondary_biases: [],
@@ -756,7 +837,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                             } as any);
                                         }
 
-                                        // 9. Position sizing recommendation (V2 with actual DB win rate + ATR)
+                                        // 9. Position sizing recommendation (V2 with dynamic stops)
                                         try {
                                             const sizing = await PositionSizer.calculateSizeV2(
                                                 analysis.data.confidence_score,
@@ -764,7 +845,8 @@ If there is genuinely no major news, return: {"events": []}`,
                                                 analysis.data.target_price,
                                                 'long_overreaction',
                                                 taSnapshot,
-                                                ev.ticker
+                                                ev.ticker,
+                                                confluence.score
                                             );
                                             console.log(`[Scanner] Position size for ${ev.ticker}: ${sizing.recommendedPct}% ($${sizing.usdValue}) via ${sizing.method}${sizing.stopLoss ? ` | SL: $${sizing.stopLoss}` : ''}`);
 

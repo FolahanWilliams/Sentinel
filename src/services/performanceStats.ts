@@ -224,20 +224,72 @@ export class PerformanceStats {
     }
 
     /**
+     * Win rate grouped by signal_type (long_overreaction, sector_contagion, etc.)
+     */
+    async getWinRateBySignalType(): Promise<Record<string, WinRateResult & { avgReturn5d: number }>> {
+        const { data: joined } = await supabase
+            .from('signal_outcomes')
+            .select('outcome, return_at_5d, return_at_10d, signals!inner(signal_type)')
+            .neq('outcome', 'pending');
+
+        if (!joined || joined.length === 0) return {};
+
+        const results: Record<string, WinRateResult & { avgReturn5d: number; returns: number[] }> = {};
+
+        for (const row of joined) {
+            const signalType = (row as any).signals?.signal_type || 'unknown';
+            if (!results[signalType]) {
+                results[signalType] = { total: 0, wins: 0, losses: 0, winRate: 0, avgReturn5d: 0, returns: [] };
+            }
+            results[signalType].total++;
+            if (row.outcome === 'win') results[signalType].wins++;
+            else results[signalType].losses++;
+            const ret = row.return_at_5d ?? row.return_at_10d ?? 0;
+            results[signalType].returns.push(ret);
+        }
+
+        const cleaned: Record<string, WinRateResult & { avgReturn5d: number }> = {};
+        for (const [type, r] of Object.entries(results)) {
+            r.winRate = r.total > 0 ? Math.round((r.wins / r.total) * 100) : 0;
+            r.avgReturn5d = r.returns.length > 0
+                ? Math.round((r.returns.reduce((a, b) => a + b, 0) / r.returns.length) * 100) / 100
+                : 0;
+            cleaned[type] = { total: r.total, wins: r.wins, losses: r.losses, winRate: r.winRate, avgReturn5d: r.avgReturn5d };
+        }
+
+        return cleaned;
+    }
+
+    /**
      * Build a performance context string for injection into agent prompts.
      * Includes explicit calibration directives so agents can adjust confidence
      * based on historical accuracy for each bias type, sector, and confidence bucket.
      */
     async buildPerformanceContext(): Promise<string> {
-        const [biasRates, sectorRates, topPatterns, calibration] = await Promise.all([
+        const [biasRates, sectorRates, topPatterns, calibration, signalTypeRates] = await Promise.all([
             this.getWinRateByBias(),
             this.getWinRateBySector(),
             this.getTopPerformingPatterns(5),
             this.getConfidenceCalibration(),
+            this.getWinRateBySignalType(),
         ]);
 
         const lines: string[] = ['=== SENTINEL HISTORICAL PERFORMANCE DATA ==='];
         lines.push('Use this data to CALIBRATE your confidence scores. This is not optional.');
+
+        // ── Signal-type stats (overreaction, contagion, etc.) ──
+        const signalTypeEntries = Object.entries(signalTypeRates).filter(([, v]) => v.total >= 2);
+        if (signalTypeEntries.length > 0) {
+            lines.push('\n## Win Rate by Signal Type:');
+            for (const [type, stats] of signalTypeEntries) {
+                lines.push(`  - ${type}: ${stats.winRate}% (${stats.wins}W/${stats.losses}L, n=${stats.total}, avg 5d return: ${stats.avgReturn5d}%)`);
+                if (stats.total >= 5 && stats.winRate < 40) {
+                    lines.push(`    ⚠ DIRECTIVE: "${type}" signals have poor historical accuracy (${stats.winRate}%). Require confidence >= 80 and strong TA confluence to proceed.`);
+                } else if (stats.total >= 5 && stats.winRate >= 65) {
+                    lines.push(`    ✓ "${type}" signals perform well historically. Standard thresholds apply.`);
+                }
+            }
+        }
 
         // ── Bias-type stats with explicit directives ──
         const biasEntries = Object.entries(biasRates).filter(([, v]) => v.total >= 2);

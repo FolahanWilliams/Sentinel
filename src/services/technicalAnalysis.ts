@@ -154,6 +154,21 @@ function computeVolumeRatio(volumes: number[], period: number = 20): number | nu
 }
 
 /**
+ * Determine if high volume is buying or selling pressure.
+ * Compares today's close vs open: close > open = buying day, close < open = selling day.
+ * Returns +1 for buying, -1 for selling, 0 for neutral.
+ */
+function computeVolumeDirection(bars: { open: number; close: number; volume: number }[]): number {
+    if (bars.length < 1) return 0;
+    const today = bars[bars.length - 1]!;
+    const changePct = today.open > 0 ? ((today.close - today.open) / today.open) * 100 : 0;
+    // >0.3% change threshold to avoid noise
+    if (changePct > 0.3) return 1;  // buying day
+    if (changePct < -0.3) return -1; // selling day
+    return 0;
+}
+
+/**
  * Z-Score: how many standard deviations the current price is from its SMA.
  * Z < -2.0 = extremely oversold, Z > +2.0 = extremely overbought.
  */
@@ -242,6 +257,7 @@ export class TechnicalAnalysisService {
         const sma200 = computeSMA(closes, 200);
         const atr14 = computeATR(bars, 14);
         const volumeRatio = computeVolumeRatio(volumes, 20);
+        const volumeDirection = computeVolumeDirection(bars);
         const bollingerPosition = computeBollingerPosition(closes, 20, 2);
         const zScore20 = computeZScore(closes, 20);
         const { gapPct, gapType } = computeGap(bars);
@@ -268,9 +284,15 @@ export class TechnicalAnalysisService {
         }
         if (trendDirection === 'bullish') taScore += 25;
         else if (trendDirection === 'bearish') taScore -= 25;
+        // Volume scoring — direction-aware: high volume on up day = bullish, on down day = bearish
         if (volumeRatio !== null) {
-            if (volumeRatio > 1.5) taScore += 15;  // High volume confirms
-            else if (volumeRatio < 0.5) taScore -= 10;  // Low volume = weak
+            if (volumeRatio > 1.5) {
+                if (volumeDirection > 0) taScore += 20;       // High volume buying = strong bullish
+                else if (volumeDirection < 0) taScore -= 15;  // High volume selling = bearish pressure
+                else taScore += 5;                             // High volume neutral = ambiguous
+            } else if (volumeRatio < 0.5) {
+                taScore -= 10;  // Low volume = weak conviction
+            }
         }
         if (bollingerPosition !== null) {
             if (bollingerPosition < 0.1) taScore += 15;  // Near lower band = bullish
@@ -291,7 +313,7 @@ export class TechnicalAnalysisService {
         // Clamp to -100..+100
         taScore = Math.max(-100, Math.min(100, taScore));
 
-        return {
+        const snapshot: TASnapshot & { volumeDirection?: number } = {
             ticker: ticker.toUpperCase(),
             timestamp: new Date().toISOString(),
             rsi14,
@@ -307,6 +329,9 @@ export class TechnicalAnalysisService {
             trendDirection,
             taScore,
         };
+        // Attach volume direction as extra field (not in TASnapshot type to avoid migration)
+        snapshot.volumeDirection = volumeDirection;
+        return snapshot;
     }
 
     /**
@@ -336,7 +361,14 @@ export class TechnicalAnalysisService {
             }
             if (trendDirection === 'bullish') confirmations++;
             else if (trendDirection === 'bearish') conflicts++;
-            if (volumeRatio !== null && volumeRatio > 0.8) confirmations++;
+            // Volume: for longs, high volume on up day confirms; high volume on down day conflicts
+            if (volumeRatio !== null && volumeRatio > 1.2) {
+                // Check if the snapshot has volumeDirection (added in improvement 3)
+                const volDir = (snapshot as any).volumeDirection;
+                if (volDir === 1) confirmations++;        // buying volume
+                else if (volDir === -1) conflicts++;      // selling volume
+                else if (volumeRatio > 0.8) confirmations++; // decent volume, neutral direction
+            }
         } else {
             // For short signals, bearish TA confirms
             if (rsi14 !== null) {
@@ -349,6 +381,12 @@ export class TechnicalAnalysisService {
             }
             if (trendDirection === 'bearish') confirmations++;
             else if (trendDirection === 'bullish') conflicts++;
+            // Volume: for shorts, high volume on down day confirms
+            if (volumeRatio !== null && volumeRatio > 1.2) {
+                const volDir = (snapshot as any).volumeDirection;
+                if (volDir === -1) confirmations++;       // selling volume confirms short
+                else if (volDir === 1) conflicts++;       // buying volume conflicts with short
+            }
         }
 
         if (conflicts >= 3) return 'conflicting';
@@ -414,9 +452,26 @@ export class TechnicalAnalysisService {
             else if (zScore20 !== null && zScore20 > 2.0) taConfirmations += 15;
         }
 
-        // Volume surge confirmation (>150% avg)
-        if (volumeRatio !== null && volumeRatio > 1.5) taConfirmations += 20;
-        else if (volumeRatio !== null && volumeRatio > 1.2) taConfirmations += 10;
+        // Volume surge confirmation — only counts if volume direction aligns with signal
+        // For longs: high volume on down day may be capitulation (still bullish) or distribution (bearish)
+        // Use TA snapshot's volume direction if available, otherwise treat as neutral
+        if (volumeRatio !== null && volumeRatio > 1.5) {
+            // High volume: direction matters
+            if (signalDirection === 'long') {
+                // For long signals: buying volume confirms, selling volume on oversold = capitulation (still ok)
+                if (zScore20 !== null && zScore20 < -1.5) {
+                    // Oversold + high volume = capitulation exhaustion — confirms long
+                    taConfirmations += 20;
+                } else {
+                    taConfirmations += 10; // High volume but unclear direction
+                }
+            } else {
+                // For short signals: selling volume confirms
+                taConfirmations += 10;
+            }
+        } else if (volumeRatio !== null && volumeRatio > 1.2) {
+            taConfirmations += 5;
+        }
 
         // TA score alignment
         if (signalDirection === 'long' && taScore > 30) taConfirmations += 20;
@@ -483,8 +538,10 @@ export class TechnicalAnalysisService {
         const macdLabel = snapshot.macd
             ? (snapshot.macd.histogram > 0 ? 'bullish momentum' : 'bearish momentum')
             : 'N/A';
+        const volDir = (snapshot as any).volumeDirection;
+        const volDirLabel = volDir === 1 ? 'BUYING pressure' : volDir === -1 ? 'SELLING pressure' : 'neutral';
         const volLabel = snapshot.volumeRatio !== null
-            ? `${Number(snapshot.volumeRatio).toFixed(1)}x avg (${Number(snapshot.volumeRatio) > 1.2 ? 'confirming' : Number(snapshot.volumeRatio) < 0.5 ? 'weak' : 'normal'})`
+            ? `${Number(snapshot.volumeRatio).toFixed(1)}x avg — ${volDirLabel} (${Number(snapshot.volumeRatio) > 1.5 ? 'surge' : Number(snapshot.volumeRatio) > 1.2 ? 'elevated' : Number(snapshot.volumeRatio) < 0.5 ? 'weak' : 'normal'})`
             : 'N/A';
 
         const zLabel = snapshot.zScore20 !== null
