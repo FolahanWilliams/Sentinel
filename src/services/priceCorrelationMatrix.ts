@@ -257,8 +257,8 @@ export class PriceCorrelationMatrix {
         let sumX = 0;
         let sumY = 0;
         for (let i = 0; i < n; i++) {
-            sumX += x[i];
-            sumY += y[i];
+            sumX += x[i]!;
+            sumY += y[i]!;
         }
         const meanX = sumX / n;
         const meanY = sumY / n;
@@ -268,8 +268,8 @@ export class PriceCorrelationMatrix {
         let varX = 0;
         let varY = 0;
         for (let i = 0; i < n; i++) {
-            const dx = x[i] - meanX;
-            const dy = y[i] - meanY;
+            const dx = x[i]! - meanX;
+            const dy = y[i]! - meanY;
             cov += dx * dy;
             varX += dx * dx;
             varY += dy * dy;

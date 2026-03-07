@@ -80,7 +80,7 @@ export class DynamicCalibrator {
           blocks[i].sumWY += blocks[i + 1].sumWY;
           blocks[i].sumW += blocks[i + 1].sumW;
           // Keep the midpoint x between merged blocks
-          blocks[i].x = (blocks[i].x + blocks[i + 1].x) / 2;
+          blocks[i]!.x = (blocks[i]!.x + blocks[i + 1]!.x) / 2;
           blocks.splice(i + 1, 1);
           changed = true;
           // Re-check from previous block
@@ -242,16 +242,18 @@ export class DynamicCalibrator {
     const x = Math.max(0, Math.min(100, rawConfidence));
 
     // Exact or boundary match
-    if (x <= pts[0].x) return pts[0].y;
-    if (x >= pts[pts.length - 1].x) return pts[pts.length - 1].y;
+    if (x <= pts[0]!.x) return pts[0]!.y;
+    if (x >= pts[pts.length - 1]!.x) return pts[pts.length - 1]!.y;
 
     // Linear interpolation between surrounding points
     for (let i = 0; i < pts.length - 1; i++) {
-      if (x >= pts[i].x && x <= pts[i + 1].x) {
-        const range = pts[i + 1].x - pts[i].x;
-        if (range === 0) return pts[i].y;
-        const t = (x - pts[i].x) / range;
-        return Math.round((pts[i].y + t * (pts[i + 1].y - pts[i].y)) * 100) / 100;
+      const p0 = pts[i]!;
+      const p1 = pts[i + 1]!;
+      if (x >= p0.x && x <= p1.x) {
+        const range = p1.x - p0.x;
+        if (range === 0) return p0.y;
+        const t = (x - p0.x) / range;
+        return Math.round((p0.y + t * (p1.y - p0.y)) * 100) / 100;
       }
     }
 

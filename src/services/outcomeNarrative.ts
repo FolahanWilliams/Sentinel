@@ -5,7 +5,6 @@
  * AI narrative explaining what happened and why.
  */
 
-import { supabase } from '@/config/supabase';
 import { GeminiService } from './gemini';
 import { GEMINI_MODEL_LITE } from '@/config/constants';
 

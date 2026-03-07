@@ -19,7 +19,6 @@ import { RSSReaderService } from './rssReader';
 import { GoogleNewsService } from './googleNews';
 import { RedditSentimentService } from './redditSentiment';
 import { OutcomeTracker } from './outcomeTracker';
-import { PositionSizer } from './positionSizer';
 import { performanceStats } from './performanceStats';
 import { ReflectionAgent } from './reflectionAgent';
 import { isBudgetExceeded } from '@/utils/costEstimator';
