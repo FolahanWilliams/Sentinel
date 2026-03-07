@@ -1,6 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/config/supabase';
 import type { Database } from '@/types/database';
+import type { Json } from '@/types/database';
+import {
+    DEFAULT_MIN_CONFIDENCE,
+    DEFAULT_MIN_PRICE_DROP_PCT,
+    DEFAULT_MIN_VOLUME_MULTIPLIER,
+    DEFAULT_ACTIVE_SECTORS,
+    DEFAULT_PAPER_MODE,
+} from '@/config/constants';
 
 type AppSetting = Database['public']['Tables']['app_settings']['Row'];
 
@@ -15,11 +23,11 @@ export interface ScannerSettings {
 
 const DEFAULT_SETTINGS: ScannerSettings = {
     interval_minutes: 5,
-    min_confidence: 60,
-    min_price_drop_pct: -5.0,
-    min_volume_mult: 2.0,
-    active_sectors: ['Tech', 'Bio', 'Semi', 'AI'],
-    paper_mode: true
+    min_confidence: DEFAULT_MIN_CONFIDENCE,
+    min_price_drop_pct: DEFAULT_MIN_PRICE_DROP_PCT,
+    min_volume_mult: DEFAULT_MIN_VOLUME_MULTIPLIER,
+    active_sectors: [...DEFAULT_ACTIVE_SECTORS],
+    paper_mode: DEFAULT_PAPER_MODE,
 };
 
 export function useAppSettings() {
@@ -61,7 +69,7 @@ export function useAppSettings() {
                 .from('app_settings')
                 .upsert({
                     key: 'scanner_config',
-                    value: newSettings as any
+                    value: newSettings as unknown as Json
                 });
 
             if (upsertError) throw upsertError;

@@ -10,6 +10,7 @@
  */
 
 import { useState, useCallback, useRef } from 'react';
+import { CACHE_TTL_TICKER_ANALYSIS } from '@/config/constants';
 import { supabase } from '@/config/supabase';
 
 export interface BiasWeight {
@@ -56,7 +57,7 @@ interface CacheEntry {
 
 // Per-session cache
 const CACHE_KEY = 'sentinel_analysis_cache';
-const MAX_AGE_MS = 15 * 60 * 1000; // 15 minutes
+const MAX_AGE_MS = CACHE_TTL_TICKER_ANALYSIS;
 
 // Initialize cache from sessionStorage if available
 const loadInitialCache = (): Map<string, CacheEntry> => {

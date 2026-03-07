@@ -37,7 +37,7 @@ export function useWatchlist() {
     const addTicker = useCallback(async (ticker: string, companyName: string, sector: string) => {
         const { error: err } = await supabase
             .from('watchlist')
-            .insert({ ticker: ticker.toUpperCase(), company_name: companyName, sector, is_active: true } as any);
+            .insert({ ticker: ticker.toUpperCase(), company_name: companyName, sector, is_active: true });
         if (err) { setError(err.message); return false; }
         await fetchTickers();
         return true;
@@ -53,7 +53,7 @@ export function useWatchlist() {
     const toggleActive = useCallback(async (id: string, isActive: boolean) => {
         const { error: err } = await supabase
             .from('watchlist')
-            .update({ is_active: isActive } as any)
+            .update({ is_active: isActive })
             .eq('id', id);
         if (err) { setError(err.message); return false; }
         await fetchTickers();

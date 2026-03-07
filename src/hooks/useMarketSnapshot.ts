@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/config/supabase';
 import { MarketDataService } from '@/services/marketData';
+import { CACHE_TTL_MARKET_SNAPSHOT, CACHE_TTL_AI_CONTENT, FEAR_GREED_BEARISH_THRESHOLD, FEAR_GREED_BULLISH_THRESHOLD } from '@/config/constants';
 
 interface TickerData {
     price: number;
@@ -29,8 +30,8 @@ export interface MarketSnapshotData {
 
 const CACHE_KEY = 'sentinel_market_snapshot_v2';
 const AI_CACHE_KEY = 'sentinel_market_ai_v1';
-const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
-const AI_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes — AI-generated content cached longer to prevent hallucination flicker
+const CACHE_TTL_MS = CACHE_TTL_MARKET_SNAPSHOT;
+const AI_CACHE_TTL_MS = CACHE_TTL_AI_CONTENT;
 
 function getCached(): MarketSnapshotData | null {
     try {
@@ -213,7 +214,7 @@ export function useMarketSnapshot() {
                     { color: 'text-sentinel-400', text: `VIX at ${Number(vix.price).toFixed(2)} (${Number(vix.changePercent).toFixed(2)}%)` },
                     { color: Number(sp500.changePercent) >= 0 ? 'text-emerald-400' : 'text-red-400', text: `S&P 500 ${Number(sp500.changePercent) >= 0 ? 'up' : 'down'} ${Math.abs(Number(sp500.changePercent)).toFixed(2)}%` },
                     { color: Number(btc.changePercent) >= 0 ? 'text-emerald-400' : 'text-red-400', text: `Bitcoin ${Number(btc.changePercent) >= 0 ? 'up' : 'down'} ${Math.abs(Number(btc.changePercent)).toFixed(2)}%` },
-                    { color: fearGreedValue < 40 ? 'text-red-400' : fearGreedValue > 60 ? 'text-emerald-400' : 'text-amber-400', text: `Market sentiment: ${fearGreedLabel} (${fearGreedValue})` },
+                    { color: fearGreedValue < FEAR_GREED_BEARISH_THRESHOLD ? 'text-red-400' : fearGreedValue > FEAR_GREED_BULLISH_THRESHOLD ? 'text-emerald-400' : 'text-amber-400', text: `Market sentiment: ${fearGreedLabel} (${fearGreedValue})` },
                 ];
             }
 

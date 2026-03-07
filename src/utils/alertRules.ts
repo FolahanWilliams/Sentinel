@@ -32,10 +32,10 @@ export function getMatchingAlertRules(signal: any): AlertRule[] {
                 if ((signal.confidence_score ?? 0) < rule.minConfidence) return false;
             }
 
-            // Type check
+            // Type check (exact match, not substring)
             if (rule.signalType !== 'all') {
                 const type = (signal.signal_type || '').toLowerCase();
-                if (!type.includes(rule.signalType.toLowerCase())) return false;
+                if (type !== rule.signalType.toLowerCase()) return false;
             }
 
             // Bias check

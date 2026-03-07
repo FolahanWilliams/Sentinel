@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/config/supabase';
+import { CACHE_TTL_UPCOMING_EVENTS } from '@/config/constants';
 
 interface NotableEvent {
     date: string;
@@ -24,7 +25,7 @@ interface UpcomingEventsData {
 }
 
 const CACHE_KEY = 'sentinel_upcoming_events';
-const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+const CACHE_TTL_MS = CACHE_TTL_UPCOMING_EVENTS;
 
 function getCached(): UpcomingEventsData | null {
     try {

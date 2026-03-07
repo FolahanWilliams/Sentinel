@@ -26,6 +26,19 @@ export const SEVERITY_THRESHOLD = 4; // Min event severity for deep analysis
 export const DEFAULT_SIGNAL_TIMEFRAME_DAYS = 10; // Default expected holding period
 
 // ===========================
+// MARKET MOOD THRESHOLDS
+// ===========================
+export const VIX_VOLATILITY_THRESHOLD = 25;
+export const FEAR_GREED_BULLISH_THRESHOLD = 60;
+export const FEAR_GREED_BEARISH_THRESHOLD = 40;
+
+// ===========================
+// SCANNER SETTINGS DEFAULTS
+// ===========================
+export const DEFAULT_ACTIVE_SECTORS = ['Tech', 'Bio', 'Semi', 'AI'] as const;
+export const DEFAULT_PAPER_MODE = true;
+
+// ===========================
 // RATE LIMITS
 // ===========================
 export const GEMINI_MAX_CALLS_PER_MINUTE = 30;
@@ -38,6 +51,11 @@ export const CACHE_TTL_QUOTE = 60 * 1000;           // 60 seconds
 export const CACHE_TTL_COMPANY_INFO = 24 * 60 * 60 * 1000; // 24 hours
 export const CACHE_TTL_HISTORICAL = 60 * 60 * 1000;  // 1 hour
 export const CACHE_TTL_FUNDAMENTALS = 6 * 60 * 60 * 1000; // 6 hours
+export const CACHE_TTL_MARKET_SNAPSHOT = 10 * 60 * 1000; // 10 minutes
+export const CACHE_TTL_AI_CONTENT = 30 * 60 * 1000;     // 30 minutes
+export const CACHE_TTL_TICKER_ANALYSIS = 15 * 60 * 1000; // 15 minutes
+export const CACHE_TTL_UPCOMING_EVENTS = 60 * 60 * 1000; // 1 hour
+export const CACHE_TTL_MARKET_TRENDS = 30 * 60 * 1000;  // 30 minutes
 
 // ===========================
 // OUTCOME TRACKING WINDOWS (days)
