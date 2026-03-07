@@ -176,6 +176,7 @@ async function fetchBiasWeights(ticker: string): Promise<BiasWeight[]> {
     });
 
     if (error) throw error;
+    if (!data?.text) throw new Error('Empty response from Gemini');
     return JSON.parse(data.text);
 }
 
@@ -204,6 +205,7 @@ async function fetchEvents(ticker: string): Promise<AIEvent[]> {
     });
 
     if (error) throw error;
+    if (!data?.text) throw new Error('Empty response from Gemini');
     return JSON.parse(data.text);
 }
 
@@ -235,5 +237,6 @@ async function fetchFundamentals(ticker: string): Promise<FundamentalMetrics> {
     });
 
     if (error) throw error;
+    if (!data?.text) throw new Error('Empty response from Gemini');
     return JSON.parse(data.text);
 }

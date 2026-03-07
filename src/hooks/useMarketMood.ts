@@ -14,8 +14,8 @@ export function useMarketMood(): MarketMood {
   return useMemo(() => {
     if (!data) return { mood: 'neutral' as const, intensity: 0 };
 
-    const fg = data.fearGreedValue;
-    const vix = data.tickers.vix.price;
+    const fg = data.fearGreedValue ?? 50;
+    const vix = data.tickers.vix?.price ?? 0;
 
     // High VIX (> 25) signals volatility
     if (vix > 25) {
