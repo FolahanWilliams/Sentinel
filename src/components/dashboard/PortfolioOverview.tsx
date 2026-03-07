@@ -4,9 +4,10 @@
  */
 
 import { usePortfolio } from '@/hooks/usePortfolio';
+import { MarketDataService } from '@/services/marketData';
 import { formatPrice, formatPercent } from '@/utils/formatters';
 import { TrendingUp, TrendingDown, Briefcase, PieChart, ArrowRight } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/config/supabase';
 import { motion } from 'framer-motion';
 import { DonutChart } from '@/components/shared/DonutChart';
@@ -47,6 +48,28 @@ export function PortfolioOverview() {
         }
         fetchSectors();
     }, []);
+
+    // Fetch live quotes for open positions to compute unrealized P&L
+    const [liveQuotes, setLiveQuotes] = useState<Record<string, number>>({});
+    const fetchQuotes = useCallback(async () => {
+        if (openPositions.length === 0) return;
+        const quotes: Record<string, number> = {};
+        await Promise.all(
+            openPositions.map(async (pos) => {
+                try {
+                    const q = await MarketDataService.getQuote(pos.ticker);
+                    if (q?.price) quotes[pos.ticker] = q.price;
+                } catch { /* keep previous */ }
+            })
+        );
+        setLiveQuotes(prev => ({ ...prev, ...quotes }));
+    }, [openPositions]);
+
+    useEffect(() => {
+        fetchQuotes();
+        const interval = setInterval(fetchQuotes, 60_000);
+        return () => clearInterval(interval);
+    }, [fetchQuotes]);
 
     if (loading) {
         return (
@@ -148,9 +171,14 @@ export function PortfolioOverview() {
                     </div>
                     <div className="divide-y divide-sentinel-800/30">
                         {openPositions.map(pos => {
-                            const pnl = Number(pos.realized_pnl) || 0;
-                            const pnlPct = Number(pos.realized_pnl_pct) || 0;
+                            const livePrice = liveQuotes[pos.ticker];
+                            const entry = Number(pos.entry_price) || 0;
+                            const shares = Number(pos.shares) || 0;
+                            const multiplier = pos.side === 'short' ? -1 : 1;
+                            const pnl = livePrice && entry ? (livePrice - entry) * shares * multiplier : 0;
+                            const pnlPct = livePrice && entry ? ((livePrice - entry) / entry) * 100 * multiplier : 0;
                             const isProfit = pnl >= 0;
+                            const hasQuote = !!livePrice;
 
                             return (
                                 <div key={pos.id} className="p-3 hover:bg-sentinel-800/20 transition-colors">
@@ -162,10 +190,16 @@ export function PortfolioOverview() {
                                             </span>
                                         </div>
                                         <div className="flex items-center gap-1">
-                                            {isProfit ? <TrendingUp className="w-3 h-3 text-emerald-400" /> : <TrendingDown className="w-3 h-3 text-red-400" />}
-                                            <span className={`text-xs font-mono font-bold ${isProfit ? 'text-emerald-400' : 'text-red-400'}`}>
-                                                {formatPercent(pnlPct)}
-                                            </span>
+                                            {hasQuote ? (
+                                                <>
+                                                    {isProfit ? <TrendingUp className="w-3 h-3 text-emerald-400" /> : <TrendingDown className="w-3 h-3 text-red-400" />}
+                                                    <span className={`text-xs font-mono font-bold ${isProfit ? 'text-emerald-400' : 'text-red-400'}`}>
+                                                        {formatPercent(pnlPct)}
+                                                    </span>
+                                                </>
+                                            ) : (
+                                                <span className="text-xs font-mono text-sentinel-600">--</span>
+                                            )}
                                         </div>
                                     </div>
                                     <div className="flex gap-4 mt-1 text-[11px] text-sentinel-500 font-mono">

@@ -193,7 +193,7 @@ export function Positions() {
     async function handleClosePosition() {
         if (!showCloseModal) return;
         const exitPrice = parseFloat(closePrice);
-        if (!exitPrice) return;
+        if (!exitPrice || exitPrice <= 0) return;
 
         const pos = positions.find(p => p.id === showCloseModal);
         if (!pos || !pos.entry_price || !pos.shares) return;
@@ -657,7 +657,8 @@ export function Positions() {
                                     </button>
                                     <button
                                         onClick={handleClosePosition}
-                                        className="flex-1 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-xl text-sm font-semibold transition-colors cursor-pointer border-none"
+                                        disabled={!closePrice || parseFloat(closePrice) <= 0}
+                                        className="flex-1 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-xl text-sm font-semibold transition-colors cursor-pointer border-none disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
                                         Close Trade
                                     </button>
