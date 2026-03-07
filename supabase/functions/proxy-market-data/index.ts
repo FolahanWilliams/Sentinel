@@ -286,7 +286,7 @@ Deno.serve(async (req) => {
         }
 
         // 3. Check server-side cache before hitting upstream APIs
-        const cacheKey = `${endpoint}:${(ticker || (tickersParam && tickersParam[0]) || tickerParam || 'general').toUpperCase()}`
+        const cacheKey = `${endpoint}:${(ticker || (tickersParam && tickersParam.sort().join(',')) || tickerParam || 'general').toUpperCase()}`
         const cached = getCached(cacheKey)
         if (cached) {
             console.log(`[proxy-market-data] Cache hit: ${cacheKey}`)

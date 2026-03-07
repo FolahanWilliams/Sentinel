@@ -68,17 +68,20 @@ export function UnifiedPortfolioView({ className = '' }: UnifiedPortfolioViewPro
         fetchSectors();
     }, []);
 
+    // Stabilize dependency to prevent re-fetching on every render
+    const openTickerKey = openPositions.map(p => p.ticker).sort().join(',');
+
     // Fetch live quotes for open positions
     const fetchQuotes = useCallback(async () => {
-        if (openPositions.length === 0) return;
-        const tickers = [...new Set(openPositions.map(p => p.ticker))];
+        if (!openTickerKey) return;
+        const tickers = [...new Set(openTickerKey.split(','))];
         try {
             const q = await MarketDataService.getQuotesBulk(tickers);
             setQuotes(q);
         } catch (err) {
             console.warn('[UnifiedPortfolioView] Failed to fetch quotes:', err);
         }
-    }, [openPositions]);
+    }, [openTickerKey]);
 
     useEffect(() => {
         fetchQuotes();

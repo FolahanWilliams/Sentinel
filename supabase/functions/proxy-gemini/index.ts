@@ -234,10 +234,15 @@ serve(async (req) => {
                         { role: 'user', parts: [{ text: 'Your previous response was not valid JSON. Return ONLY valid JSON matching the required schema, with no markdown formatting or extra text.' }] }
                     ]
                     const retryPayload = { ...payload, contents: retryContents }
-                    result = await callGemini(effectiveModel, retryPayload, GEMINI_API_KEY)
-                    totalInputTokens += result.inputTokens
-                    totalOutputTokens += result.outputTokens
-                    console.log('[proxy-gemini] Retry succeeded')
+                    try {
+                        result = await callGemini(effectiveModel, retryPayload, GEMINI_API_KEY)
+                        totalInputTokens += result.inputTokens
+                        totalOutputTokens += result.outputTokens
+                        console.log('[proxy-gemini] Retry succeeded')
+                    } catch (retryErr) {
+                        // Re-throw so the outer catch (geminiError) handles it properly
+                        throw retryErr
+                    }
                 }
             }
         } catch (geminiError: any) {

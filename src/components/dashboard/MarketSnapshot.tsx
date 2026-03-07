@@ -25,10 +25,13 @@ export function MarketSnapshot() {
 
     // Market session status
     const now = new Date();
-    const estHour = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' })).getHours();
-    const estDay = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' })).getDay();
+    const estDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const estHour = estDate.getHours();
+    const estMinute = estDate.getMinutes();
+    const estDay = estDate.getDay();
+    const estTimeInMinutes = estHour * 60 + estMinute;
     const isWeekend = estDay === 0 || estDay === 6;
-    const marketStatus = isWeekend ? 'Closed' : estHour < 4 ? 'Closed' : estHour < 9.5 ? 'Pre-Market' : estHour < 16 ? 'Market Open' : estHour < 20 ? 'After Hours' : 'Closed';
+    const marketStatus = isWeekend ? 'Closed' : estTimeInMinutes < 240 ? 'Closed' : estTimeInMinutes < 570 ? 'Pre-Market' : estTimeInMinutes < 960 ? 'Market Open' : estTimeInMinutes < 1200 ? 'After Hours' : 'Closed';
     const marketStatusColor = marketStatus === 'Market Open' ? 'text-emerald-400' : marketStatus === 'Pre-Market' || marketStatus === 'After Hours' ? 'text-amber-400' : 'text-sentinel-500';
     const marketStatusDot = marketStatus === 'Market Open' ? 'bg-emerald-500' : marketStatus === 'Pre-Market' || marketStatus === 'After Hours' ? 'bg-amber-500' : 'bg-sentinel-600';
 

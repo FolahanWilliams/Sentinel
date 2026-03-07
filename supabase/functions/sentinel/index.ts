@@ -394,13 +394,24 @@ serve(async (req) => {
                         signal: geminiController.signal,
                     }
                 )
+                if (!geminiRes.ok) throw new Error(`Gemini Error: ${geminiRes.status}`)
+            } catch (fetchErr) {
+                clearTimeout(geminiTimeout)
+                throw fetchErr
+            }
+
+            // Read body inside abort protection — re-arm a shorter timeout for body parsing
+            let data: any
+            try {
+                data = await geminiRes.json()
             } finally {
                 clearTimeout(geminiTimeout)
             }
-
-            if (!geminiRes.ok) throw new Error(`Gemini Error: ${geminiRes.status}`)
-            const data = await geminiRes.json()
             const text = data.candidates?.[0]?.content?.parts?.[0]?.text
+
+            if (!text) {
+                console.warn('[Sentinel] Gemini returned empty text — possibly blocked by safety filter. finishReason:', data.candidates?.[0]?.finishReason)
+            }
 
             if (text) {
                 try {
