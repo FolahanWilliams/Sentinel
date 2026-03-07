@@ -246,19 +246,21 @@ export class PositionSizer {
         // 8b. Drawdown-aware scaling — reduce size when portfolio is in drawdown
         let drawdownScaling: PositionSizeResult['drawdownScaling'] = null;
         try {
-            const { data: positions } = await supabase
+            const { data: closedPositions } = await supabase
                 .from('positions')
                 .select('realized_pnl')
-                .eq('status', 'open')
-                .not('realized_pnl', 'is', null);
+                .eq('status', 'closed')
+                .not('realized_pnl', 'is', null)
+                .order('closed_at', { ascending: false })
+                .limit(20);
 
-            if (positions && positions.length > 0) {
-                const totalUnrealizedPnl = (positions as { realized_pnl: number }[]).reduce(
-                    (sum: number, p: { realized_pnl: number }) => sum + (p.realized_pnl || 0), 0
+            if (closedPositions && closedPositions.length > 0) {
+                const totalRealizedPnl = (closedPositions as { realized_pnl: number }[]).reduce(
+                    (sum, p) => sum + (p.realized_pnl || 0), 0
                 );
 
-                if (totalUnrealizedPnl < 0) {
-                    const drawdownPct = Math.abs(totalUnrealizedPnl) / totalCapital * 100;
+                if (totalRealizedPnl < 0) {
+                    const drawdownPct = Math.abs(totalRealizedPnl) / totalCapital * 100;
                     let scalingFactor = 1.0;
 
                     if (drawdownPct >= 20) scalingFactor = 0.25;
