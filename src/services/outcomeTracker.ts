@@ -32,15 +32,26 @@ export class OutcomeTracker {
 
         for (const outcome of outcomes) {
             try {
-                // Fetch current quote
-                const quote = await MarketDataService.getQuote(outcome.ticker);
-                const currentPrice = quote.price;
+                // Fetch current quote — skip this outcome if quote fails
+                let quote;
+                try {
+                    quote = await MarketDataService.getQuote(outcome.ticker);
+                } catch (quoteErr) {
+                    console.warn(`[OutcomeTracker] Quote fetch failed for ${outcome.ticker}, skipping this cycle`, quoteErr);
+                    continue;
+                }
+
+                const currentPrice = quote?.price;
+                if (!currentPrice || currentPrice <= 0 || !outcome.entry_price || outcome.entry_price <= 0) {
+                    console.warn(`[OutcomeTracker] Invalid price data for ${outcome.ticker} (current=${currentPrice}, entry=${outcome.entry_price}), skipping`);
+                    continue;
+                }
 
                 const entryTime = new Date(outcome.tracked_at).getTime();
                 const now = Date.now();
                 const daysElapsed = (now - entryTime) / (1000 * 60 * 60 * 24);
 
-                const updates: any = {};
+                const updates: Record<string, unknown> = {};
                 let isComplete = false;
                 let finalOutcome = 'pending';
 
@@ -81,11 +92,14 @@ export class OutcomeTracker {
                     .single();
 
                 if (signal) {
-                    if (signal.stop_loss !== null && currentPrice <= signal.stop_loss) {
+                    const stopLoss = typeof signal.stop_loss === 'number' ? signal.stop_loss : null;
+                    const targetPrice = typeof signal.target_price === 'number' ? signal.target_price : null;
+
+                    if (stopLoss !== null && stopLoss > 0 && currentPrice <= stopLoss) {
                         updates.hit_stop_loss = true;
                         isComplete = true; // Stopped out
                         finalOutcome = 'loss';
-                    } else if (signal.target_price !== null && currentPrice >= signal.target_price) {
+                    } else if (targetPrice !== null && targetPrice > 0 && currentPrice >= targetPrice) {
                         updates.hit_target = true;
                         isComplete = true; // Target hit
                         finalOutcome = 'win';

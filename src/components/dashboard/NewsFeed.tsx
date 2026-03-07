@@ -40,7 +40,7 @@ export function NewsFeed({ ticker, limit = 10, title = "Live Intelligence Feed",
     const [loading, setLoading] = useState(true);
     const [categoryFilter, setCategoryFilter] = useState<string>('all');
 
-    const fetchNews = useCallback(async () => {
+    const fetchNews = useCallback(async (signal?: AbortSignal) => {
         try {
             setLoading(true);
 
@@ -60,21 +60,27 @@ export function NewsFeed({ ticker, limit = 10, title = "Live Intelligence Feed",
             }
 
             const { data, error } = await query;
+            if (signal?.aborted) return;
             if (error) throw error;
 
             setNews(data || []);
         } catch (err) {
+            if (signal?.aborted) return;
             console.error('[NewsFeed] Error fetching news:', err);
         } finally {
-            setLoading(false);
+            if (!signal?.aborted) setLoading(false);
         }
     }, [ticker, categoryFilter, limit]);
 
-    // Auto-refresh every 5 minutes
+    // Auto-refresh every 5 minutes — single interval, cleaned up on dependency change
     useEffect(() => {
-        fetchNews();
-        const interval = setInterval(fetchNews, 5 * 60 * 1000);
-        return () => clearInterval(interval);
+        const controller = new AbortController();
+        fetchNews(controller.signal);
+        const interval = setInterval(() => fetchNews(controller.signal), 5 * 60 * 1000);
+        return () => {
+            controller.abort();
+            clearInterval(interval);
+        };
     }, [fetchNews]);
 
     return (

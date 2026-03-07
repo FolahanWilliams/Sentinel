@@ -25,6 +25,7 @@ interface ToastStore {
 }
 
 let toastCounter = 0;
+const toastTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 export const useToast = create<ToastStore>((set) => ({
     toasts: [],
@@ -34,12 +35,20 @@ export const useToast = create<ToastStore>((set) => ({
 
         set((state) => ({ toasts: [...state.toasts, toast] }));
 
-        // Auto-dismiss after 5 seconds
-        setTimeout(() => {
+        // Auto-dismiss after 5 seconds (with tracked timer for cleanup)
+        const timer = setTimeout(() => {
+            toastTimers.delete(id);
             set((state) => ({ toasts: state.toasts.filter(t => t.id !== id) }));
         }, 5000);
+        toastTimers.set(id, timer);
     },
     dismissToast: (id) => {
+        // Clear any pending auto-dismiss timer
+        const timer = toastTimers.get(id);
+        if (timer) {
+            clearTimeout(timer);
+            toastTimers.delete(id);
+        }
         set((state) => ({ toasts: state.toasts.filter(t => t.id !== id) }));
     },
 }));

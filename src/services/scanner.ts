@@ -445,7 +445,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                     console.warn(`[Scanner] Quote fetch failed for ${ev.ticker}:`, e.message);
                                 }
 
-                                const priceDrop = quote ? quote.changePercent : -10; // Mocked if api fails
+                                const priceDrop = quote?.changePercent ?? 0;
 
                                 // Build enriched market context for the agent
                                 const marketContext: MarketContext = {

@@ -7,7 +7,7 @@ import { usePortfolio } from '@/hooks/usePortfolio';
 import { MarketDataService } from '@/services/marketData';
 import { formatPrice, formatPercent } from '@/utils/formatters';
 import { TrendingUp, TrendingDown, Briefcase, PieChart, ArrowRight } from 'lucide-react';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/config/supabase';
 import { motion } from 'framer-motion';
 import { DonutChart } from '@/components/shared/DonutChart';
@@ -51,25 +51,38 @@ export function PortfolioOverview() {
 
     // Fetch live quotes for open positions to compute unrealized P&L
     const [liveQuotes, setLiveQuotes] = useState<Record<string, number>>({});
-    const fetchQuotes = useCallback(async () => {
-        if (openPositions.length === 0) return;
-        const quotes: Record<string, number> = {};
-        await Promise.all(
-            openPositions.map(async (pos) => {
-                try {
-                    const q = await MarketDataService.getQuote(pos.ticker);
-                    if (q?.price) quotes[pos.ticker] = q.price;
-                } catch { /* keep previous */ }
-            })
-        );
-        setLiveQuotes(prev => ({ ...prev, ...quotes }));
-    }, [openPositions]);
+
+    // Stabilize the ticker list to prevent interval accumulation when openPositions reference changes
+    const openTickers = useMemo(
+        () => openPositions.map(p => p.ticker).sort().join(','),
+        [openPositions]
+    );
 
     useEffect(() => {
+        if (!openTickers) return;
+        const tickers = openTickers.split(',');
+        let cancelled = false;
+
+        async function fetchQuotes() {
+            const quotes: Record<string, number> = {};
+            await Promise.all(
+                tickers.map(async (ticker) => {
+                    try {
+                        const q = await MarketDataService.getQuote(ticker);
+                        if (q?.price) quotes[ticker] = q.price;
+                    } catch { /* keep previous */ }
+                })
+            );
+            if (!cancelled) setLiveQuotes(prev => ({ ...prev, ...quotes }));
+        }
+
         fetchQuotes();
         const interval = setInterval(fetchQuotes, 60_000);
-        return () => clearInterval(interval);
-    }, [fetchQuotes]);
+        return () => {
+            cancelled = true;
+            clearInterval(interval);
+        };
+    }, [openTickers]);
 
     if (loading) {
         return (

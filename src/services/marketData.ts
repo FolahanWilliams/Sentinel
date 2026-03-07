@@ -86,11 +86,16 @@ export class MarketDataService {
                 await new Promise(res => setTimeout(res, 1000 + retryCount * 1000)); // Exponential backoff
                 return this.getQuote(ticker, forceRefresh, retryCount + 1);
             }
-            // Return stale cached data if available (prevents 0-value flicker in UI)
+            // Return stale cached data if available and not too old (max 15 min)
             const stale = cache.get(cacheKey);
-            if (stale) {
-                console.warn(`[MarketDataService] Returning stale cache for ${ticker} after fetch failure`);
+            const MAX_STALE_AGE_MS = 15 * 60 * 1000;
+            if (stale && (Date.now() - stale.timestamp < MAX_STALE_AGE_MS)) {
+                const ageMinutes = ((Date.now() - stale.timestamp) / 60000).toFixed(1);
+                console.warn(`[MarketDataService] Returning stale cache for ${ticker} (age: ${ageMinutes}min) after fetch failure`);
                 return stale.data as Quote;
+            }
+            if (stale) {
+                console.warn(`[MarketDataService] Stale cache for ${ticker} too old (>${MAX_STALE_AGE_MS / 60000}min), not returning`);
             }
             throw e;
         }

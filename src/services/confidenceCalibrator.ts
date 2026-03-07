@@ -31,6 +31,7 @@ export class ConfidenceCalibrator {
     private static cachedCurve: CalibrationCurve | null = null;
     private static cacheTimestamp = 0;
     private static readonly CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+    private static pendingFetch: Promise<CalibrationCurve> | null = null;
 
     /**
      * Build calibration curve from historical signal outcomes.
@@ -107,23 +108,32 @@ export class ConfidenceCalibrator {
             return this.cachedCurve;
         }
 
-        try {
-            const { data, error } = await supabase
-                .from('app_settings')
-                .select('value')
-                .eq('key', APP_SETTINGS_KEY)
-                .maybeSingle();
+        // Deduplicate concurrent fetches — return the same promise if one is in-flight
+        if (this.pendingFetch) return this.pendingFetch;
 
-            if (error || !data?.value) {
-                this.cachedCurve = this.emptyCurve();
-            } else {
-                this.cachedCurve = data.value as unknown as CalibrationCurve;
+        this.pendingFetch = (async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('app_settings')
+                    .select('value')
+                    .eq('key', APP_SETTINGS_KEY)
+                    .maybeSingle();
+
+                if (error || !data?.value) {
+                    this.cachedCurve = this.emptyCurve();
+                } else {
+                    this.cachedCurve = data.value as unknown as CalibrationCurve;
+                }
+                this.cacheTimestamp = Date.now();
+                return this.cachedCurve;
+            } catch {
+                return this.emptyCurve();
+            } finally {
+                this.pendingFetch = null;
             }
-            this.cacheTimestamp = Date.now();
-            return this.cachedCurve;
-        } catch {
-            return this.emptyCurve();
-        }
+        })();
+
+        return this.pendingFetch;
     }
 
     /**
