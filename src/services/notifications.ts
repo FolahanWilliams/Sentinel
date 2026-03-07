@@ -131,7 +131,7 @@ export class NotificationService {
             );
 
             // Also send browser push notification
-            if (conf >= 80) {
+            if (conf >= SMART_ALERT_THRESHOLDS.minConfidence) {
                 void BrowserNotificationService.notifyHighConfidenceSignal(
                     signal.ticker,
                     conf,

@@ -80,32 +80,40 @@ export class OutcomeTracker {
                 // Also check if we hit max gain / max drawdown
                 const currentReturn = ((currentPrice - outcome.entry_price) / outcome.entry_price) * 100;
 
-                if (!outcome.max_gain || currentReturn > outcome.max_gain) {
+                if (outcome.max_gain == null || currentReturn > outcome.max_gain) {
                     updates.max_gain = currentReturn;
                 }
-                if (!outcome.max_drawdown || currentReturn < outcome.max_drawdown) {
+                if (outcome.max_drawdown == null || currentReturn < outcome.max_drawdown) {
                     updates.max_drawdown = currentReturn;
                 }
 
                 // Check against stops and targets (requires fetching the parent signal)
                 const { data: signal } = await supabase
                     .from('signals')
-                    .select('stop_loss, target_price')
+                    .select('stop_loss, target_price, signal_type')
                     .eq('id', outcome.signal_id)
                     .single();
 
                 if (signal) {
                     const stopLoss = typeof signal.stop_loss === 'number' ? signal.stop_loss : null;
                     const targetPrice = typeof signal.target_price === 'number' ? signal.target_price : null;
+                    const isShort = typeof signal.signal_type === 'string' && signal.signal_type.includes('short');
 
-                    if (stopLoss !== null && stopLoss > 0 && currentPrice <= stopLoss) {
-                        updates.hit_stop_loss = true;
-                        isComplete = true; // Stopped out
-                        finalOutcome = 'loss';
-                    } else if (targetPrice !== null && targetPrice > 0 && currentPrice >= targetPrice) {
-                        updates.hit_target = true;
-                        isComplete = true; // Target hit
-                        finalOutcome = 'win';
+                    if (stopLoss !== null && stopLoss > 0) {
+                        const hitStop = isShort ? currentPrice >= stopLoss : currentPrice <= stopLoss;
+                        if (hitStop) {
+                            updates.hit_stop_loss = true;
+                            isComplete = true;
+                            finalOutcome = 'loss';
+                        }
+                    }
+                    if (!isComplete && targetPrice !== null && targetPrice > 0) {
+                        const hitTarget = isShort ? currentPrice <= targetPrice : currentPrice >= targetPrice;
+                        if (hitTarget) {
+                            updates.hit_target = true;
+                            isComplete = true;
+                            finalOutcome = 'win';
+                        }
                     }
                 }
 
