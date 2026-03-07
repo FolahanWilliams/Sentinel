@@ -20,6 +20,7 @@ import {
     Plus, X, RefreshCw, Briefcase, ArrowUpRight, ArrowDownRight, FileUp,
 } from 'lucide-react';
 import { ImportHLCSV } from './ImportHLCSV';
+import { calcUnrealizedPnl, calcUnrealizedPnlPct, getPositionPrice, getPositionExposure, inferCurrency } from '@/utils/portfolio';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Quote } from '@/types/market';
 import type { PortfolioSummary, SectorAllocation } from '@/types/dashboard';
@@ -82,14 +83,11 @@ export function UnifiedPortfolioView({ className = '' }: UnifiedPortfolioViewPro
         let unrealizedPnl = 0;
 
         for (const pos of openPositions) {
-            const size = pos.position_size_usd ?? ((pos.entry_price ?? 0) * (pos.shares ?? 0));
+            const size = getPositionExposure(pos);
             totalExposure += size;
 
-            const quote = quotes[pos.ticker];
-            const currentPrice = quote?.price ?? pos.entry_price ?? 0;
-            const entryPrice = pos.entry_price ?? 0;
-            const shares = pos.shares ?? 0;
-            unrealizedPnl += (currentPrice - entryPrice) * shares;
+            const currentPrice = getPositionPrice(pos, quotes);
+            unrealizedPnl += calcUnrealizedPnl(pos, currentPrice);
         }
 
         // Closed positions stats
@@ -308,11 +306,11 @@ export function UnifiedPortfolioView({ className = '' }: UnifiedPortfolioViewPro
                                 <tbody>
                                     {openPositions.map((pos) => {
                                         const quote = quotes[pos.ticker];
-                                        const currentPrice = quote?.price ?? pos.entry_price ?? 0;
+                                        const currentPrice = getPositionPrice(pos, quotes);
                                         const entryPrice = pos.entry_price ?? 0;
                                         const shares = pos.shares ?? 0;
-                                        const pnl = (currentPrice - entryPrice) * shares;
-                                        const pnlPct = entryPrice > 0 ? ((currentPrice - entryPrice) / entryPrice) * 100 : 0;
+                                        const pnl = calcUnrealizedPnl(pos, currentPrice);
+                                        const pnlPct = calcUnrealizedPnlPct(pos, currentPrice);
                                         const portfolioPct = config ? ((pos.position_size_usd ?? 0) / config.total_capital) * 100 : 0;
 
                                         return (
@@ -326,9 +324,9 @@ export function UnifiedPortfolioView({ className = '' }: UnifiedPortfolioViewPro
                                                     <span className="ml-2 text-[10px] text-sentinel-500 uppercase">{pos.side}</span>
                                                 </td>
                                                 <td className="text-right px-3 py-3 font-mono text-sentinel-300">{shares}</td>
-                                                <td className="text-right px-3 py-3 font-mono text-sentinel-300">{formatPrice(entryPrice)}</td>
+                                                <td className="text-right px-3 py-3 font-mono text-sentinel-300">{formatPrice(entryPrice, pos.currency)}</td>
                                                 <td className="text-right px-3 py-3 font-mono text-sentinel-200">
-                                                    {formatPrice(currentPrice)}
+                                                    {formatPrice(currentPrice, pos.currency)}
                                                     {quote && (
                                                         <span className={`ml-1 text-[10px] ${quote.changePercent >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                                                             {formatPercent(quote.changePercent)}
@@ -336,10 +334,10 @@ export function UnifiedPortfolioView({ className = '' }: UnifiedPortfolioViewPro
                                                     )}
                                                 </td>
                                                 <td className={`text-right px-3 py-3 font-mono font-bold ${pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                                    {formatPrice(pnl)} ({formatPercent(pnlPct)})
+                                                    {formatPrice(pnl, pos.currency)} ({formatPercent(pnlPct)})
                                                 </td>
                                                 <td className="text-right px-3 py-3 font-mono text-sentinel-400">{portfolioPct.toFixed(1)}%</td>
-                                                <td className="text-right px-5 py-3 font-mono text-sentinel-400">{formatPrice(pos.position_size_usd ?? 0)}</td>
+                                                <td className="text-right px-5 py-3 font-mono text-sentinel-400">{formatPrice(pos.position_size_usd ?? 0, pos.currency)}</td>
                                             </tr>
                                         );
                                     })}
@@ -427,6 +425,7 @@ function LogTradeModal({ onClose }: { onClose: () => void }) {
                 entry_price: entry,
                 shares: shareCount,
                 position_size_usd: entry * shareCount,
+                currency: inferCurrency(ticker.toUpperCase()),
                 status: 'open',
                 notes: notes || null,
                 opened_at: new Date().toISOString(),

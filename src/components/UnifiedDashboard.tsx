@@ -12,6 +12,7 @@ import { supabase } from '@/config/supabase';
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { MarketDataService } from '@/services/marketData';
 import { formatPrice, formatPercent } from '@/utils/formatters';
+import { calcUnrealizedPnl, getPositionPrice } from '@/utils/portfolio';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 import { SignalsSection } from '@/components/dashboard/SignalsSection';
 import { UnifiedPortfolioView } from '@/components/dashboard/UnifiedPortfolioView';
@@ -108,14 +109,13 @@ export function UnifiedDashboard() {
 
                 for (const pos of openPositions) {
                     const quote = quotes[pos.ticker];
-                    const currentPrice = quote?.price ?? pos.entry_price ?? 0;
-                    const entryPrice = pos.entry_price ?? 0;
-                    const shares = pos.shares ?? 0;
-                    unrealizedPnl += (currentPrice - entryPrice) * shares;
+                    const currentPrice = getPositionPrice(pos, quotes);
+                    unrealizedPnl += calcUnrealizedPnl(pos, currentPrice);
 
-                    // Daily change from quote
+                    // Daily change from quote (sign-correct for shorts)
                     if (quote) {
-                        dailyChange += (quote.change ?? 0) * shares;
+                        const multiplier = pos.side === 'short' ? -1 : 1;
+                        dailyChange += (quote.change ?? 0) * (pos.shares ?? 0) * multiplier;
                     }
                 }
 

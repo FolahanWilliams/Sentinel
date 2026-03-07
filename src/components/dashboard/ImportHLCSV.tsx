@@ -17,6 +17,7 @@ import { supabase } from '@/config/supabase';
 import { Upload, X, FileText, AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatPrice } from '@/utils/formatters';
+import { inferCurrency } from '@/utils/portfolio';
 
 interface ParsedHolding {
     ticker: string;
@@ -271,6 +272,7 @@ export function ImportHLCSV({ onClose, existingTickers = [] }: ImportHLCSVProps)
             entry_price: Math.round(h.price * 10000) / 10000,
             shares: h.quantity,
             position_size_usd: Math.round(h.cost * 100) / 100,
+            currency: inferCurrency(h.ticker),
             status: 'open',
             notes: `Imported from HL CSV — ${h.name}`,
             opened_at: new Date().toISOString(),
