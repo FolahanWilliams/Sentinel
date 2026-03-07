@@ -119,7 +119,7 @@ export function TradeReplay() {
                 .single();
 
             if (sigErr || !sigData) throw new Error(sigErr?.message || 'Signal not found');
-            const signal = sigData as Signal;
+            const signal = sigData as unknown as Signal;
             setSelectedSignal(signal);
 
             // Fetch historical prices via proxy-market-data
@@ -135,8 +135,8 @@ export function TradeReplay() {
 
             // Trim bars to the relevant window: 5 days before signal creation to
             // 5 days after signal close (or end of available data)
-            const signalDate = signal.created_at.split('T')[0];
-            const closeDate = signal.updated_at.split('T')[0];
+            const signalDate = signal.created_at.split('T')[0] ?? '';
+            const closeDate = signal.updated_at.split('T')[0] ?? '';
 
             const startIdx = Math.max(0, allBars.findIndex(b => b.date >= signalDate) - 5);
             const endIdx = (() => {
@@ -172,7 +172,7 @@ export function TradeReplay() {
 
     const exitPrice = useMemo(() => {
         if (!bars.length) return null;
-        return bars[bars.length - 1].close;
+        return bars[bars.length - 1]!.close;
     }, [bars]);
 
     const pnlPct = useMemo(() => {
