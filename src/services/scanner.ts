@@ -39,6 +39,11 @@ import { AutoLearningService } from './autoLearningService';
 import { SignalReEvaluator } from './signalReEvaluator';
 import { ConflictDetector } from './conflictDetector';
 import { PeerStrengthService } from './peerStrengthService';
+import { SemanticDeduplicator } from './semanticDeduplicator';
+import { AdaptiveThresholds } from './adaptiveThresholds';
+import { DynamicCalibrator } from './dynamicCalibrator';
+import { PriceCorrelationMatrix } from './priceCorrelationMatrix';
+import { PortfolioAwareSizer } from './portfolioAwareSizer';
 import type { MultiTimeframeResult } from './technicalAnalysis';
 
 export class ScannerService {
@@ -301,6 +306,19 @@ export class ScannerService {
                 console.warn('[Scanner] Market regime detection failed (non-fatal):', regimeErr);
             }
 
+            // 3d-2. Adaptive Thresholds — adjust based on market regime
+            let adaptiveMinConfidence = 50;
+            try {
+                const thresholds = await AdaptiveThresholds.getThresholds();
+                adaptiveMinConfidence = thresholds.minConfidence;
+                console.log(`[Scanner] Adaptive thresholds: minDrop=${thresholds.minPriceDropPct}%, minConf=${thresholds.minConfidence} (${thresholds.regime})`);
+            } catch { /* non-fatal, use defaults */ }
+
+            // 3d-3. Dynamic Calibration — refit if needed
+            try {
+                await DynamicCalibrator.refitIfNeeded();
+            } catch { /* non-fatal */ }
+
             // 3e. Signal Decay — expire stale signals before generating new ones
             try {
                 const decayResult = await SignalDecayEngine.processActiveSignals();
@@ -342,27 +360,10 @@ export class ScannerService {
 
             // 5. Extract Events via Gemini Fast-Pass
             if (freshArticles && freshArticles.length > 0) {
-                // A. Semantic Deduplication
-                const uniqueArticles = [];
-                for (const article of freshArticles) {
-                    const normTitle = (article.title || '').toLowerCase().replace(/[^a-z0-9\s]/g, '');
-                    const words = new Set(normTitle.split(' ').filter(w => w.length > 3));
-                    let isDupe = false;
-                    for (const u of uniqueArticles) {
-                        const uWords = new Set((u.title || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').split(' ').filter(w => w.length > 3));
-                        const intersection = new Set([...words].filter(x => uWords.has(x)));
-                        const union = new Set([...words, ...uWords]);
-                        if (union.size > 0 && intersection.size / union.size > 0.45) {
-                            isDupe = true;
-                            // Append description to existing to keep context
-                            u.description = `${u.description} | Additional Source: ${article.description}`;
-                            break;
-                        }
-                    }
-                    if (!isDupe) uniqueArticles.push({ ...article });
-                }
-
-                console.log(`[Scanner] Semantically deduplicated ${freshArticles.length} articles to ${uniqueArticles.length} unique stories.`);
+                // A. Semantic Deduplication (TF-IDF cosine similarity — replaces Jaccard)
+                const dedupResult = SemanticDeduplicator.deduplicate(freshArticles);
+                const uniqueArticles = dedupResult.uniqueArticles;
+                console.log(`[Scanner] TF-IDF dedup: ${freshArticles.length} → ${uniqueArticles.length} unique (${dedupResult.duplicatesRemoved} dupes removed).`);
 
                 // B. Intelligent Pre-Filtering (Ask Gemini for actionable IDs)
                 const preFilterPayload = uniqueArticles.map(a => ({
@@ -823,6 +824,18 @@ If there is genuinely no major news, return: {"events": []}`,
                                             }
                                         } catch { /* non-fatal */ }
 
+                                        // 7.12b. PRICE CORRELATION — check actual price correlation with existing signals
+                                        try {
+                                            const priceCorr = await PriceCorrelationMatrix.check(ev.ticker);
+                                            if (priceCorr.confidencePenalty !== 0) {
+                                                const before = analysis.data.confidence_score;
+                                                analysis.data.confidence_score = Math.max(30,
+                                                    analysis.data.confidence_score + priceCorr.confidencePenalty
+                                                );
+                                                console.log(`[Scanner] Price correlation penalty for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${priceCorr.confidencePenalty}, max_corr=${priceCorr.maxCorrelation.toFixed(2)})`);
+                                            }
+                                        } catch { /* non-fatal */ }
+
                                         // 7.13. SIGNAL FRESHNESS — skip if a fresh duplicate exists
                                         try {
                                             const hasFresh = await SignalDecayEngine.hasFreshSignal(ev.ticker, 'long_overreaction');
@@ -873,9 +886,9 @@ If there is genuinely no major news, return: {"events": []}`,
                                             }
                                         } catch { /* non-fatal */ }
 
-                                        // Drop signal if all adjustments brought it below threshold
-                                        if (analysis.data.confidence_score < 50) {
-                                            console.warn(`[Scanner] Signal for ${ev.ticker} dropped — confidence ${analysis.data.confidence_score} below 50 after all adjustments`);
+                                        // Drop signal if all adjustments brought it below threshold (adaptive)
+                                        if (analysis.data.confidence_score < adaptiveMinConfidence) {
+                                            console.warn(`[Scanner] Signal for ${ev.ticker} dropped — confidence ${analysis.data.confidence_score} below ${adaptiveMinConfidence} after all adjustments`);
                                             continue;
                                         }
 
@@ -921,12 +934,17 @@ If there is genuinely no major news, return: {"events": []}`,
                                             }
                                         }
 
-                                        // Calibrated confidence
+                                        // Calibrated confidence (dynamic isotonic regression when data available, fallback to static buckets)
                                         let calibratedConfidence: number | null = null;
                                         try {
-                                            const curve = await ConfidenceCalibrator.getCachedCurve();
-                                            calibratedConfidence = ConfidenceCalibrator.getCalibratedWinRate(analysis.data.confidence_score, curve);
-                                        } catch { /* non-fatal */ }
+                                            calibratedConfidence = await DynamicCalibrator.getCalibratedProbability(analysis.data.confidence_score);
+                                        } catch {
+                                            // Fallback to legacy static calibrator
+                                            try {
+                                                const curve = await ConfidenceCalibrator.getCachedCurve();
+                                                calibratedConfidence = ConfidenceCalibrator.getCalibratedWinRate(analysis.data.confidence_score, curve);
+                                            } catch { /* non-fatal */ }
+                                        }
 
                                         // Weighted Similarity ROI — multi-factor matching
                                         let projectedRoi: number | null = null;
@@ -1022,6 +1040,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                                     total_active: correlationResult.totalActiveSignals,
                                                     penalty: correlationResult.confidencePenalty,
                                                 } : null,
+                                                // Price correlation data populated async after save
                                                 options_flow: optionsFlowResult?.hasUnusualActivity ? {
                                                     has_unusual_activity: true,
                                                     sentiment: optionsFlowResult.sentiment,
@@ -1068,18 +1087,20 @@ If there is genuinely no major news, return: {"events": []}`,
                                             } as any);
                                         }
 
-                                        // 9. Position sizing recommendation (V2 with dynamic stops)
+                                        // 9. Position sizing recommendation (portfolio-aware V2 with dynamic stops)
                                         try {
-                                            const sizing = await PositionSizer.calculateSizeV2(
+                                            const tickerSectorForSizing = tickersToScan.find(t => t.ticker === ev.ticker)?.sector || 'Unknown';
+                                            const sizing = await PortfolioAwareSizer.calculateSize(
                                                 analysis.data.confidence_score,
                                                 entryPrice,
                                                 analysis.data.target_price,
                                                 'long_overreaction',
                                                 taSnapshot,
                                                 ev.ticker,
+                                                tickerSectorForSizing,
                                                 confluence.score
                                             );
-                                            console.log(`[Scanner] Position size for ${ev.ticker}: ${sizing.recommendedPct}% ($${sizing.usdValue}) via ${sizing.method}${sizing.stopLoss ? ` | SL: $${sizing.stopLoss}` : ''}`);
+                                            console.log(`[Scanner] Position size for ${ev.ticker}: ${sizing.recommendedPct}% ($${sizing.usdValue}) via ${sizing.method}${sizing.wasReduced ? ` [REDUCED: ${sizing.reductionReason}]` : ''}${sizing.stopLoss ? ` | SL: $${sizing.stopLoss}` : ''}`);
 
                                             // Persist position sizing into agent_outputs
                                             if (savedSignal) {

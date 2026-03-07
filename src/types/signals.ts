@@ -153,6 +153,24 @@ export interface AgentOutputsJson {
         action: string;
         ta_changes: Array<{ indicator: string; previous: string | number | null; current: string | number | null }>;
     } | null;
+    price_correlation?: {
+        highly_correlated: Array<{ ticker: string; correlation: number }>;
+        max_correlation: number;
+        penalty: number;
+    } | null;
+    portfolio_context?: {
+        open_exposure_pct: number;
+        open_position_count: number;
+        remaining_capacity_pct: number;
+        was_reduced: boolean;
+        reduction_reason: string | null;
+    } | null;
+    outcome_narrative?: {
+        narrative: string;
+        key_drivers: string[];
+        thesis_validation: string;
+        generated_at: string;
+    } | null;
     // Legacy fields for older signals
     event_detector?: Record<string, unknown>;
     bias_classifier?: Record<string, unknown>;

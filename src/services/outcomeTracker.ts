@@ -9,6 +9,9 @@
 import { supabase } from '@/config/supabase';
 import { MarketDataService } from './marketData';
 import { ReflectionAgent } from './reflectionAgent';
+import { DynamicCalibrator } from './dynamicCalibrator';
+import { OutcomeNarrativeGenerator } from './outcomeNarrative';
+import { ConfidenceCalibrator } from './confidenceCalibrator';
 
 export class OutcomeTracker {
 
@@ -132,7 +135,7 @@ export class OutcomeTracker {
 
         console.log(`[OutcomeTracker] Updated ${updatedCount} outcomes.`);
 
-        // Auto-trigger reflection when we have completed outcomes (every 10 completions)
+        // Auto-trigger reflection + calibration refit when we have completed outcomes
         // Fire-and-forget: run async to avoid blocking the scan pipeline
         if (updatedCount > 0) {
             void (async () => {
@@ -148,10 +151,86 @@ export class OutcomeTracker {
                         const reflection = await ReflectionAgent.runReflection();
                         console.log(`[OutcomeTracker] Auto-reflection generated ${reflection.lessons.length} lessons from ${reflection.outcomes_analyzed} outcomes.`);
                     }
+
+                    // Refit dynamic calibration curve after new outcomes
+                    await DynamicCalibrator.refitIfNeeded();
+
+                    // Rebuild static calibration curve
+                    if (count && count >= 10 && count % 10 < updatedCount) {
+                        await ConfidenceCalibrator.buildCalibrationCurve();
+                        console.log('[OutcomeTracker] Calibration curves refitted.');
+                    }
                 } catch (reflErr) {
-                    console.warn('[OutcomeTracker] Auto-reflection failed (non-fatal):', reflErr);
+                    console.warn('[OutcomeTracker] Auto-reflection/calibration failed (non-fatal):', reflErr);
                 }
             })();
         }
+    }
+
+    /**
+     * Generate outcome narratives for completed checkpoints.
+     * Called periodically to add AI context to outcomes.
+     */
+    static async generatePendingNarratives(): Promise<number> {
+        let generated = 0;
+        try {
+            // Find completed outcomes that don't have narratives yet
+            const { data: outcomes } = await supabase
+                .from('signal_outcomes')
+                .select('*, signals!inner(thesis, ticker, agent_outputs)')
+                .neq('outcome', 'pending')
+                .order('completed_at', { ascending: false })
+                .limit(10);
+
+            if (!outcomes) return 0;
+
+            for (const outcome of outcomes) {
+                const signal = (outcome as any).signals;
+                if (!signal?.thesis) continue;
+
+                // Skip if narrative already exists
+                const existingOutputs = signal.agent_outputs || {};
+                if (existingOutputs.outcome_narrative) continue;
+
+                const latestReturn = outcome.return_at_30d ?? outcome.return_at_10d ?? outcome.return_at_5d ?? outcome.return_at_1d;
+                const latestPrice = outcome.price_at_30d ?? outcome.price_at_10d ?? outcome.price_at_5d ?? outcome.price_at_1d;
+                if (latestReturn == null || latestPrice == null) continue;
+
+                const daysElapsed = outcome.price_at_30d ? 30 : outcome.price_at_10d ? 10 : outcome.price_at_5d ? 5 : 1;
+
+                try {
+                    const narrative = await OutcomeNarrativeGenerator.generateNarrative({
+                        ticker: outcome.ticker,
+                        originalThesis: signal.thesis,
+                        entryPrice: outcome.entry_price,
+                        currentPrice: latestPrice,
+                        returnPct: latestReturn,
+                        daysElapsed,
+                        hitTarget: outcome.hit_target,
+                        hitStop: outcome.hit_stop_loss,
+                    });
+
+                    if (narrative) {
+                        await supabase.from('signals').update({
+                            agent_outputs: {
+                                ...existingOutputs,
+                                outcome_narrative: {
+                                    ...narrative,
+                                    generated_at: new Date().toISOString(),
+                                },
+                            },
+                        } as any).eq('id', outcome.signal_id);
+                        generated++;
+                    }
+                } catch { /* non-fatal per outcome */ }
+            }
+        } catch (err) {
+            console.warn('[OutcomeTracker] Narrative generation failed:', err);
+        }
+
+        if (generated > 0) {
+            console.log(`[OutcomeTracker] Generated ${generated} outcome narratives.`);
+        }
+        return generated;
     }
 }

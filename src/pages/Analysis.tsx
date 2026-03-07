@@ -17,6 +17,10 @@ import { PositionSizeCard } from '@/components/analysis/PositionSizeCard';
 import { FundamentalSnapshot } from '@/components/analysis/FundamentalSnapshot';
 import { HistoricalPrecedent } from '@/components/analysis/HistoricalPrecedent';
 import { AgentReasoning } from '@/components/analysis/AgentReasoning';
+import { AgentReasoningSurface } from '@/components/analysis/AgentReasoningSurface';
+import { RiskRewardChart } from '@/components/analysis/RiskRewardChart';
+import { OutcomeNarrativeCard } from '@/components/analysis/OutcomeNarrativeCard';
+import { SignalComparison } from '@/components/analysis/SignalComparison';
 import { ConfidenceMeter } from '@/components/shared/ConfidenceMeter';
 import { TABadge } from '@/components/shared/TABadge';
 import { SignalRating } from '@/components/shared/SignalRating';
@@ -31,6 +35,8 @@ export function Analysis() {
     const [loading, setLoading] = useState(true);
     const [expandedId, setExpandedId] = useState<string | null>(null);
     const [events, setEvents] = useState<Record<string, any[]>>({});
+    const [compareSignals, setCompareSignals] = useState<any[]>([]);
+    const [showComparison, setShowComparison] = useState(false);
     const { data: analysisData, loading: analysisLoading, fetchAnalysis } = useTickerAnalysis();
 
     useEffect(() => {
@@ -147,6 +153,39 @@ export function Analysis() {
                 </div>
             </div>
 
+            {/* Signal Comparison Modal */}
+            {showComparison && compareSignals.length >= 2 && (
+                <SignalComparison
+                    signals={compareSignals}
+                    onClose={() => { setShowComparison(false); setCompareSignals([]); }}
+                />
+            )}
+
+            {/* Compare Button */}
+            {signals.length >= 2 && !showComparison && (
+                <div className="flex items-center gap-2">
+                    <span className="text-xs text-sentinel-500">
+                        {compareSignals.length > 0 ? `${compareSignals.length} selected` : 'Select signals to compare'}
+                    </span>
+                    {compareSignals.length >= 2 && (
+                        <button
+                            onClick={() => setShowComparison(true)}
+                            className="px-3 py-1.5 bg-blue-600/20 text-blue-400 rounded-lg text-xs font-medium ring-1 ring-blue-500/30 hover:bg-blue-600/30 transition-colors"
+                        >
+                            Compare ({compareSignals.length})
+                        </button>
+                    )}
+                    {compareSignals.length > 0 && (
+                        <button
+                            onClick={() => setCompareSignals([])}
+                            className="text-xs text-sentinel-500 hover:text-sentinel-300"
+                        >
+                            Clear
+                        </button>
+                    )}
+                </div>
+            )}
+
             {/* Per-ticker news context */}
             {urlTicker && <TickerNewsFeed ticker={urlTicker.toUpperCase()} />}
 
@@ -191,6 +230,23 @@ export function Analysis() {
                                     className="p-5 flex flex-col md:flex-row gap-4 md:items-center justify-between cursor-pointer hover:bg-sentinel-800/30 transition-colors"
                                 >
                                     <div className="flex items-center gap-4">
+                                        {signals.length >= 2 && (
+                                            <input
+                                                type="checkbox"
+                                                checked={compareSignals.some(s => s.id === signal.id)}
+                                                onChange={(e) => {
+                                                    e.stopPropagation();
+                                                    setCompareSignals(prev =>
+                                                        prev.some(s => s.id === signal.id)
+                                                            ? prev.filter(s => s.id !== signal.id)
+                                                            : [...prev, signal].slice(0, 5)
+                                                    );
+                                                }}
+                                                onClick={(e) => e.stopPropagation()}
+                                                className="w-4 h-4 rounded border-sentinel-600 bg-sentinel-800 text-blue-500 focus:ring-0 cursor-pointer"
+                                                title="Select for comparison"
+                                            />
+                                        )}
                                         <button className="text-sentinel-500 hover:text-sentinel-300 transition-colors">
                                             {isExpanded ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
                                         </button>
@@ -274,6 +330,23 @@ export function Analysis() {
                                             <MultiTimeframeChart ticker={signal.ticker} signal={signal} height={450} />
                                         </div>
 
+                                        {/* Agent Reasoning Surface — thesis, counter-thesis, confidence waterfall */}
+                                        <div className="mb-6">
+                                            <AgentReasoningSurface signal={signal} />
+                                        </div>
+
+                                        {/* Risk/Reward Visualization */}
+                                        <div className="mb-6">
+                                            <RiskRewardChart
+                                                entryLow={signal.suggested_entry_low}
+                                                entryHigh={signal.suggested_entry_high}
+                                                stopLoss={signal.stop_loss}
+                                                targetPrice={signal.target_price}
+                                                currentPrice={signal.suggested_entry_high}
+                                                ticker={signal.ticker}
+                                            />
+                                        </div>
+
                                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                                             {/* Left column */}
                                             <div className="space-y-6">
@@ -345,6 +418,15 @@ export function Analysis() {
                                                 </div>
                                             </div>
                                         )}
+
+                                        {/* Outcome Narrative with AI context */}
+                                        <div className="mt-6">
+                                            <OutcomeNarrativeCard
+                                                signalId={signal.id}
+                                                ticker={signal.ticker}
+                                                thesis={signal.thesis}
+                                            />
+                                        </div>
                                     </div>
                                 )}
                             </div>
