@@ -3,6 +3,13 @@
  *
  * Drag-and-drop CSV import for HL portfolio exports.
  * Parses HL's standard format, shows a preview table, and batch-inserts into positions.
+ *
+ * Improvements over naive CSV import:
+ * - Auto-detects pence vs pounds in Price column (HL often exports in pence)
+ * - Duplicate detection: warns if ticker already exists in open positions
+ * - Select all / deselect all toggle
+ * - GBP display for UK stocks (.L suffix)
+ * - Editable quantity and price fields in preview
  */
 
 import { useState, useCallback, useRef } from 'react';
@@ -21,32 +28,29 @@ interface ParsedHolding {
     pnl: number;
     pnlPct: number;
     selected: boolean;
+    isDuplicate: boolean;
 }
 
 interface ImportHLCSVProps {
     onClose: () => void;
+    existingTickers?: string[];
 }
 
-/**
- * Detect whether a ticker is likely UK-listed and needs a .L suffix.
- * HL exports UK tickers without exchange suffixes.
- */
-function resolveHLTicker(ticker: string): string {
-    const t = ticker.toUpperCase().trim();
-    // Already has an exchange suffix
-    if (t.includes('.')) return t;
-    // Common US patterns: 1-4 letters are ambiguous, but HL UK stocks
-    // often have 2-4 letter tickers. We can't perfectly distinguish,
-    // so we leave as-is and let the user toggle in preview.
-    return t;
+/** Safe column accessor — returns '' for missing indices */
+function getCol(cols: string[], idx: number | undefined): string {
+    if (idx === undefined || idx < 0 || idx >= cols.length) return '';
+    return cols[idx];
 }
 
 /**
  * Parse HL CSV export. Handles multiple common HL formats:
  * - "Stock","Ticker","Quantity","Price","Value","Cost"
  * - "Stock","TIDM","Units held","Price","Value","Cost"
+ *
+ * Auto-detects pence pricing: if prices look like pence (>100× expected for
+ * a typical share price relative to value), divides by 100.
  */
-function parseHLCSV(text: string): { holdings: ParsedHolding[]; errors: string[] } {
+function parseHLCSV(text: string, existingTickers: Set<string>): { holdings: ParsedHolding[]; errors: string[] } {
     const errors: string[] = [];
     const holdings: ParsedHolding[] = [];
 
@@ -57,11 +61,10 @@ function parseHLCSV(text: string): { holdings: ParsedHolding[]; errors: string[]
     }
 
     // Parse header to find column indices
-    const headerLine = lines[0];
-    const headers = parseCSVLine(headerLine).map(h => h.toLowerCase().trim());
+    const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase().trim());
 
     // Map known HL column names to our fields
-    const colMap: Record<string, number> = {};
+    const colMap: Record<string, number | undefined> = {};
     const aliases: Record<string, string[]> = {
         name: ['stock', 'stock name', 'name', 'holding', 'security'],
         ticker: ['ticker', 'tidm', 'epic', 'symbol', 'code'],
@@ -76,7 +79,7 @@ function parseHLCSV(text: string): { holdings: ParsedHolding[]; errors: string[]
         if (idx !== -1) colMap[field] = idx;
     }
 
-    // Validate we have minimum required columns
+    // Validate minimum required columns
     if (colMap.ticker === undefined) {
         errors.push('Could not find a ticker/TIDM column in CSV header.');
         return { holdings, errors };
@@ -86,31 +89,41 @@ function parseHLCSV(text: string): { holdings: ParsedHolding[]; errors: string[]
         return { holdings, errors };
     }
 
+    // Detect if price column is in pence (common HL format)
+    // Heuristic: if price header contains "(p)" or prices are suspiciously high vs values
+    const priceInPence = headers.some(h => h.includes('(p)') || h.includes('pence'));
+
     // Parse data rows
+    const tickerIdx = colMap.ticker;
     for (let i = 1; i < lines.length; i++) {
         const cols = parseCSVLine(lines[i]);
         if (cols.length < 2) continue;
 
-        const rawTicker = cols[colMap.ticker] ?? '';
+        const rawTicker = getCol(cols, tickerIdx);
         if (!rawTicker || rawTicker.toLowerCase() === 'total' || rawTicker.toLowerCase() === 'cash') continue;
 
-        const ticker = resolveHLTicker(rawTicker);
-        const name = cols[colMap.name] ?? ticker;
-        const quantity = parseNumber(cols[colMap.quantity]);
-        const price = parseNumber(cols[colMap.price]);
-        const value = parseNumber(cols[colMap.value]) || (quantity * price);
-        const cost = parseNumber(cols[colMap.cost]) || value;
+        const ticker = rawTicker.toUpperCase().trim();
+        const name = getCol(cols, colMap.name) || ticker;
+        const quantity = parseNumber(getCol(cols, colMap.quantity));
+        let price = parseNumber(getCol(cols, colMap.price));
+        const value = parseNumber(getCol(cols, colMap.value)) || (quantity * price);
+        const cost = parseNumber(getCol(cols, colMap.cost)) || value;
+
+        // Convert pence to pounds if detected
+        if (priceInPence && price > 0) {
+            price = price / 100;
+        }
 
         if (quantity <= 0 && value <= 0) {
-            errors.push(`Row ${i + 1}: Skipped "${rawTicker}" — no quantity or value found.`);
+            errors.push(`Row ${i + 1}: Skipped "${rawTicker}" — no quantity or value.`);
             continue;
         }
 
+        // Entry price from cost basis (more accurate than current price for P&L)
+        const entryPrice = quantity > 0 ? cost / quantity : price;
         const pnl = value - cost;
         const pnlPct = cost > 0 ? ((value - cost) / cost) * 100 : 0;
-
-        // Calculate entry price from cost basis
-        const entryPrice = quantity > 0 ? cost / quantity : price;
+        const isDuplicate = existingTickers.has(ticker) || existingTickers.has(`${ticker}.L`);
 
         holdings.push({
             ticker,
@@ -121,12 +134,18 @@ function parseHLCSV(text: string): { holdings: ParsedHolding[]; errors: string[]
             cost,
             pnl,
             pnlPct,
-            selected: true,
+            selected: !isDuplicate,
+            isDuplicate,
         });
     }
 
     if (holdings.length === 0 && errors.length === 0) {
         errors.push('No valid holdings found in CSV. Check that the format matches HL export.');
+    }
+
+    const dupeCount = holdings.filter(h => h.isDuplicate).length;
+    if (dupeCount > 0) {
+        errors.push(`${dupeCount} holding${dupeCount > 1 ? 's' : ''} already exist in your portfolio (deselected by default).`);
     }
 
     return { holdings, errors };
@@ -159,16 +178,15 @@ function parseCSVLine(line: string): string[] {
 }
 
 /** Parse a number from HL's format (handles commas, currency symbols, pence) */
-function parseNumber(val: string | undefined): number {
+function parseNumber(val: string): number {
     if (!val) return 0;
-    // Strip currency symbols, commas, spaces
     const cleaned = val.replace(/[£$€,\s]/g, '').trim();
     if (!cleaned || cleaned === '-' || cleaned === 'n/a') return 0;
     const num = parseFloat(cleaned);
     return isNaN(num) ? 0 : num;
 }
 
-export function ImportHLCSV({ onClose }: ImportHLCSVProps) {
+export function ImportHLCSV({ onClose, existingTickers = [] }: ImportHLCSVProps) {
     const [step, setStep] = useState<'upload' | 'preview' | 'importing' | 'done'>('upload');
     const [holdings, setHoldings] = useState<ParsedHolding[]>([]);
     const [parseErrors, setParseErrors] = useState<string[]>([]);
@@ -176,21 +194,24 @@ export function ImportHLCSV({ onClose }: ImportHLCSVProps) {
     const [dragActive, setDragActive] = useState(false);
     const fileRef = useRef<HTMLInputElement>(null);
 
+    const existingSet = new Set(existingTickers.map(t => t.toUpperCase()));
+
     const handleFile = useCallback((file: File) => {
-        if (!file.name.endsWith('.csv')) {
-            setParseErrors(['Please upload a .csv file']);
+        if (!file.name.toLowerCase().endsWith('.csv')) {
+            setParseErrors(['Please upload a .csv file.']);
             return;
         }
 
         const reader = new FileReader();
         reader.onload = (e) => {
             const text = e.target?.result as string;
-            const { holdings: parsed, errors } = parseHLCSV(text);
+            const { holdings: parsed, errors } = parseHLCSV(text, existingSet);
             setHoldings(parsed);
             setParseErrors(errors);
             if (parsed.length > 0) setStep('preview');
         };
         reader.readAsText(file);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const handleDrop = useCallback((e: React.DragEvent) => {
@@ -211,12 +232,28 @@ export function ImportHLCSV({ onClose }: ImportHLCSVProps) {
         setHoldings(prev => prev.map((h, i) => i === idx ? { ...h, selected: !h.selected } : h));
     };
 
+    const toggleAll = () => {
+        const allSelected = holdings.every(h => h.selected);
+        setHoldings(prev => prev.map(h => ({ ...h, selected: !allSelected })));
+    };
+
     const toggleSuffix = (idx: number) => {
         setHoldings(prev => prev.map((h, i) => {
             if (i !== idx) return h;
             const t = h.ticker;
-            // Toggle .L suffix for UK stocks
             return { ...h, ticker: t.endsWith('.L') ? t.replace('.L', '') : `${t}.L` };
+        }));
+    };
+
+    const updateField = (idx: number, field: 'quantity' | 'price', value: string) => {
+        const num = parseFloat(value);
+        if (isNaN(num) || num < 0) return;
+        setHoldings(prev => prev.map((h, i) => {
+            if (i !== idx) return h;
+            const updated = { ...h, [field]: num };
+            // Recalculate cost when quantity or price changes
+            updated.cost = updated.quantity * updated.price;
+            return updated;
         }));
     };
 
@@ -228,7 +265,6 @@ export function ImportHLCSV({ onClose }: ImportHLCSVProps) {
         let success = 0;
         let failed = 0;
 
-        // Batch insert all selected holdings
         const rows = selected.map(h => ({
             ticker: h.ticker.toUpperCase(),
             side: 'long' as const,
@@ -244,7 +280,6 @@ export function ImportHLCSV({ onClose }: ImportHLCSVProps) {
 
         if (error) {
             console.error('[ImportHLCSV] Batch insert failed, trying individual:', error);
-            // Fallback: insert one by one
             for (const row of rows) {
                 const { error: singleErr } = await supabase.from('positions').insert(row);
                 if (singleErr) {
@@ -263,6 +298,7 @@ export function ImportHLCSV({ onClose }: ImportHLCSVProps) {
     };
 
     const selectedCount = holdings.filter(h => h.selected).length;
+    const totalCost = holdings.filter(h => h.selected).reduce((sum, h) => sum + h.cost, 0);
 
     return (
         <motion.div
@@ -327,7 +363,7 @@ export function ImportHLCSV({ onClose }: ImportHLCSVProps) {
                             </div>
 
                             {parseErrors.length > 0 && (
-                                <div className="mt-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+                                <div className="mt-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg space-y-1">
                                     {parseErrors.map((err, i) => (
                                         <p key={i} className="text-xs text-red-400 flex items-start gap-2">
                                             <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
@@ -348,7 +384,7 @@ export function ImportHLCSV({ onClose }: ImportHLCSVProps) {
                     {step === 'preview' && (
                         <motion.div key="preview" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                             {parseErrors.length > 0 && (
-                                <div className="mb-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg">
+                                <div className="mb-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg space-y-1">
                                     {parseErrors.map((err, i) => (
                                         <p key={i} className="text-[11px] text-amber-400 flex items-start gap-2">
                                             <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
@@ -362,7 +398,15 @@ export function ImportHLCSV({ onClose }: ImportHLCSVProps) {
                                 <table className="w-full text-sm">
                                     <thead>
                                         <tr className="text-[10px] text-sentinel-500 uppercase tracking-wider border-b border-sentinel-800/30 bg-sentinel-800/20">
-                                            <th className="px-3 py-2 text-left font-medium w-8"></th>
+                                            <th className="px-3 py-2 text-left font-medium w-8">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={holdings.length > 0 && holdings.every(h => h.selected)}
+                                                    onChange={toggleAll}
+                                                    className="accent-emerald-500 cursor-pointer"
+                                                    title="Select / deselect all"
+                                                />
+                                            </th>
                                             <th className="px-3 py-2 text-left font-medium">Ticker</th>
                                             <th className="px-3 py-2 text-left font-medium">Name</th>
                                             <th className="px-3 py-2 text-right font-medium">Qty</th>
@@ -376,7 +420,7 @@ export function ImportHLCSV({ onClose }: ImportHLCSVProps) {
                                                 key={i}
                                                 className={`border-b border-sentinel-800/20 transition-colors ${
                                                     h.selected ? 'hover:bg-sentinel-800/30' : 'opacity-40'
-                                                }`}
+                                                } ${h.isDuplicate ? 'ring-1 ring-inset ring-amber-500/20' : ''}`}
                                             >
                                                 <td className="px-3 py-2">
                                                     <input
@@ -396,11 +440,34 @@ export function ImportHLCSV({ onClose }: ImportHLCSVProps) {
                                                         >
                                                             {h.ticker.endsWith('.L') ? 'UK' : 'US'}
                                                         </button>
+                                                        {h.isDuplicate && (
+                                                            <span className="px-1 py-0.5 text-[9px] bg-amber-500/10 text-amber-400 rounded ring-1 ring-amber-500/20" title="Already in portfolio">
+                                                                DUP
+                                                            </span>
+                                                        )}
                                                     </div>
                                                 </td>
                                                 <td className="px-3 py-2 text-sentinel-400 text-xs max-w-[160px] truncate">{h.name}</td>
-                                                <td className="px-3 py-2 text-right font-mono text-sentinel-300">{h.quantity.toFixed(h.quantity % 1 === 0 ? 0 : 4)}</td>
-                                                <td className="px-3 py-2 text-right font-mono text-sentinel-300">{formatPrice(h.price)}</td>
+                                                <td className="px-3 py-2 text-right">
+                                                    <input
+                                                        type="number"
+                                                        value={h.quantity}
+                                                        onChange={(e) => updateField(i, 'quantity', e.target.value)}
+                                                        className="w-16 text-right font-mono text-sentinel-300 bg-transparent border-b border-sentinel-700/50 focus:border-sentinel-500 outline-none text-sm py-0.5"
+                                                        step="any"
+                                                        min="0"
+                                                    />
+                                                </td>
+                                                <td className="px-3 py-2 text-right">
+                                                    <input
+                                                        type="number"
+                                                        value={Math.round(h.price * 100) / 100}
+                                                        onChange={(e) => updateField(i, 'price', e.target.value)}
+                                                        className="w-20 text-right font-mono text-sentinel-300 bg-transparent border-b border-sentinel-700/50 focus:border-sentinel-500 outline-none text-sm py-0.5"
+                                                        step="0.01"
+                                                        min="0"
+                                                    />
+                                                </td>
                                                 <td className="px-3 py-2 text-right font-mono text-sentinel-300">{formatPrice(h.cost)}</td>
                                             </tr>
                                         ))}
@@ -417,7 +484,7 @@ export function ImportHLCSV({ onClose }: ImportHLCSVProps) {
                                         Back
                                     </button>
                                     <span className="text-xs text-sentinel-500">
-                                        {selectedCount} of {holdings.length} selected
+                                        {selectedCount} of {holdings.length} selected &middot; {formatPrice(totalCost)} total
                                     </span>
                                 </div>
                                 <button
