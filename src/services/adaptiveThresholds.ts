@@ -8,7 +8,6 @@
  * This service adjusts thresholds based on current market regime.
  */
 
-import { supabase } from '@/config/supabase';
 import { MarketRegimeFilter, type MarketRegimeResult } from './marketRegime';
 import { DEFAULT_MIN_CONFIDENCE, DEFAULT_MIN_PRICE_DROP_PCT } from '@/config/constants';
 

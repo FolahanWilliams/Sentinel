@@ -7,8 +7,6 @@
  * should be detected as duplicates.
  */
 
-import { supabase } from '@/config/supabase';
-
 // Common English stopwords to ignore in TF-IDF
 const STOPWORDS = new Set([
     'a', 'an', 'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
@@ -81,7 +79,7 @@ export class SemanticDeduplicator {
             const weights: number[] = new Array(n);
 
             for (let i = 0; i < n; i++) {
-                const tokens = tokenized[i];
+                const tokens = tokenized[i] ?? [];
                 const termCount = tokens.filter(t => t === term).length;
                 const tf = tokens.length > 0 ? termCount / tokens.length : 0;
                 weights[i] = tf * idf;
@@ -103,9 +101,11 @@ export class SemanticDeduplicator {
         let magB = 0;
 
         for (let i = 0; i < a.length; i++) {
-            dot += a[i] * b[i];
-            magA += a[i] * a[i];
-            magB += b[i] * b[i];
+            const ai = a[i] ?? 0;
+            const bi = b[i] ?? 0;
+            dot += ai * bi;
+            magA += ai * ai;
+            magB += bi * bi;
         }
 
         const denom = Math.sqrt(magA) * Math.sqrt(magB);
@@ -119,7 +119,7 @@ export class SemanticDeduplicator {
     private static getDocVector(tfidf: Map<string, number[]>, docIndex: number): number[] {
         const vec: number[] = [];
         for (const weights of tfidf.values()) {
-            vec.push(weights[docIndex]);
+            vec.push(weights[docIndex] ?? 0);
         }
         return vec;
     }
@@ -151,17 +151,20 @@ export class SemanticDeduplicator {
         for (let i = 0; i < articles.length; i++) {
             if (isDuplicate[i]) continue;
 
-            const descriptions = [articles[i].description ?? ''];
+            const descriptions = [articles[i]?.description ?? ''];
 
             for (let j = i + 1; j < articles.length; j++) {
                 if (isDuplicate[j]) continue;
 
-                const similarity = this.cosineSimilarity(docVectors[i], docVectors[j]);
+                const vecI = docVectors[i];
+                const vecJ = docVectors[j];
+                if (!vecI || !vecJ) continue;
+                const similarity = this.cosineSimilarity(vecI, vecJ);
 
                 if (similarity >= threshold) {
                     isDuplicate[j] = true;
                     // Merge the duplicate's description into the canonical article
-                    const dupDesc = articles[j].description ?? '';
+                    const dupDesc = articles[j]?.description ?? '';
                     if (dupDesc && !descriptions.includes(dupDesc)) {
                         descriptions.push(dupDesc);
                     }

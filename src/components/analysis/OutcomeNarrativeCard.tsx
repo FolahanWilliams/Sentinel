@@ -84,7 +84,7 @@ export function OutcomeNarrativeCard({ signalId, ticker, thesis }: OutcomeNarrat
                     .maybeSingle();
 
                 if (fetchErr) throw fetchErr;
-                setOutcome(data);
+                setOutcome(data as SignalOutcome | null);
             } catch (err) {
                 console.error('[OutcomeNarrativeCard] Fetch failed:', err);
                 setError('Failed to load outcome data.');
