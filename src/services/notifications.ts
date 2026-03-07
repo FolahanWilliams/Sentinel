@@ -7,6 +7,7 @@
 
 import { supabase } from '@/config/supabase';
 import { getMatchingAlertRules } from '@/utils/alertRules';
+import { BrowserNotificationService } from './browserNotifications';
 
 /** Minimum requirements for a smart alert to fire */
 const SMART_ALERT_THRESHOLDS = {
@@ -128,6 +129,21 @@ export class NotificationService {
                 taAlign,
                 taSummary
             );
+
+            // Also send browser push notification
+            if (conf >= 80) {
+                void BrowserNotificationService.notifyHighConfidenceSignal(
+                    signal.ticker,
+                    conf,
+                    signal.thesis || `${signal.signal_type} signal detected`
+                );
+            } else {
+                void BrowserNotificationService.notifyNewSignal(
+                    signal.ticker,
+                    signal.signal_type,
+                    conf
+                );
+            }
         } catch (e: any) {
             console.error('[NotificationService] Error checking/dispatching alerts:', e);
         }

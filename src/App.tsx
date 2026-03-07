@@ -21,6 +21,7 @@ import { Settings } from '@/pages/Settings';
 import { Journal } from '@/pages/Journal';
 import { StockAnalysis } from '@/pages/StockAnalysis';
 import { Positions } from '@/pages/Positions';
+import { Performance } from '@/pages/Performance';
 import { NotFound } from '@/pages/NotFound';
 import type { Session } from '@supabase/supabase-js';
 
@@ -81,6 +82,7 @@ export default function App() {
                             <Route path="/settings" element={<Settings />} />
                             <Route path="/journal" element={<Journal />} />
                             <Route path="/positions" element={<Positions />} />
+                            <Route path="/performance" element={<Performance />} />
                             {/* Phase 3 fix (Audit C15): 404 catch-all route */}
                             <Route path="*" element={<NotFound />} />
                         </Route>

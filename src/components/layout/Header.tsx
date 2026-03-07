@@ -1,14 +1,16 @@
 /**
  * Sentinel — Header Bar
  *
- * Top header with page title, market status, notification bell, and scanner controls.
+ * Top header with page title, market status, notification bell with dropdown, and scanner controls.
  */
 
 import { useLocation } from 'react-router-dom';
 import { Bell, Lock } from 'lucide-react';
 import { destroySession } from '@/utils/auth';
 import { useNotifications } from '@/hooks/useNotifications';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
+import { NotificationCenter } from '@/components/notifications/NotificationCenter';
+import { BrowserNotificationService } from '@/services/browserNotifications';
 
 function useMarketStatus() {
     const [status, setStatus] = useState({ label: 'Checking...', colorClass: 'status-stopped' });
@@ -71,6 +73,11 @@ export function Header() {
     const location = useLocation();
     const { unreadCount, markAllRead } = useNotifications();
     const marketInfo = useMarketStatus();
+    const [showNotifications, setShowNotifications] = useState(false);
+    const notificationRef = useRef<HTMLDivElement>(null);
+
+    const browserUnread = BrowserNotificationService.getUnreadCount();
+    const totalUnread = unreadCount + browserUnread;
 
     // Match analysis routes
     const pageTitle = location.pathname.startsWith('/analysis/')
@@ -82,17 +89,30 @@ export function Header() {
         window.location.reload();
     };
 
+    // Close notification center on outside click
+    useEffect(() => {
+        function handleClickOutside(e: MouseEvent) {
+            if (notificationRef.current && !notificationRef.current.contains(e.target as Node)) {
+                setShowNotifications(false);
+            }
+        }
+        if (showNotifications) {
+            document.addEventListener('mousedown', handleClickOutside);
+            return () => document.removeEventListener('mousedown', handleClickOutside);
+        }
+    }, [showNotifications]);
+
     return (
         <header
-            className="flex items-center justify-between px-6 py-3 sticky top-0 z-10 glass-panel-heavy border-l-0 border-t-0 border-r-0 rounded-none shadow-none"
+            className="flex items-center justify-between px-4 sm:px-6 py-3 sticky top-0 z-10 glass-panel-heavy border-l-0 border-t-0 border-r-0 rounded-none shadow-none"
         >
             {/* Left: Page Title */}
-            <h1 className="text-lg font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+            <h1 className="text-base sm:text-lg font-semibold truncate" style={{ color: 'var(--color-text-primary)' }}>
                 {pageTitle}
             </h1>
 
-            {/* Center: Market Status */}
-            <div className="flex items-center gap-2">
+            {/* Center: Market Status (hidden on mobile) */}
+            <div className="hidden sm:flex items-center gap-2">
                 <span className={`status-dot ${marketInfo.colorClass}`} />
                 <span className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
                     {marketInfo.label}
@@ -100,31 +120,44 @@ export function Header() {
             </div>
 
             {/* Right: Controls */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1 sm:gap-2">
+                {/* Mobile market status dot */}
+                <span className={`status-dot ${marketInfo.colorClass} sm:hidden`} />
 
-                {/* Notification Bell */}
-                <button className="p-2 rounded-lg transition-colors cursor-pointer relative"
-                    style={{ backgroundColor: 'transparent', border: 'none', color: 'var(--color-text-secondary)' }}
-                    title="Notifications"
-                    onClick={markAllRead}>
-                    <Bell size={18} />
-                    {unreadCount > 0 && (
-                        <span
-                            className="absolute top-0.5 right-0.5 flex items-center justify-center text-white font-bold"
-                            style={{
-                                fontSize: '0.55rem',
-                                minWidth: 16,
-                                height: 16,
-                                borderRadius: '9999px',
-                                backgroundColor: '#EF4444',
-                                padding: '0 4px',
-                                lineHeight: 1,
-                            }}
-                        >
-                            {unreadCount > 9 ? '9+' : unreadCount}
-                        </span>
-                    )}
-                </button>
+                {/* Notification Bell with Dropdown */}
+                <div className="relative" ref={notificationRef}>
+                    <button
+                        className="p-2 rounded-lg transition-colors cursor-pointer relative"
+                        style={{ backgroundColor: 'transparent', border: 'none', color: 'var(--color-text-secondary)' }}
+                        title="Notifications"
+                        onClick={() => {
+                            setShowNotifications(!showNotifications);
+                            if (!showNotifications) markAllRead();
+                        }}
+                    >
+                        <Bell size={18} />
+                        {totalUnread > 0 && (
+                            <span
+                                className="absolute top-0.5 right-0.5 flex items-center justify-center text-white font-bold"
+                                style={{
+                                    fontSize: '0.55rem',
+                                    minWidth: 16,
+                                    height: 16,
+                                    borderRadius: '9999px',
+                                    backgroundColor: '#EF4444',
+                                    padding: '0 4px',
+                                    lineHeight: 1,
+                                }}
+                            >
+                                {totalUnread > 9 ? '9+' : totalUnread}
+                            </span>
+                        )}
+                    </button>
+                    <NotificationCenter
+                        isOpen={showNotifications}
+                        onClose={() => setShowNotifications(false)}
+                    />
+                </div>
 
                 {/* Lock Button */}
                 <button

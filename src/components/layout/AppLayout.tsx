@@ -4,12 +4,15 @@
  * Main layout wrapping the sidebar, header, and page content.
  * Also hosts global overlays: toast notifications, command palette, and onboarding.
  * Integrates the reactive ambient background and device capability checks.
+ *
+ * Mobile: Sidebar hidden, bottom nav visible, content full-width with padding for bottom nav.
  */
 
 import { useEffect, useRef } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
+import { MobileNav } from './MobileNav';
 import { AmbientBackground } from './AmbientBackground';
 import { SignalToast } from '@/components/notifications/SignalToast';
 import { ToastContainer } from '@/components/notifications/ToastContainer';
@@ -56,13 +59,18 @@ export function AppLayout() {
     return (
         <div className="relative flex min-h-screen" style={{ backgroundColor: 'var(--color-bg-primary)' }}>
             <AmbientBackground />
-            <Sidebar />
+            {/* Sidebar — hidden on mobile, visible on md+ */}
+            <div className="hidden md:block">
+                <Sidebar />
+            </div>
             <div className="relative flex flex-col flex-1 min-w-0" style={{ zIndex: 1 }}>
                 <Header />
-                <main className="flex-1 p-6 overflow-y-auto">
+                <main className="flex-1 p-3 sm:p-4 md:p-6 overflow-y-auto pb-20 md:pb-6">
                     <Outlet />
                 </main>
             </div>
+            {/* Mobile Bottom Nav */}
+            <MobileNav />
             <SignalToast />
             <ToastContainer />
             <CommandPalette />

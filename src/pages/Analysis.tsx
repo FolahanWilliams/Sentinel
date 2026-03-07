@@ -23,6 +23,7 @@ import { SignalRating } from '@/components/shared/SignalRating';
 import { LoadingState } from '@/components/shared/LoadingState';
 import { useTickerAnalysis } from '@/hooks/useTickerAnalysis';
 import { TickerNewsFeed } from '@/components/analysis/TickerNewsFeed';
+import { MultiTimeframeChart } from '@/components/analysis/MultiTimeframeChart';
 
 export function Analysis() {
     const { ticker: urlTicker } = useParams<{ ticker?: string }>();
@@ -266,6 +267,11 @@ export function Analysis() {
                                             <p className="text-sm text-sentinel-200 leading-relaxed bg-sentinel-900/50 p-4 rounded-lg border border-sentinel-800 border-l-4 border-l-blue-500">
                                                 {signal.thesis}
                                             </p>
+                                        </div>
+
+                                        {/* Multi-Timeframe Chart */}
+                                        <div className="mb-6">
+                                            <MultiTimeframeChart ticker={signal.ticker} signal={signal} height={450} />
                                         </div>
 
                                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

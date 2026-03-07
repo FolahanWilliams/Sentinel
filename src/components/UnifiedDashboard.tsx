@@ -221,7 +221,7 @@ export function UnifiedDashboard() {
                 </div>
 
                 {/* Tab Bar */}
-                <div className="flex items-center gap-1 p-1 bg-sentinel-900/70 rounded-xl ring-1 ring-sentinel-800/50 mb-6 overflow-x-auto" role="tablist" aria-label="Dashboard sections">
+                <div className="flex items-center gap-1 p-1 bg-sentinel-900/70 rounded-xl ring-1 ring-sentinel-800/50 mb-6 overflow-x-auto mobile-scroll-x" role="tablist" aria-label="Dashboard sections">
                     {TABS.map(tab => {
                         const Icon = tab.icon;
                         const isActive = activeTab === tab.id;
@@ -229,7 +229,7 @@ export function UnifiedDashboard() {
                             <button
                                 key={tab.id}
                                 onClick={() => setActiveTab(tab.id)}
-                                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all whitespace-nowrap border-none cursor-pointer relative ${
+                                className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap border-none cursor-pointer relative ${
                                     isActive
                                         ? 'text-sentinel-100 bg-sentinel-800/80'
                                         : 'text-sentinel-500 hover:text-sentinel-300 hover:bg-sentinel-800/30 bg-transparent'
