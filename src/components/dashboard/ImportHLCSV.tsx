@@ -14,12 +14,14 @@
  * - Auto-updates portfolio total capital from HL account summary
  */
 
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useMemo } from 'react';
 import { supabase } from '@/config/supabase';
-import { Upload, X, FileText, AlertTriangle, CheckCircle2, Loader2, RefreshCw } from 'lucide-react';
+import { MarketDataService } from '@/services/marketData';
+import { Upload, X, FileText, AlertTriangle, CheckCircle2, Loader2, RefreshCw, XCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatPrice } from '@/utils/formatters';
 import { inferCurrency } from '@/utils/portfolio';
+import type { Position } from '@/hooks/usePortfolio';
 
 interface ParsedHolding {
     ticker: string;
@@ -38,6 +40,7 @@ interface ParsedHolding {
 interface ImportHLCSVProps {
     onClose: () => void;
     existingTickers?: string[];
+    existingPositions?: Position[];
 }
 
 interface AccountSummary {
@@ -319,12 +322,13 @@ function parseNumber(val: string): number {
     return isNaN(num) ? 0 : num;
 }
 
-export function ImportHLCSV({ onClose, existingTickers = [] }: ImportHLCSVProps) {
+export function ImportHLCSV({ onClose, existingTickers = [], existingPositions = [] }: ImportHLCSVProps) {
     const [step, setStep] = useState<'upload' | 'preview' | 'importing' | 'done'>('upload');
     const [holdings, setHoldings] = useState<ParsedHolding[]>([]);
     const [parseErrors, setParseErrors] = useState<string[]>([]);
-    const [importResult, setImportResult] = useState<{ success: number; failed: number; replaced: number; capitalUpdated: number | null }>({ success: 0, failed: 0, replaced: 0, capitalUpdated: null });
+    const [importResult, setImportResult] = useState<{ success: number; failed: number; replaced: number; capitalUpdated: number | null; closed: number }>({ success: 0, failed: 0, replaced: 0, capitalUpdated: null, closed: 0 });
     const [replaceExisting, setReplaceExisting] = useState(false);
+    const [autoCloseEnabled, setAutoCloseEnabled] = useState(true);
     const [accountSummary, setAccountSummary] = useState<AccountSummary | null>(null);
     const [exchangeRate, setExchangeRate] = useState<number | null>(null);
     const [dragActive, setDragActive] = useState(false);
@@ -486,9 +490,62 @@ export function ImportHLCSV({ onClose, existingTickers = [] }: ImportHLCSVProps)
             }
         }
 
-        setImportResult({ success, failed, replaced, capitalUpdated });
+        // Auto-close positions missing from the CSV (sold on HL)
+        let closed = 0;
+        if (autoCloseEnabled && missingPositions.length > 0) {
+            for (const pos of missingPositions) {
+                try {
+                    // Try to get last market quote for exit price
+                    let exitPrice = pos.entry_price ?? 0;
+                    try {
+                        const quote = await MarketDataService.getQuote(pos.ticker);
+                        if (quote?.price) exitPrice = quote.price;
+                    } catch { /* use entry price as fallback */ }
+
+                    const entryValue = (pos.entry_price ?? 0) * (pos.shares ?? 0);
+                    const exitValue = exitPrice * (pos.shares ?? 0);
+                    const realizedPnl = pos.side === 'long'
+                        ? exitValue - entryValue
+                        : entryValue - exitValue;
+                    const realizedPnlPct = entryValue > 0 ? (realizedPnl / entryValue) * 100 : 0;
+
+                    const { error: closeErr } = await supabase
+                        .from('positions')
+                        .update({
+                            status: 'closed',
+                            exit_price: Math.round(exitPrice * 10000) / 10000,
+                            realized_pnl: Math.round(realizedPnl * 100) / 100,
+                            realized_pnl_pct: Math.round(realizedPnlPct * 100) / 100,
+                            closed_at: new Date().toISOString(),
+                            close_reason: 'Auto-closed: missing from HL CSV re-import',
+                        })
+                        .eq('id', pos.id);
+
+                    if (!closeErr) closed++;
+                } catch (err) {
+                    console.error(`[ImportHLCSV] Failed to auto-close ${pos.ticker}:`, err);
+                }
+            }
+        }
+
+        setImportResult({ success, failed, replaced, capitalUpdated, closed });
         setStep('done');
     };
+
+    // Detect positions that exist in the DB but are MISSING from the CSV (sold on HL)
+    const missingPositions = useMemo(() => {
+        if (holdings.length === 0 || existingPositions.length === 0) return [];
+        const csvTickers = new Set(holdings.map(h => h.ticker.toUpperCase()));
+        // Also include base tickers without .L for matching
+        holdings.forEach(h => {
+            const base = h.ticker.replace('.L', '').toUpperCase();
+            csvTickers.add(base);
+            csvTickers.add(`${base}.L`);
+        });
+        return existingPositions.filter(p =>
+            p.status === 'open' && !csvTickers.has(p.ticker.toUpperCase())
+        );
+    }, [holdings, existingPositions]);
 
     const selectedCount = holdings.filter(h => h.selected).length;
     const totalCost = holdings.filter(h => h.selected).reduce((sum, h) => sum + h.cost, 0);
@@ -719,6 +776,45 @@ export function ImportHLCSV({ onClose, existingTickers = [] }: ImportHLCSVProps)
                                 </table>
                             </div>
 
+                            {/* Missing positions — will be auto-closed */}
+                            {missingPositions.length > 0 && (
+                                <div className="mt-4 p-3 bg-red-500/5 border border-red-500/20 rounded-lg">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div className="flex items-center gap-2">
+                                            <XCircle className="w-3.5 h-3.5 text-red-400" />
+                                            <span className="text-[11px] text-red-400 font-medium">
+                                                {missingPositions.length} position{missingPositions.length !== 1 ? 's' : ''} no longer in HL export (sold?)
+                                            </span>
+                                        </div>
+                                        <button
+                                            onClick={() => setAutoCloseEnabled(!autoCloseEnabled)}
+                                            className={`px-2 py-0.5 text-[10px] font-medium rounded border-none cursor-pointer transition-colors ${
+                                                autoCloseEnabled
+                                                    ? 'bg-red-500/20 text-red-300 ring-1 ring-red-500/30'
+                                                    : 'bg-sentinel-800/50 text-sentinel-500 hover:text-sentinel-400'
+                                            }`}
+                                        >
+                                            {autoCloseEnabled ? 'Will auto-close' : 'Skip closing'}
+                                        </button>
+                                    </div>
+                                    <div className="space-y-1">
+                                        {missingPositions.map(pos => (
+                                            <div key={pos.id} className="flex items-center justify-between text-[11px]">
+                                                <span className="font-mono text-sentinel-300">{pos.ticker}</span>
+                                                <span className="text-sentinel-500">
+                                                    {pos.shares ?? 0} shares @ {formatPrice(pos.entry_price ?? 0, inferCurrency(pos.ticker))}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    {autoCloseEnabled && (
+                                        <p className="text-[9px] text-sentinel-600 mt-2">
+                                            Exit price will use last market quote. You can edit afterwards.
+                                        </p>
+                                    )}
+                                </div>
+                            )}
+
                             <div className="flex items-center justify-between mt-4">
                                 <div className="flex items-center gap-3">
                                     <button
@@ -767,6 +863,11 @@ export function ImportHLCSV({ onClose, existingTickers = [] }: ImportHLCSVProps)
                                     <span className="text-red-400"> ({importResult.failed} failed)</span>
                                 )}
                             </p>
+                            {importResult.closed > 0 && (
+                                <p className="text-xs text-red-400/80 mb-2">
+                                    {importResult.closed} position{importResult.closed !== 1 ? 's' : ''} auto-closed (no longer in HL export)
+                                </p>
+                            )}
                             {importResult.capitalUpdated !== null && (
                                 <p className="text-xs text-emerald-400 mb-2">
                                     Total capital updated to {formatPrice(importResult.capitalUpdated)}

@@ -48,9 +48,25 @@ export function UnifiedPortfolioView({ className = '' }: UnifiedPortfolioViewPro
     const navigate = useNavigate();
     const { config, openPositions, closedPositions, loading: portfolioLoading } = usePortfolio();
     const [quotes, setQuotes] = useState<Record<string, Quote>>({});
+    const [sectorMap, setSectorMap] = useState<Record<string, string>>({});
     const [refreshing, setRefreshing] = useState(false);
     const [showTradeModal, setShowTradeModal] = useState(false);
     const [showImportModal, setShowImportModal] = useState(false);
+
+    // Fetch sector data from watchlist
+    useEffect(() => {
+        async function fetchSectors() {
+            const { data } = await supabase
+                .from('watchlist')
+                .select('ticker, sector');
+            if (data) {
+                const map: Record<string, string> = {};
+                data.forEach((w: any) => { map[w.ticker] = w.sector || 'Other'; });
+                setSectorMap(map);
+            }
+        }
+        fetchSectors();
+    }, []);
 
     // Fetch live quotes for open positions
     const fetchQuotes = useCallback(async () => {
@@ -131,11 +147,11 @@ export function UnifiedPortfolioView({ className = '' }: UnifiedPortfolioViewPro
         };
     }, [config, openPositions, closedPositions, quotes]);
 
-    // Sector allocation for donut
+    // Sector allocation for donut — uses watchlist sector data
     const sectorAllocations = useMemo((): SectorAllocation[] => {
         const sectors: Record<string, number> = {};
         for (const pos of openPositions) {
-            const sector = 'Other'; // Simplified — could enrich via company info
+            const sector = sectorMap[pos.ticker] || sectorMap[pos.ticker.replace('.L', '')] || 'Other';
             const size = pos.position_size_usd ?? ((pos.entry_price ?? 0) * (pos.shares ?? 0));
             sectors[sector] = (sectors[sector] ?? 0) + size;
         }
@@ -144,7 +160,7 @@ export function UnifiedPortfolioView({ className = '' }: UnifiedPortfolioViewPro
             value,
             color: SECTOR_COLORS[sector] ?? SECTOR_COLORS['Other'] ?? '#6b7280',
         }));
-    }, [openPositions]);
+    }, [openPositions, sectorMap]);
 
     if (portfolioLoading) {
         return (
@@ -356,6 +372,7 @@ export function UnifiedPortfolioView({ className = '' }: UnifiedPortfolioViewPro
                         <ImportHLCSV
                             onClose={() => setShowImportModal(false)}
                             existingTickers={openPositions.map(p => p.ticker)}
+                            existingPositions={openPositions}
                         />
                     )}
                 </AnimatePresence>

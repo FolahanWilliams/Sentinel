@@ -38,9 +38,10 @@ interface LiveQuote {
 export function PortfolioSimulator() {
     const [positions, setPositions] = useState<Position[]>([]);
     const [quotes, setQuotes] = useState<Record<string, LiveQuote>>({});
+    const [sectorMap, setSectorMap] = useState<Record<string, string>>({});
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
-    const [portfolioConfig, setPortfolioConfig] = useState<{ total_capital: number }>({ total_capital: 10000 });
+    const [portfolioConfig, setPortfolioConfig] = useState<{ total_capital: number } | null>(null);
 
     useEffect(() => {
         fetchData();
@@ -49,13 +50,19 @@ export function PortfolioSimulator() {
     async function fetchData() {
         setLoading(true);
         try {
-            const [{ data: posData }, { data: configData }] = await Promise.all([
+            const [{ data: posData }, { data: configData }, { data: watchlistData }] = await Promise.all([
                 supabase.from('positions').select('*').order('opened_at', { ascending: false }),
                 supabase.from('portfolio_config').select('total_capital').limit(1).maybeSingle(),
+                supabase.from('watchlist').select('ticker, sector'),
             ]);
 
             if (posData) setPositions(posData as Position[]);
             if (configData) setPortfolioConfig(configData as any);
+            if (watchlistData) {
+                const map: Record<string, string> = {};
+                watchlistData.forEach((w: any) => { map[w.ticker] = w.sector || 'Other'; });
+                setSectorMap(map);
+            }
 
             // Fetch live quotes for open positions
             const openTickers = (posData || [])
@@ -89,7 +96,7 @@ export function PortfolioSimulator() {
     const closedPositions = useMemo(() => positions.filter(p => p.status === 'closed'), [positions]);
 
     const stats = useMemo(() => {
-        const capital = portfolioConfig.total_capital;
+        const capital = portfolioConfig?.total_capital ?? 10000;
 
         // Open position metrics
         let totalExposure = 0;
@@ -108,8 +115,7 @@ export function PortfolioSimulator() {
                 unrealizedPnl += pnl;
             }
 
-            // Approximate sector from ticker (simplified — in production would use watchlist sector)
-            const sector = 'mixed';
+            const sector = sectorMap[pos.ticker] || sectorMap[pos.ticker.replace('.L', '')] || 'Other';
             sectorExposure[sector] = (sectorExposure[sector] || 0) + size;
         }
 
@@ -139,7 +145,7 @@ export function PortfolioSimulator() {
             wins,
             losses,
         };
-    }, [openPositions, closedPositions, quotes, portfolioConfig]);
+    }, [openPositions, closedPositions, quotes, portfolioConfig, sectorMap]);
 
     if (loading) {
         return (
