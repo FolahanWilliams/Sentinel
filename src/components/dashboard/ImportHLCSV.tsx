@@ -39,7 +39,7 @@ interface ImportHLCSVProps {
 /** Safe column accessor — returns '' for missing indices */
 function getCol(cols: string[], idx: number | undefined): string {
     if (idx === undefined || idx < 0 || idx >= cols.length) return '';
-    return cols[idx];
+    return cols[idx] ?? '';
 }
 
 /**
@@ -61,7 +61,7 @@ function parseHLCSV(text: string, existingTickers: Set<string>): { holdings: Par
     }
 
     // Parse header to find column indices
-    const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase().trim());
+    const headers = parseCSVLine(lines[0] ?? '').map(h => h.toLowerCase().trim());
 
     // Map known HL column names to our fields
     const colMap: Record<string, number | undefined> = {};
@@ -96,7 +96,7 @@ function parseHLCSV(text: string, existingTickers: Set<string>): { holdings: Par
     // Parse data rows
     const tickerIdx = colMap.ticker;
     for (let i = 1; i < lines.length; i++) {
-        const cols = parseCSVLine(lines[i]);
+        const cols = parseCSVLine(lines[i] ?? '');
         if (cols.length < 2) continue;
 
         const rawTicker = getCol(cols, tickerIdx);
