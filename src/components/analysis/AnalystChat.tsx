@@ -19,8 +19,8 @@ import { supabase } from '@/config/supabase';
 import { useChat } from '@/contexts/ChatContext';
 import { MarketDataService } from '@/services/marketData';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
-import { formatPrice, formatPercent } from '@/utils/formatters';
-import { inferCurrency, calcUnrealizedPnl, getPositionExposure } from '@/utils/portfolio';
+import { formatPrice } from '@/utils/formatters';
+import { inferCurrency, getPositionExposure } from '@/utils/portfolio';
 import type { Position, PortfolioConfig } from '@/hooks/usePortfolio';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -262,7 +262,6 @@ function AnalystChatInner() {
         // Open positions with exposure
         if (openPositions.length > 0) {
             let totalExposure = 0;
-            let unrealizedPnl = 0;
 
             parts.push(`\nOPEN POSITIONS (${openPositions.length}):`);
             for (const pos of openPositions) {
