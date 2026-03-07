@@ -9,9 +9,7 @@
  * Results cached for 30 minutes — sector rotation is a slow-moving signal.
  */
 
-import { supabase } from '@/config/supabase';
 import { MarketDataService } from './marketData';
-import type { Quote } from '@/types/market';
 
 // ---------------------------------------------------------------------------
 // Sector & ETF definitions
@@ -257,7 +255,7 @@ export class SectorRotationService {
 
         // Check for wide dispersion within the ranking (even if group averages are close)
         if (sorted.length >= 4) {
-            const topBottom = sorted[0].changePct - sorted[sorted.length - 1].changePct;
+            const topBottom = sorted[0]!.changePct - sorted[sorted.length - 1]!.changePct;
             if (topBottom > 1.0) {
                 return {
                     regime: 'rotation',

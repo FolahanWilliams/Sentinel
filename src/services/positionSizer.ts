@@ -247,13 +247,14 @@ export class PositionSizer {
         let drawdownScaling: PositionSizeResult['drawdownScaling'] = null;
         try {
             const { data: positions } = await supabase
-                .from('portfolio_positions')
-                .select('unrealized_pnl')
-                .not('unrealized_pnl', 'is', null);
+                .from('positions')
+                .select('realized_pnl')
+                .eq('status', 'open')
+                .not('realized_pnl', 'is', null);
 
             if (positions && positions.length > 0) {
-                const totalUnrealizedPnl = positions.reduce(
-                    (sum: number, p: { unrealized_pnl: number }) => sum + (p.unrealized_pnl || 0), 0
+                const totalUnrealizedPnl = (positions as { realized_pnl: number }[]).reduce(
+                    (sum: number, p: { realized_pnl: number }) => sum + (p.realized_pnl || 0), 0
                 );
 
                 if (totalUnrealizedPnl < 0) {
