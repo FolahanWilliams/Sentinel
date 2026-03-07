@@ -149,11 +149,19 @@ export function UnifiedDashboard() {
                         {portfolioValue != null && (
                             <div className="hidden sm:flex items-center gap-4 pl-6 border-l border-sentinel-800/50">
                                 <div>
-                                    <span className="text-[10px] text-sentinel-500 uppercase tracking-wider block">Portfolio</span>
+                                    <span className="text-[10px] text-sentinel-500 uppercase tracking-wider block">Portfolio Value</span>
                                     <span className="text-lg font-bold font-mono text-sentinel-100">
                                         {formatPrice(portfolioValue)}
                                     </span>
                                 </div>
+                                {config && portfolioValue !== config.total_capital && (
+                                    <div className="flex flex-col">
+                                        <span className="text-[9px] text-sentinel-600 uppercase tracking-wider">Capital</span>
+                                        <span className="text-xs font-mono text-sentinel-500">
+                                            {formatPrice(config.total_capital)}
+                                        </span>
+                                    </div>
+                                )}
                                 {dailyRoi != null && (
                                     <span className={`text-sm font-bold font-mono px-2 py-0.5 rounded ${
                                         dailyRoi >= 0
@@ -185,6 +193,11 @@ export function UnifiedDashboard() {
                         <div className="flex-1">
                             <span className="text-[10px] text-sentinel-500 uppercase tracking-wider block">Portfolio Value</span>
                             <span className="text-lg font-bold font-mono text-sentinel-100">{formatPrice(portfolioValue)}</span>
+                            {config && portfolioValue !== config.total_capital && (
+                                <span className="text-[10px] font-mono text-sentinel-600 ml-2">
+                                    (Capital: {formatPrice(config.total_capital)})
+                                </span>
+                            )}
                         </div>
                         {dailyRoi != null && (
                             <span className={`text-sm font-bold font-mono ${dailyRoi >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
