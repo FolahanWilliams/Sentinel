@@ -7,6 +7,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/config/supabase';
+import { usePortfolio } from '@/hooks/usePortfolio';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { DonutChart } from '@/components/shared/DonutChart';
@@ -41,6 +42,7 @@ const CATEGORY_COLORS: Record<string, string> = {
 };
 
 export function PerformanceMetrics({ className = '' }: PerformanceMetricsProps) {
+    const { config, closedPositions } = usePortfolio();
     const [outcomes, setOutcomes] = useState<OutcomeWithSignal[]>([]);
     const [loading, setLoading] = useState(true);
     const [runningReflection, setRunningReflection] = useState(false);
@@ -74,24 +76,44 @@ export function PerformanceMetrics({ className = '' }: PerformanceMetricsProps) 
         fetchOutcomes();
     }, []);
 
-    // Portfolio value over time (cumulative returns from closed outcomes)
+    // Portfolio value over time — uses real closed positions P&L when available,
+    // falls back to signal outcomes with actual position sizing from config.
     const performanceChart = useMemo(() => {
+        const startingCapital = config?.total_capital ?? 10000;
+        const positionSizePct = (config?.risk_per_trade_pct ?? 2) / 100;
+
+        // Prefer real closed positions if we have them (actual realized P&L)
+        if (closedPositions.length > 0) {
+            const sorted = [...closedPositions]
+                .filter(p => p.closed_at)
+                .sort((a, b) => new Date(a.closed_at!).getTime() - new Date(b.closed_at!).getTime());
+
+            let cumulative = startingCapital;
+            return sorted.map(p => {
+                cumulative += (p.realized_pnl ?? 0);
+                return {
+                    date: new Date(p.closed_at!).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                    value: Math.round(cumulative),
+                };
+            });
+        }
+
+        // Fall back to signal outcomes if no closed positions
         if (outcomes.length === 0) return [];
         const sorted = [...outcomes]
             .filter(o => o.completed_at)
             .sort((a, b) => new Date(a.completed_at!).getTime() - new Date(b.completed_at!).getTime());
 
-        let cumulative = 10000; // Starting capital assumption
+        let cumulative = startingCapital;
         return sorted.map(o => {
             const returnPct = Number(o.return_at_30d ?? o.return_at_10d ?? o.return_at_5d ?? o.return_at_1d ?? 0);
-            // Assume 2% position size, scale return accordingly
-            cumulative += cumulative * (returnPct / 100) * 0.02;
+            cumulative += cumulative * (returnPct / 100) * positionSizePct;
             return {
                 date: new Date(o.completed_at!).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
                 value: Math.round(cumulative),
             };
         });
-    }, [outcomes]);
+    }, [outcomes, config, closedPositions]);
 
     // Win rate by category
     const categoryStats = useMemo((): CategoryWinRate[] => {
