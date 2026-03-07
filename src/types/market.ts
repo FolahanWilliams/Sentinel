@@ -4,6 +4,8 @@
 
 export interface Quote {
     ticker: string;
+    /** When the ticker resolved to a different exchange symbol (e.g. FRES → FRES.L) */
+    resolvedTicker?: string;
     price: number;
     change: number;
     changePercent: number;

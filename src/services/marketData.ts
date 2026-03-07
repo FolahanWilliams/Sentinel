@@ -97,24 +97,76 @@ export class MarketDataService {
     }
 
     /**
-     * Batch fetch quotes for a watchlist
-     * Note: Changed to process sequentially with throttling to prevent 502s
-     * from upstream rate limiting.
+     * Batch fetch quotes for multiple tickers in a single Edge Function call.
+     * Uses the bulk_quote endpoint to reduce latency from N calls to 1.
+     * Falls back to sequential getQuote calls if bulk fails.
      */
     static async getQuotesBulk(tickers: string[]): Promise<Record<string, Quote>> {
-        const results: Record<string, Quote> = {};
+        if (tickers.length === 0) return {};
 
-        // Process sequentially to be gentle on the proxy and upstream providers
+        // Separate cache hits from misses
+        const results: Record<string, Quote> = {};
+        const cacheMisses: string[] = [];
+
         for (const ticker of tickers) {
-            try {
-                const q = await this.getQuote(ticker);
-                results[ticker] = q;
-            } catch (e) {
-                console.warn(`[MarketDataService] Failed bulk fetch for ${ticker}`, e);
+            const cacheKey = `quote_${ticker.toUpperCase()}`;
+            const cached = cache.get(cacheKey);
+            if (cached && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
+                results[ticker] = cached.data as Quote;
+            } else {
+                cacheMisses.push(ticker);
             }
         }
 
-        return results;
+        if (cacheMisses.length === 0) {
+            console.log(`[MarketData] Bulk quotes: all ${tickers.length} from cache`);
+            return results;
+        }
+
+        console.log(`[MarketData] Bulk fetching ${cacheMisses.length} quotes (${tickers.length - cacheMisses.length} cached)`);
+
+        try {
+            const { data, error } = await supabase.functions.invoke('proxy-market-data', {
+                body: {
+                    endpoint: 'bulk_quote',
+                    tickers: cacheMisses.map(t => t.toUpperCase()),
+                }
+            });
+
+            if (error) {
+                throw new Error(`Bulk quote proxy error: ${error.message}`);
+            }
+
+            if (data?.success && data?.data) {
+                const bulkData = data.data as Record<string, any>;
+                for (const ticker of cacheMisses) {
+                    const key = ticker.toUpperCase();
+                    const quoteData = bulkData[key];
+                    if (quoteData && quoteData.price) {
+                        const quote = quoteData as Quote;
+                        results[ticker] = quote;
+                        cache.set(`quote_${key}`, { data: quote, timestamp: Date.now() });
+                    }
+                }
+            }
+
+            return results;
+        } catch (e) {
+            console.warn('[MarketDataService] Bulk fetch failed, falling back to sequential:', e);
+
+            // Fallback: sequential fetch for remaining misses
+            for (const ticker of cacheMisses) {
+                if (results[ticker]) continue;
+                try {
+                    const q = await this.getQuote(ticker);
+                    results[ticker] = q;
+                } catch (err) {
+                    console.warn(`[MarketDataService] Sequential fallback failed for ${ticker}`, err);
+                }
+            }
+
+            return results;
+        }
     }
 
     /**
