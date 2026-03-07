@@ -214,6 +214,41 @@ function computeGap(bars: OHLCV[]): { gapPct: number; gapType: GapType } {
     return { gapPct, gapType: 'common' };
 }
 
+/**
+ * Aggregate daily bars into weekly bars for multi-timeframe analysis.
+ * Groups by ISO week (Monday–Friday). Partial current week is included.
+ */
+function aggregateToWeekly(dailyBars: OHLCV[]): OHLCV[] {
+    if (dailyBars.length < 5) return [];
+    const weeks: Map<string, OHLCV> = new Map();
+    for (const bar of dailyBars) {
+        const d = new Date(bar.date);
+        // ISO week key: year + week number
+        const jan1 = new Date(d.getFullYear(), 0, 1);
+        const weekNum = Math.ceil(((d.getTime() - jan1.getTime()) / 86400000 + jan1.getDay() + 1) / 7);
+        const key = `${d.getFullYear()}-W${weekNum}`;
+        const existing = weeks.get(key);
+        if (!existing) {
+            weeks.set(key, { ...bar });
+        } else {
+            existing.high = Math.max(existing.high, bar.high);
+            existing.low = Math.min(existing.low, bar.low);
+            existing.close = bar.close; // last day's close
+            existing.volume += bar.volume;
+        }
+    }
+    return Array.from(weeks.values());
+}
+
+export interface MultiTimeframeResult {
+    weeklyTrend: 'bullish' | 'bearish' | 'neutral';
+    weeklyRsi: number | null;
+    weeklyMacdHistogram: number | null;
+    alignment: 'confirmed' | 'conflicting' | 'neutral';
+    confidenceAdjustment: number; // -15 to +10
+    summary: string;
+}
+
 // ─── Main Service ───
 
 export class TechnicalAnalysisService {
@@ -525,6 +560,90 @@ export class TechnicalAnalysisService {
             gapType,
             gapPct,
         };
+    }
+
+    /**
+     * Multi-Timeframe Confirmation: aggregates daily bars to weekly
+     * and checks if the weekly trend aligns with the daily signal direction.
+     * Returns confidence adjustment: +10 if weekly confirms, -15 if conflicting.
+     */
+    static async getMultiTimeframeConfirmation(
+        ticker: string,
+        signalDirection: 'long' | 'short',
+        dailyBars?: OHLCV[],
+    ): Promise<MultiTimeframeResult> {
+        const neutral: MultiTimeframeResult = {
+            weeklyTrend: 'neutral',
+            weeklyRsi: null,
+            weeklyMacdHistogram: null,
+            alignment: 'neutral',
+            confidenceAdjustment: 0,
+            summary: 'Insufficient data for weekly timeframe analysis.',
+        };
+
+        try {
+            const bars = dailyBars ?? await this.fetchHistoricalBars(ticker);
+            const weeklyBars = aggregateToWeekly(bars);
+            if (weeklyBars.length < 26) return neutral; // need enough for MACD
+
+            const weeklCloses = weeklyBars.map(b => b.close);
+            const weeklyRsi = computeRSI(weeklCloses, 14);
+            const weeklyMacd = computeMACD(weeklCloses);
+            const weeklySma50 = computeSMA(weeklCloses, 10); // ~10 weeks ≈ 50 days
+            const weeklySma200 = computeSMA(weeklCloses, 40); // ~40 weeks ≈ 200 days
+            const currentPrice = weeklCloses[weeklCloses.length - 1] ?? 0;
+
+            // Determine weekly trend
+            let weeklyTrend: 'bullish' | 'bearish' | 'neutral' = 'neutral';
+            if (weeklySma50 !== null && weeklySma200 !== null) {
+                if (currentPrice > weeklySma50 && currentPrice > weeklySma200) weeklyTrend = 'bullish';
+                else if (currentPrice < weeklySma50 && currentPrice < weeklySma200) weeklyTrend = 'bearish';
+            }
+
+            // Check alignment
+            let alignment: 'confirmed' | 'conflicting' | 'neutral' = 'neutral';
+            let confidenceAdjustment = 0;
+
+            if (signalDirection === 'long') {
+                if (weeklyTrend === 'bullish' || (weeklyRsi !== null && weeklyRsi < 40)) {
+                    alignment = 'confirmed';
+                    confidenceAdjustment = 10;
+                } else if (weeklyTrend === 'bearish' && weeklyRsi !== null && weeklyRsi > 60) {
+                    alignment = 'conflicting';
+                    confidenceAdjustment = -15;
+                }
+            } else {
+                if (weeklyTrend === 'bearish' || (weeklyRsi !== null && weeklyRsi > 60)) {
+                    alignment = 'confirmed';
+                    confidenceAdjustment = 10;
+                } else if (weeklyTrend === 'bullish' && weeklyRsi !== null && weeklyRsi < 40) {
+                    alignment = 'conflicting';
+                    confidenceAdjustment = -15;
+                }
+            }
+
+            // MACD histogram as additional confirmation
+            if (weeklyMacd) {
+                const histAligned = (signalDirection === 'long' && weeklyMacd.histogram > 0)
+                    || (signalDirection === 'short' && weeklyMacd.histogram < 0);
+                if (histAligned && alignment === 'confirmed') confidenceAdjustment = Math.min(confidenceAdjustment + 5, 10);
+                if (!histAligned && alignment !== 'conflicting') confidenceAdjustment -= 5;
+            }
+
+            const summary = `Weekly: trend=${weeklyTrend}, RSI=${weeklyRsi?.toFixed(1) ?? 'N/A'}, MACD hist=${weeklyMacd?.histogram.toFixed(3) ?? 'N/A'} → ${alignment} with ${signalDirection} signal (adj: ${confidenceAdjustment > 0 ? '+' : ''}${confidenceAdjustment}).`;
+
+            return {
+                weeklyTrend,
+                weeklyRsi: weeklyRsi !== null ? Math.round(weeklyRsi * 10) / 10 : null,
+                weeklyMacdHistogram: weeklyMacd ? Math.round(weeklyMacd.histogram * 1000) / 1000 : null,
+                alignment,
+                confidenceAdjustment,
+                summary,
+            };
+        } catch (err) {
+            console.error(`[TA] Multi-timeframe error for ${ticker}:`, err);
+            return neutral;
+        }
     }
 
     /**

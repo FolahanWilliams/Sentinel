@@ -93,6 +93,41 @@ export interface AgentOutputsJson {
         stop_loss: number | null;
         risk_reward_ratio: number | null;
     } | null;
+    earnings_guard?: {
+        earnings_date: string | null;
+        days_until: number | null;
+        penalty: number;
+    } | null;
+    fundamentals?: {
+        pe_ratio: number | null;
+        debt_to_equity: number | null;
+        profit_margin: number | null;
+        revenue_growth_yoy: number | null;
+        short_interest_pct?: number | null;
+    } | null;
+    market_regime?: {
+        regime: string;
+        vix: number | null;
+        penalty: number;
+    } | null;
+    backtest?: {
+        signal_type_win_rate: number | null;
+        ticker_win_rate: number | null;
+        ticker_consecutive_losses: number;
+        penalty: number;
+    } | null;
+    multi_timeframe?: {
+        weekly_trend: string;
+        weekly_rsi: number | null;
+        alignment: string;
+        adjustment: number;
+    } | null;
+    correlation_guard?: {
+        sector: string;
+        sector_count: number;
+        total_active: number;
+        penalty: number;
+    } | null;
     // Legacy fields for older signals
     event_detector?: Record<string, unknown>;
     bias_classifier?: Record<string, unknown>;
