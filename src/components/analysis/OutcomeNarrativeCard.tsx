@@ -73,9 +73,12 @@ export function OutcomeNarrativeCard({ signalId, ticker, thesis }: OutcomeNarrat
 
     // Load outcome data from Supabase
     useEffect(() => {
+        let cancelled = false;
+
         async function fetchOutcome() {
             setLoading(true);
             setError(null);
+            setNarrative(null);
             try {
                 const { data, error: fetchErr } = await supabase
                     .from('signal_outcomes')
@@ -83,17 +86,20 @@ export function OutcomeNarrativeCard({ signalId, ticker, thesis }: OutcomeNarrat
                     .eq('signal_id', signalId)
                     .maybeSingle();
 
+                if (cancelled) return;
                 if (fetchErr) throw fetchErr;
                 setOutcome(data as SignalOutcome | null);
             } catch (err) {
+                if (cancelled) return;
                 console.error('[OutcomeNarrativeCard] Fetch failed:', err);
                 setError('Failed to load outcome data.');
             } finally {
-                setLoading(false);
+                if (!cancelled) setLoading(false);
             }
         }
 
         fetchOutcome();
+        return () => { cancelled = true; };
     }, [signalId]);
 
     // Restore cached narrative

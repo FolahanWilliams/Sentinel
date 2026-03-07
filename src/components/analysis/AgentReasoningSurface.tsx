@@ -56,8 +56,8 @@ export function AgentReasoningSurface({ signal }: AgentReasoningSurfaceProps) {
     // Extract structured data
     const thesis = overreaction?.thesis || signal.thesis;
     const counterThesis = redTeam?.counter_thesis || signal.counter_argument;
-    const identifiedBiases: string[] = overreaction?.identified_biases || [];
-    const criticalFlaws: string[] = selfCritique?.critical_flaws || [];
+    const identifiedBiases: string[] = overreaction?.identified_biases ?? [];
+    const criticalFlaws: string[] = selfCritique?.critical_flaws ?? [];
 
     // Build confidence waterfall steps
     const waterfallSteps = buildWaterfallSteps(signal);
