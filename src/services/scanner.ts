@@ -361,7 +361,12 @@ export class ScannerService {
             // 5. Extract Events via Gemini Fast-Pass
             if (freshArticles && freshArticles.length > 0) {
                 // A. Semantic Deduplication (TF-IDF cosine similarity — replaces Jaccard)
-                const dedupResult = SemanticDeduplicator.deduplicate(freshArticles);
+                const articlesWithDefaults = freshArticles.map(a => ({
+                    ...a,
+                    title: a.title || '',
+                    description: a.description || '',
+                }));
+                const dedupResult = SemanticDeduplicator.deduplicate(articlesWithDefaults);
                 const uniqueArticles = dedupResult.uniqueArticles;
                 console.log(`[Scanner] TF-IDF dedup: ${freshArticles.length} → ${uniqueArticles.length} unique (${dedupResult.duplicatesRemoved} dupes removed).`);
 
@@ -937,7 +942,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                         // Calibrated confidence (dynamic isotonic regression when data available, fallback to static buckets)
                                         let calibratedConfidence: number | null = null;
                                         try {
-                                            calibratedConfidence = await DynamicCalibrator.getCalibratedProbability(analysis.data.confidence_score);
+                                            calibratedConfidence = await DynamicCalibrator.getCalibratedProbabilityAsync(analysis.data.confidence_score);
                                         } catch {
                                             // Fallback to legacy static calibrator
                                             try {
