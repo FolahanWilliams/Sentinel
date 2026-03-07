@@ -80,8 +80,23 @@ function AnalystChatInner() {
     // Conversation memory — rolling summary of older messages
     const [conversationSummary, setConversationSummary] = useState<string>('');
 
-    // News context for active ticker
-    const [tickerNews, setTickerNews] = useState<{ title: string; source: string; published_at: string }[]>([]);
+    // News context — per-ticker or cross-portfolio
+    const [tickerNews, setTickerNews] = useState<{ ticker?: string; title: string; source: string; published_at: string }[]>([]);
+
+    // Scanner/signal intelligence for replacement trade ideas
+    const [scannerResults, setScannerResults] = useState<{
+        ticker: string;
+        signal_type: string;
+        confidence_score: number;
+        projected_roi: number | null;
+        confluence_level: string | null;
+        thesis: string;
+        target_price: number | null;
+        stop_loss: number | null;
+        historical_win_rate: number | null;
+        risk_level: string;
+        created_at: string;
+    }[]>([]);
 
     // Follow-up suggestions after AI responses
     const [suggestedFollowups, setSuggestedFollowups] = useState<string[]>([]);
@@ -193,38 +208,131 @@ function AnalystChatInner() {
         return () => { isMounted = false; };
     }, [activeTicker, isOpen]);
 
-    // Fetch news articles mentioning the active ticker
+    // Fetch news articles — per-ticker when active, cross-portfolio in global mode
     useEffect(() => {
-        if (!activeTicker || !isOpen) {
+        if (!isOpen) {
             setTickerNews([]);
             return;
         }
         let cancelled = false;
 
-        async function fetchTickerNews() {
+        async function fetchNews() {
             try {
-                const { data } = await supabase
-                    .from('rss_cache')
-                    .select('title, feed_name, published_at')
-                    .contains('tickers_mentioned', [activeTicker!.toUpperCase()])
-                    .order('published_at', { ascending: false })
-                    .limit(5);
+                if (activeTicker) {
+                    // Single ticker mode
+                    const { data } = await supabase
+                        .from('rss_cache')
+                        .select('title, feed_name, published_at')
+                        .contains('tickers_mentioned', [activeTicker.toUpperCase()])
+                        .order('published_at', { ascending: false })
+                        .limit(5);
 
-                if (!cancelled && data) {
-                    setTickerNews(data.map(d => ({
-                        title: d.title,
-                        source: d.feed_name,
-                        published_at: d.published_at || '',
-                    })));
+                    if (!cancelled && data) {
+                        setTickerNews(data.map(d => ({
+                            title: d.title,
+                            source: d.feed_name,
+                            published_at: d.published_at || '',
+                        })));
+                    }
+                } else if (portfolio?.positions) {
+                    // Cross-portfolio mode — fetch news for all open position tickers
+                    const openTickers = portfolio.positions
+                        .filter(p => p.status === 'open')
+                        .map(p => p.ticker.toUpperCase());
+
+                    if (openTickers.length === 0) {
+                        if (!cancelled) setTickerNews([]);
+                        return;
+                    }
+
+                    // Fetch recent news mentioning any portfolio ticker (parallel queries, 3 per ticker max)
+                    const newsPromises = openTickers.slice(0, 10).map(tk =>
+                        supabase
+                            .from('rss_cache')
+                            .select('title, feed_name, published_at, tickers_mentioned')
+                            .contains('tickers_mentioned', [tk])
+                            .order('published_at', { ascending: false })
+                            .limit(3)
+                    );
+
+                    const results = await Promise.all(newsPromises);
+                    if (cancelled) return;
+
+                    // Deduplicate by title and tag with the matched ticker
+                    const seen = new Set<string>();
+                    const allNews: typeof tickerNews = [];
+
+                    for (let i = 0; i < results.length; i++) {
+                        const { data } = results[i];
+                        const tk = openTickers[i];
+                        if (!data) continue;
+                        for (const d of data) {
+                            if (seen.has(d.title)) continue;
+                            seen.add(d.title);
+                            allNews.push({
+                                ticker: tk,
+                                title: d.title,
+                                source: d.feed_name,
+                                published_at: d.published_at || '',
+                            });
+                        }
+                    }
+
+                    // Sort by date, cap at 10
+                    allNews.sort((a, b) => new Date(b.published_at).getTime() - new Date(a.published_at).getTime());
+                    setTickerNews(allNews.slice(0, 10));
+                } else {
+                    setTickerNews([]);
                 }
             } catch {
                 if (!cancelled) setTickerNews([]);
             }
         }
 
-        fetchTickerNews();
+        fetchNews();
         return () => { cancelled = true; };
-    }, [activeTicker, isOpen]);
+    }, [activeTicker, isOpen, portfolio]);
+
+    // Fetch enriched scanner results for replacement trade ideas
+    useEffect(() => {
+        if (!isOpen) {
+            setScannerResults([]);
+            return;
+        }
+        let cancelled = false;
+
+        async function fetchScannerResults() {
+            try {
+                const { data } = await supabase
+                    .from('signals')
+                    .select('ticker, signal_type, confidence_score, projected_roi, confluence_level, thesis, target_price, stop_loss, historical_win_rate, risk_level, created_at')
+                    .eq('status', 'active')
+                    .order('projected_roi', { ascending: false, nullsFirst: false })
+                    .limit(10);
+
+                if (!cancelled && data) {
+                    setScannerResults(data.map((s: any) => ({
+                        ticker: s.ticker,
+                        signal_type: s.signal_type,
+                        confidence_score: s.confidence_score,
+                        projected_roi: s.projected_roi,
+                        confluence_level: s.confluence_level,
+                        thesis: s.thesis,
+                        target_price: s.target_price,
+                        stop_loss: s.stop_loss,
+                        historical_win_rate: s.historical_win_rate,
+                        risk_level: s.risk_level,
+                        created_at: s.created_at,
+                    })));
+                }
+            } catch {
+                if (!cancelled) setScannerResults([]);
+            }
+        }
+
+        fetchScannerResults();
+        return () => { cancelled = true; };
+    }, [isOpen]);
 
     const [messages, setMessages] = useState<ChatMessage[]>(() => {
         try {
@@ -433,16 +541,42 @@ function AnalystChatInner() {
     const buildNewsContext = useCallback((): string => {
         if (tickerNews.length === 0) return '';
         const parts: string[] = [];
-        parts.push(`\n=== RECENT NEWS FOR ${ticker} ===`);
+        const heading = activeTicker
+            ? `=== RECENT NEWS FOR ${ticker} ===`
+            : '=== PORTFOLIO NEWS (across your holdings) ===';
+        parts.push(`\n${heading}`);
         for (const article of tickerNews) {
             const timeStr = article.published_at
                 ? new Date(article.published_at).toLocaleDateString()
                 : 'Unknown date';
-            parts.push(`  • [${article.source}] ${article.title} (${timeStr})`);
+            const tickerTag = article.ticker && !activeTicker ? `[${article.ticker}] ` : '';
+            parts.push(`  • ${tickerTag}[${article.source}] ${article.title} (${timeStr})`);
         }
         parts.push('=== END NEWS ===');
         return parts.join('\n');
-    }, [tickerNews, ticker]);
+    }, [tickerNews, ticker, activeTicker]);
+
+    // ─── Build Scanner Context ───────────────────────────────────────────────
+
+    const buildScannerContext = useCallback((): string => {
+        if (scannerResults.length === 0) return '';
+        const parts: string[] = [];
+        parts.push('\n=== SCANNER INTELLIGENCE (Top Active Signals) ===');
+        for (const sig of scannerResults) {
+            const roi = sig.projected_roi != null ? `ROI: ${sig.projected_roi}%` : '';
+            const wr = sig.historical_win_rate != null ? `WinRate: ${sig.historical_win_rate}%` : '';
+            const conf = `Conf: ${sig.confidence_score}/100`;
+            const confl = sig.confluence_level ? `Confluence: ${sig.confluence_level}` : '';
+            const target = sig.target_price != null ? `Target: ${formatPrice(sig.target_price)}` : '';
+            const stop = sig.stop_loss != null ? `Stop: ${formatPrice(sig.stop_loss)}` : '';
+            const meta = [conf, roi, wr, confl, target, stop, `Risk: ${sig.risk_level}`].filter(Boolean).join(' | ');
+
+            parts.push(`  ${sig.ticker} [${sig.signal_type}] — ${meta}`);
+            if (sig.thesis) parts.push(`    Thesis: ${sig.thesis.slice(0, 150)}${sig.thesis.length > 150 ? '...' : ''}`);
+        }
+        parts.push('=== END SCANNER ===');
+        return parts.join('\n');
+    }, [scannerResults]);
 
     // ─── Conversation Memory — Summarize when history grows long ──────────
 
@@ -589,6 +723,7 @@ function AnalystChatInner() {
             const portfolioContext = buildPortfolioContext();
             const tickerContext = buildTickerContext();
             const newsContext = buildNewsContext();
+            const scannerContext = buildScannerContext();
 
             // Build conversation history with rolling memory
             const recentMessages = messages.slice(-6);
@@ -602,7 +737,7 @@ function AnalystChatInner() {
                 : '';
 
             const prompt = `
-You are Sentinel's AI Trading Analyst. You have FULL access to the user's live portfolio data and active trading signals.
+You are Sentinel's AI Trading Analyst. You have FULL access to the user's live portfolio data, active trading signals, scanner intelligence, and recent news.
 ${activeTicker ? `The user is currently viewing ${ticker}.` : 'The user is in global market mode.'}
 
 ${portfolioContext}
@@ -611,15 +746,17 @@ ${tickerContext}
 
 ${newsContext}
 
+${scannerContext}
+
 ${memoryBlock}${historyBlock ? `RECENT CONVERSATION:\n${historyBlock}\n` : ''}
 USER'S QUESTION: ${trimmed}
 
 INSTRUCTIONS:
 1. You have the user's COMPLETE portfolio state above — positions, sector allocation, exposure limits, P&L, and active signals. Use this data to give specific, quantitative answers.
 2. When asked about exposure, concentration, or risk — reference their ACTUAL numbers (sector %, position sizes, limit breaches).
-3. When asked about rotation opportunities or high-conviction finds — reference their ACTIVE SIGNALS with confidence scores and theses. Also use your grounded search capability to find current market opportunities.
-4. If recent news articles are provided above, reference them when relevant to give timely, news-informed analysis.
-5. Keep responses concise (2-4 paragraphs). Be direct with numbers and specific tickers.
+3. When asked about rotation opportunities or what to sell/buy — cross-reference their PORTFOLIO positions against the SCANNER INTELLIGENCE section. Recommend specific replacements with projected ROI, win rates, and confidence scores from the scanner data.
+4. When recent NEWS is provided, reference specific headlines to support your analysis. In portfolio mode, news is tagged with the ticker it affects — use this to flag positions that have negative news catalysts.
+5. Keep responses concise but detailed (2-5 paragraphs). Be direct with numbers and specific tickers. When suggesting trades, include entry/target/stop from scanner data.
 6. AVAILABLE ACTIONS — If the user requests any of these, include the action tag in your response:
    - Log a trade: [ACTION:ADD_POSITION] TICKER @PRICE xSHARES SIDE (e.g., [ACTION:ADD_POSITION] AAPL @150.00 x100 LONG)
    - Add to watchlist: [ACTION:ADD_WATCHLIST] TICKER (e.g., [ACTION:ADD_WATCHLIST] TSLA)
