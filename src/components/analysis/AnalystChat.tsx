@@ -263,9 +263,10 @@ function AnalystChatInner() {
                     const allNews: typeof tickerNews = [];
 
                     for (let i = 0; i < results.length; i++) {
-                        const { data } = results[i];
+                        const result = results[i];
                         const tk = openTickers[i];
-                        if (!data) continue;
+                        if (!result?.data) continue;
+                        const { data } = result;
                         for (const d of data) {
                             if (seen.has(d.title)) continue;
                             seen.add(d.title);
