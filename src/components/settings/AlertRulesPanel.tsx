@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { Bell, BellOff, X, Plus, Zap } from 'lucide-react';
+import { Bell, BellOff, X, Plus, Zap, Clock, Timer } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { AlertRule } from '@/utils/alertRules';
 
@@ -35,6 +35,10 @@ export function AlertRulesPanel() {
         minConfidence: 80,
         signalType: 'all' as const,
         bias: 'all' as const,
+        tickersInput: '',
+        timeWindowStart: '' as string,
+        timeWindowEnd: '' as string,
+        cooldownMinutes: 0,
     });
 
     useEffect(() => {
@@ -56,6 +60,11 @@ export function AlertRulesPanel() {
     const handleAddRule = (e: React.FormEvent) => {
         e.preventDefault();
 
+        const parsedTickers = newRule.tickersInput
+            .split(',')
+            .map(t => t.trim().toUpperCase())
+            .filter(t => t.length > 0);
+
         const rule: AlertRule = {
             id: Math.random().toString(36).substring(2, 9),
             enabled: true,
@@ -64,12 +73,16 @@ export function AlertRulesPanel() {
             signalType: newRule.signalType,
             bias: newRule.bias,
             createdAt: Date.now(),
+            tickers: parsedTickers,
+            timeWindowStart: newRule.timeWindowStart || null,
+            timeWindowEnd: newRule.timeWindowEnd || null,
+            cooldownMinutes: newRule.cooldownMinutes,
         };
 
         const updated = [...rules, rule];
         saveRules(updated);
         setIsAdding(false);
-        setNewRule({ sector: 'All Sectors', minConfidence: 80, signalType: 'all', bias: 'all' });
+        setNewRule({ sector: 'All Sectors', minConfidence: 80, signalType: 'all', bias: 'all', tickersInput: '', timeWindowStart: '', timeWindowEnd: '', cooldownMinutes: 0 });
     };
 
     const toggleRule = (id: string) => {
@@ -159,6 +172,53 @@ export function AlertRulesPanel() {
                                     />
                                 </div>
                             </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mt-1">
+                                <div className="sm:col-span-2">
+                                    <label className="block text-[10px] text-sentinel-500 uppercase tracking-wider mb-1.5">Tickers (comma-separated)</label>
+                                    <input
+                                        type="text"
+                                        placeholder="e.g. AAPL, TSLA, NVDA — leave blank for all"
+                                        value={newRule.tickersInput}
+                                        onChange={e => setNewRule({ ...newRule, tickersInput: e.target.value })}
+                                        className="w-full px-3 py-2 bg-sentinel-900 border border-sentinel-800 rounded-lg text-sm text-sentinel-100 outline-none focus:border-purple-500/50 transition-colors placeholder:text-sentinel-600"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] text-sentinel-500 uppercase tracking-wider mb-1.5 flex items-center gap-1"><Clock className="w-3 h-3" /> Active From (EST)</label>
+                                    <input
+                                        type="time"
+                                        value={newRule.timeWindowStart}
+                                        onChange={e => setNewRule({ ...newRule, timeWindowStart: e.target.value })}
+                                        className="w-full px-3 py-2 bg-sentinel-900 border border-sentinel-800 rounded-lg text-sm text-sentinel-100 outline-none focus:border-purple-500/50 transition-colors"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] text-sentinel-500 uppercase tracking-wider mb-1.5 flex items-center gap-1"><Clock className="w-3 h-3" /> Active Until (EST)</label>
+                                    <input
+                                        type="time"
+                                        value={newRule.timeWindowEnd}
+                                        onChange={e => setNewRule({ ...newRule, timeWindowEnd: e.target.value })}
+                                        className="w-full px-3 py-2 bg-sentinel-900 border border-sentinel-800 rounded-lg text-sm text-sentinel-100 outline-none focus:border-purple-500/50 transition-colors"
+                                    />
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mt-1">
+                                <div>
+                                    <label className="block text-[10px] text-sentinel-500 uppercase tracking-wider mb-1.5 flex items-center gap-1"><Timer className="w-3 h-3" /> Cooldown</label>
+                                    <select
+                                        value={newRule.cooldownMinutes}
+                                        onChange={e => setNewRule({ ...newRule, cooldownMinutes: Number(e.target.value) })}
+                                        className="w-full px-3 py-2 bg-sentinel-900 border border-sentinel-800 rounded-lg text-sm text-sentinel-100 outline-none focus:border-purple-500/50 transition-colors"
+                                    >
+                                        <option value={0}>No cooldown</option>
+                                        <option value={15}>15 minutes</option>
+                                        <option value={30}>30 minutes</option>
+                                        <option value={60}>1 hour</option>
+                                        <option value={120}>2 hours</option>
+                                        <option value={240}>4 hours</option>
+                                    </select>
+                                </div>
+                            </div>
                             <div className="flex justify-end pt-3 border-t border-sentinel-800/50 mt-4">
                                 <button type="submit" className="flex items-center gap-1.5 px-6 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-sm font-semibold transition-colors border-none cursor-pointer shadow-lg shadow-purple-500/20">
                                     <Zap className="w-3.5 h-3.5" /> Save Rule
@@ -217,10 +277,23 @@ export function AlertRulesPanel() {
                                         {rule.sector === 'All Sectors' && rule.signalType === 'all' && rule.bias === 'all' && (
                                             <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-sentinel-800/80 text-sentinel-300 ring-1 ring-sentinel-700/50">Global Market Filter</span>
                                         )}
+                                        {(rule.tickers ?? []).length > 0 && (rule.tickers ?? []).map(t => (
+                                            <span key={t} className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-400 ring-1 ring-amber-500/20">{t}</span>
+                                        ))}
+                                        {rule.timeWindowStart && rule.timeWindowEnd && (
+                                            <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-sky-500/10 text-sky-400 ring-1 ring-sky-500/20 flex items-center gap-1">
+                                                <Clock className="w-2.5 h-2.5" /> {rule.timeWindowStart} – {rule.timeWindowEnd} EST
+                                            </span>
+                                        )}
+                                        {(rule.cooldownMinutes ?? 0) > 0 && (
+                                            <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-orange-500/10 text-orange-400 ring-1 ring-orange-500/20 flex items-center gap-1">
+                                                <Timer className="w-2.5 h-2.5" /> {rule.cooldownMinutes >= 60 ? `${rule.cooldownMinutes / 60}h` : `${rule.cooldownMinutes}m`} cooldown
+                                            </span>
+                                        )}
                                     </div>
                                     <p className="text-xs text-sentinel-400 leading-relaxed">
                                         Alert when <strong className="text-sentinel-300">{rule.bias !== 'all' ? rule.bias : 'any'}</strong> {rule.signalType !== 'all' ? rule.signalType : 'signal'}
-                                        {rule.sector !== 'All Sectors' ? ` in ${rule.sector}` : ''} exceeds {rule.minConfidence}% confidence.
+                                        {rule.sector !== 'All Sectors' ? ` in ${rule.sector}` : ''} exceeds {rule.minConfidence}% confidence{(rule.tickers ?? []).length > 0 ? ` for ${(rule.tickers ?? []).join(', ')}` : ''}.
                                     </p>
                                 </div>
                             </div>

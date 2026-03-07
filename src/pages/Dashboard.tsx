@@ -196,7 +196,7 @@ export function Dashboard() {
                         </div>
                     )}
 
-                    <div className="glass-panel rounded-xl overflow-hidden h-[800px] flex flex-col relative w-full">
+                    <div className="glass-panel rounded-xl overflow-hidden h-[500px] sm:h-[800px] flex flex-col relative w-full">
                         <div className="absolute inset-0 bg-radial-glow opacity-20 pointer-events-none" />
 
                         <div className="relative z-10 flex-1 overflow-y-auto w-full">
@@ -243,8 +243,8 @@ export function Dashboard() {
                                                 className="p-5 hover:bg-sentinel-800/40 transition-colors group cursor-pointer"
                                                 onClick={() => navigate(`/analysis/${signal.ticker}`)}
                                             >
-                                                <div className="flex justify-between items-start mb-3">
-                                                    <div className="flex items-center gap-3">
+                                                <div className="flex flex-wrap justify-between items-start mb-3 gap-2">
+                                                    <div className="flex items-center gap-2 sm:gap-3">
                                                         <span className="px-2.5 py-1 bg-sentinel-800 text-sentinel-100 text-xs font-bold font-mono rounded ring-1 ring-sentinel-700 shadow-sm">
                                                             {signal.ticker}
                                                         </span>
@@ -252,7 +252,7 @@ export function Dashboard() {
                                                             {signal.signal_type.replace('_', ' ')}
                                                         </span>
                                                     </div>
-                                                    <div className="flex items-center gap-3">
+                                                    <div className="flex items-center gap-2 sm:gap-3">
                                                         <span className="text-xs text-sentinel-500 flex items-center gap-1 font-mono">
                                                             <Clock className="w-3 h-3" />
                                                             {new Date(signal.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -302,8 +302,8 @@ export function Dashboard() {
                                                     </div>
                                                 )}
 
-                                                <div className="mt-3 flex items-center justify-between">
-                                                    <div className="flex items-center gap-6 text-[11px] text-sentinel-500 font-mono bg-sentinel-950/30 p-2.5 rounded-lg border border-sentinel-800/30 w-fit">
+                                                <div className="mt-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                                                    <div className="flex flex-wrap items-center gap-3 sm:gap-6 text-[11px] text-sentinel-500 font-mono bg-sentinel-950/30 p-2.5 rounded-lg border border-sentinel-800/30 w-full sm:w-fit">
                                                         <div>ENT: <span className="text-sentinel-300">{formatPrice(signal.suggested_entry_low)} - {formatPrice(signal.suggested_entry_high)}</span></div>
                                                         <div>TGT: <span className="text-emerald-400">{formatPrice(signal.target_price)}</span></div>
                                                         <div>STP: <span className="text-red-400">{formatPrice(signal.stop_loss)}</span></div>

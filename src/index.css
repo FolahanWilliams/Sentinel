@@ -979,6 +979,27 @@ body {
   .mobile-scroll-x::-webkit-scrollbar {
     display: none;
   }
+
+  /* Stack signal entry/target/stop vertically */
+  .signal-price-row {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  /* Reduce glass-panel padding on mobile */
+  .glass-panel {
+    padding: 12px;
+  }
+
+  /* Compact font sizes on mobile */
+  h1 {
+    font-size: 1.5rem;
+  }
+
+  /* Ensure charts don't overflow */
+  svg {
+    max-width: 100%;
+  }
 }
 
 /* Tablet: Adjust layout */

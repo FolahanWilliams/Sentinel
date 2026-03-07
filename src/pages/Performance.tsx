@@ -17,6 +17,9 @@ import {
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { CorrelationDashboard } from '@/components/dashboard/CorrelationDashboard';
+import { TradeReplay } from '@/components/dashboard/TradeReplay';
+import { exportSignalsToCSV, downloadCSV } from '@/utils/exportData';
 
 const fadeUp = {
     initial: { opacity: 0, y: 16 },
@@ -402,6 +405,12 @@ export function Performance() {
                     <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-red-500/70" /> Actual &lt; Predicted</span>
                 </div>
             </motion.div>
+
+            {/* Trade Replay */}
+            <TradeReplay />
+
+            {/* Correlation Dashboard */}
+            <CorrelationDashboard />
 
             {/* Pending Outcomes */}
             {stats.pending > 0 && (

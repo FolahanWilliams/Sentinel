@@ -11,7 +11,7 @@ import { DEFAULT_STARTING_CAPITAL, DEFAULT_MIN_CONFIDENCE } from '@/config/const
 import { useState, useMemo, useCallback } from 'react';
 import {
     History, Play, BarChart3, TrendingUp, TrendingDown,
-    Target, Shield, DollarSign, Activity,
+    Target, Shield, DollarSign, Activity, Download,
     AlertTriangle, Loader2, Award, Flame, Zap,
     Calendar, Filter, ArrowUpRight, ArrowDownRight, Radar,
 } from 'lucide-react';
@@ -20,6 +20,7 @@ import { supabase } from '@/config/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
 import { runBacktest, BacktestResult, BacktestParams, WinRateBreakdown, ConfidenceCalibrationPoint, MonthlyReturn } from '@/services/backtestEngine';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { exportBacktestToCSV, downloadCSV } from '@/utils/exportData';
 
 // ────────────── helpers ──────────────
 
@@ -635,6 +636,16 @@ export function Backtest() {
                             <div className="px-5 py-4 border-b border-sentinel-800/50 flex items-center justify-between">
                                 <h2 className="text-sm font-semibold text-sentinel-200 uppercase tracking-wider flex items-center gap-2">
                                     <Shield className="w-4 h-4 text-purple-400" /> Trade Log ({results.trades.length} trades)
+                                    <button
+                                        onClick={() => {
+                                            const csv = exportBacktestToCSV(results.trades);
+                                            downloadCSV(`backtest-${new Date().toISOString().split('T')[0]}`, csv);
+                                        }}
+                                        className="ml-2 px-2 py-1 bg-sentinel-800 hover:bg-sentinel-700 text-sentinel-400 hover:text-sentinel-200 rounded text-[10px] font-medium transition-colors flex items-center gap-1 ring-1 ring-sentinel-700 border-none cursor-pointer"
+                                        title="Export trades as CSV"
+                                    >
+                                        <Download className="w-3 h-3" /> CSV
+                                    </button>
                                 </h2>
                                 {totalPages > 1 && (
                                     <div className="flex items-center gap-2">
