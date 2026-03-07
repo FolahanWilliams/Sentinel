@@ -355,7 +355,10 @@ export function UnifiedPortfolioView({ className = '' }: UnifiedPortfolioViewPro
                         <LogTradeModal onClose={() => setShowTradeModal(false)} />
                     )}
                     {showImportModal && (
-                        <ImportHLCSV onClose={() => setShowImportModal(false)} />
+                        <ImportHLCSV
+                            onClose={() => setShowImportModal(false)}
+                            existingTickers={openPositions.map(p => p.ticker)}
+                        />
                     )}
                 </AnimatePresence>
             </div>
