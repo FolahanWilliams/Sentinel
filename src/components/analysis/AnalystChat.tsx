@@ -77,6 +77,15 @@ function AnalystChatInner() {
     const [portfolio, setPortfolio] = useState<PortfolioSnapshot | null>(null);
     const [portfolioLoading, setPortfolioLoading] = useState(false);
 
+    // Conversation memory — rolling summary of older messages
+    const [conversationSummary, setConversationSummary] = useState<string>('');
+
+    // News context for active ticker
+    const [tickerNews, setTickerNews] = useState<{ title: string; source: string; published_at: string }[]>([]);
+
+    // Follow-up suggestions after AI responses
+    const [suggestedFollowups, setSuggestedFollowups] = useState<string[]>([]);
+
     // Fetch portfolio context (positions, config, signals, sector data)
     useEffect(() => {
         if (!isOpen) return;
@@ -182,6 +191,39 @@ function AnalystChatInner() {
         fetchContext();
 
         return () => { isMounted = false; };
+    }, [activeTicker, isOpen]);
+
+    // Fetch news articles mentioning the active ticker
+    useEffect(() => {
+        if (!activeTicker || !isOpen) {
+            setTickerNews([]);
+            return;
+        }
+        let cancelled = false;
+
+        async function fetchTickerNews() {
+            try {
+                const { data } = await supabase
+                    .from('rss_cache')
+                    .select('title, feed_name, published_at')
+                    .contains('tickers_mentioned', [activeTicker!.toUpperCase()])
+                    .order('published_at', { ascending: false })
+                    .limit(5);
+
+                if (!cancelled && data) {
+                    setTickerNews(data.map(d => ({
+                        title: d.title,
+                        source: d.feed_name,
+                        published_at: d.published_at || '',
+                    })));
+                }
+            } catch {
+                if (!cancelled) setTickerNews([]);
+            }
+        }
+
+        fetchTickerNews();
+        return () => { cancelled = true; };
     }, [activeTicker, isOpen]);
 
     const [messages, setMessages] = useState<ChatMessage[]>(() => {
@@ -386,6 +428,102 @@ function AnalystChatInner() {
         return parts.join('\n');
     }, [ticker, activeTicker, tickerAnalysis, quote]);
 
+    // ─── Build News Context ────────────────────────────────────────────────
+
+    const buildNewsContext = useCallback((): string => {
+        if (tickerNews.length === 0) return '';
+        const parts: string[] = [];
+        parts.push(`\n=== RECENT NEWS FOR ${ticker} ===`);
+        for (const article of tickerNews) {
+            const timeStr = article.published_at
+                ? new Date(article.published_at).toLocaleDateString()
+                : 'Unknown date';
+            parts.push(`  • [${article.source}] ${article.title} (${timeStr})`);
+        }
+        parts.push('=== END NEWS ===');
+        return parts.join('\n');
+    }, [tickerNews, ticker]);
+
+    // ─── Conversation Memory — Summarize when history grows long ──────────
+
+    const summarizeHistory = useCallback(async (msgs: ChatMessage[]): Promise<string> => {
+        // Only summarize if we have enough messages
+        if (msgs.length < 10) return conversationSummary;
+
+        // Take older messages beyond the recent window
+        const olderMessages = msgs.slice(0, -6);
+        if (olderMessages.length === 0) return conversationSummary;
+
+        const historyText = olderMessages.map(m =>
+            `${m.role === 'user' ? 'USER' : 'ANALYST'}: ${m.content.slice(0, 200)}`
+        ).join('\n');
+
+        const existingSummary = conversationSummary
+            ? `Previous summary: ${conversationSummary}\n\nNew messages to incorporate:\n`
+            : '';
+
+        try {
+            const result = await GeminiService.generate<any>({
+                prompt: `${existingSummary}Summarize this trading conversation in 2-3 concise sentences, preserving key decisions, tickers discussed, and any actions taken:\n\n${historyText}`,
+                temperature: 0.2,
+            });
+
+            if (result.success && result.data) {
+                const summary = typeof result.data === 'string' ? result.data : JSON.stringify(result.data);
+                return summary;
+            }
+        } catch (err) {
+            console.error('[AnalystChat] Failed to summarize history:', err);
+        }
+        return conversationSummary;
+    }, [conversationSummary]);
+
+    // ─── Extract Follow-up Suggestions ────────────────────────────────────
+
+    const extractFollowups = useCallback((assistantResponse: string): string[] => {
+        const followups: string[] = [];
+
+        // Check for specific content patterns and generate relevant follow-ups
+        const lowerResp = assistantResponse.toLowerCase();
+
+        if (activeTicker) {
+            if (lowerResp.includes('risk') || lowerResp.includes('stop loss') || lowerResp.includes('downside')) {
+                followups.push(`What's a good stop-loss level for ${ticker}?`);
+            }
+            if (lowerResp.includes('bullish') || lowerResp.includes('upside') || lowerResp.includes('buy')) {
+                followups.push(`What's the optimal position size for ${ticker}?`);
+            }
+            if (lowerResp.includes('bearish') || lowerResp.includes('sell') || lowerResp.includes('trim')) {
+                followups.push(`Should I hedge my ${ticker} exposure?`);
+            }
+            if (lowerResp.includes('earnings') || lowerResp.includes('report')) {
+                followups.push(`How has ${ticker} performed after recent earnings?`);
+            }
+            if (followups.length < 2) {
+                followups.push(`Compare ${ticker} with its top competitor`);
+            }
+        } else {
+            if (lowerResp.includes('sector')) {
+                followups.push('Which sectors have the strongest momentum right now?');
+            }
+            if (lowerResp.includes('exposure') || lowerResp.includes('concentration')) {
+                followups.push('How should I rebalance to reduce concentration risk?');
+            }
+            if (lowerResp.includes('signal')) {
+                followups.push('Which active signal has the best risk/reward ratio?');
+            }
+        }
+
+        // Always offer a general follow-up
+        if (followups.length < 3) {
+            followups.push(activeTicker
+                ? `What are the key catalysts for ${ticker} this quarter?`
+                : 'Give me your top 3 trade ideas for this week');
+        }
+
+        return followups.slice(0, 3);
+    }, [activeTicker, ticker]);
+
     // ─── Send Message ────────────────────────────────────────────────────────
 
     const handleSend = async () => {
@@ -450,11 +588,18 @@ function AnalystChatInner() {
 
             const portfolioContext = buildPortfolioContext();
             const tickerContext = buildTickerContext();
+            const newsContext = buildNewsContext();
 
-            // Build conversation history for context
-            const historyBlock = messages.slice(-6).map(m =>
+            // Build conversation history with rolling memory
+            const recentMessages = messages.slice(-6);
+            const historyBlock = recentMessages.map(m =>
                 `${m.role === 'user' ? 'USER' : (m.role === 'assistant' ? 'ANALYST' : 'SYSTEM')}: ${m.content}`
             ).join('\n');
+
+            // Include conversation summary for long-running chats
+            const memoryBlock = conversationSummary
+                ? `CONVERSATION SUMMARY (earlier context):\n${conversationSummary}\n`
+                : '';
 
             const prompt = `
 You are Sentinel's AI Trading Analyst. You have FULL access to the user's live portfolio data and active trading signals.
@@ -464,17 +609,23 @@ ${portfolioContext}
 
 ${tickerContext}
 
-${historyBlock ? `CONVERSATION HISTORY:\n${historyBlock}\n` : ''}
+${newsContext}
+
+${memoryBlock}${historyBlock ? `RECENT CONVERSATION:\n${historyBlock}\n` : ''}
 USER'S QUESTION: ${trimmed}
 
 INSTRUCTIONS:
 1. You have the user's COMPLETE portfolio state above — positions, sector allocation, exposure limits, P&L, and active signals. Use this data to give specific, quantitative answers.
 2. When asked about exposure, concentration, or risk — reference their ACTUAL numbers (sector %, position sizes, limit breaches).
 3. When asked about rotation opportunities or high-conviction finds — reference their ACTIVE SIGNALS with confidence scores and theses. Also use your grounded search capability to find current market opportunities.
-4. Keep responses concise (2-4 paragraphs). Be direct with numbers and specific tickers.
-5. If the user explicitly asks to log a trade, extract the details and include them in your response with the prefix "[ACTION:ADD_POSITION]" followed by ticker, price, shares, side.
-6. If the user asks about something not in the provided context, use your knowledge and grounded search to answer.
-7. Do NOT add financial disclaimers. Be opinionated and direct — this is a trading intelligence system.
+4. If recent news articles are provided above, reference them when relevant to give timely, news-informed analysis.
+5. Keep responses concise (2-4 paragraphs). Be direct with numbers and specific tickers.
+6. AVAILABLE ACTIONS — If the user requests any of these, include the action tag in your response:
+   - Log a trade: [ACTION:ADD_POSITION] TICKER @PRICE xSHARES SIDE (e.g., [ACTION:ADD_POSITION] AAPL @150.00 x100 LONG)
+   - Add to watchlist: [ACTION:ADD_WATCHLIST] TICKER (e.g., [ACTION:ADD_WATCHLIST] TSLA)
+   - Run scanner on a ticker: [ACTION:RUN_SCAN] TICKER (e.g., [ACTION:RUN_SCAN] NVDA)
+7. If the user asks about something not in the provided context, use your knowledge and grounded search to answer.
+8. Do NOT add financial disclaimers. Be opinionated and direct — this is a trading intelligence system.
 `;
 
             const result = await GeminiService.generate<any>({
@@ -504,10 +655,14 @@ INSTRUCTIONS:
             };
             setMessages(prev => [...prev, assistantMsg]);
 
+            // Generate follow-up suggestions based on the response
+            setSuggestedFollowups(extractFollowups(messageText));
+
             // Check for action patterns in the response
-            if (messageText.includes('[ACTION:ADD_POSITION]')) {
-                try {
-                    const actionMatch = messageText.match(/\[ACTION:ADD_POSITION\]\s*(\w+)\s*@?\s*\$?([\d.]+)\s*x?\s*(\d+)?\s*(LONG|SHORT)?/i);
+            try {
+                // ACTION: Add Position
+                if (messageText.includes('[ACTION:ADD_POSITION]')) {
+                    const actionMatch = messageText.match(/\[ACTION:ADD_POSITION\]\s*(\w+(?:\.\w+)?)\s*@?\s*\$?([\d.]+)\s*x?\s*(\d+)?\s*(LONG|SHORT)?/i);
                     if (actionMatch) {
                         const [, actionTicker, price, shares, side] = actionMatch;
                         await supabase.from('positions').insert({
@@ -525,9 +680,54 @@ INSTRUCTIONS:
                             timestamp: new Date(),
                         }]);
                     }
-                } catch (actionErr: any) {
-                    console.error('Failed to execute AI action:', actionErr);
                 }
+
+                // ACTION: Add to Watchlist
+                if (messageText.includes('[ACTION:ADD_WATCHLIST]')) {
+                    const watchMatch = messageText.match(/\[ACTION:ADD_WATCHLIST\]\s*(\w+(?:\.\w+)?)/i);
+                    if (watchMatch?.[1]) {
+                        const watchTicker = watchMatch[1].toUpperCase();
+                        await supabase.from('watchlist').upsert(
+                            { ticker: watchTicker, is_active: true, sector: 'Other', company_name: watchTicker } as any,
+                            { onConflict: 'ticker' }
+                        );
+                        setMessages(prev => [...prev, {
+                            role: 'system',
+                            content: `Added ${watchTicker} to watchlist`,
+                            timestamp: new Date(),
+                        }]);
+                    }
+                }
+
+                // ACTION: Run Scanner
+                if (messageText.includes('[ACTION:RUN_SCAN]')) {
+                    const scanMatch = messageText.match(/\[ACTION:RUN_SCAN\]\s*(\w+(?:\.\w+)?)/i);
+                    if (scanMatch?.[1]) {
+                        const scanTicker = scanMatch[1].toUpperCase();
+                        // Navigate to scanner with the ticker pre-filled
+                        setMessages(prev => [...prev, {
+                            role: 'system',
+                            content: `Opening scanner for ${scanTicker}...`,
+                            timestamp: new Date(),
+                        }]);
+                        // Use a small delay so the system message is visible
+                        setTimeout(() => {
+                            window.location.href = `/scanner?ticker=${scanTicker}`;
+                        }, 500);
+                    }
+                }
+            } catch (actionErr: any) {
+                console.error('Failed to execute AI action:', actionErr);
+            }
+
+            // Trigger conversation summary if history is getting long
+            const updatedMessages = [...messages, userMsg, assistantMsg];
+            if (updatedMessages.length >= 12 && updatedMessages.length % 4 === 0) {
+                // Fire-and-forget: summarize older messages in background
+                void (async () => {
+                    const summary = await summarizeHistory(updatedMessages);
+                    if (summary) setConversationSummary(summary);
+                })();
             }
 
         } catch (err) {
@@ -551,15 +751,28 @@ INSTRUCTIONS:
 
     // ─── Quick Questions (portfolio-aware) ───────────────────────────────────
 
-    const hasPositions = (portfolio?.positions.filter(p => p.status === 'open').length ?? 0) > 0;
+    const openPositions = portfolio?.positions.filter(p => p.status === 'open') ?? [];
+    const hasPositions = openPositions.length > 0;
     const hasSignals = (portfolio?.activeSignals.length ?? 0) > 0;
+    const hasNews = tickerNews.length > 0;
+
+    // Find positions with significant drawdowns for dynamic suggestions
+    const distressedPositions = openPositions.filter(p => {
+        if (!p.entry_price || !p.shares) return false;
+        // Rough check — we don't have live prices here, but realized_pnl on open = unrealized hint
+        return (p.realized_pnl ?? 0) < 0;
+    });
 
     const quickQuestions = activeTicker ? [
         `What's the bull case for ${ticker}?`,
+        ...(hasNews ? [`What's the latest news saying about ${ticker}?`] : []),
         `Am I already overexposed to ${ticker}'s sector?`,
         `What are the biggest risks for ${ticker}?`,
         `Should I add to my ${ticker} position or trim?`,
-    ] : [
+    ].slice(0, 4) : [
+        ...(distressedPositions.length > 0 && distressedPositions[0] ? [
+            `My ${distressedPositions[0].ticker} position is underwater — should I cut or hold?`,
+        ] : []),
         ...(hasPositions ? [
             'Am I over-exposed to any single sector right now?',
             'Which of my positions has the worst risk/reward?',
@@ -722,6 +935,22 @@ INSTRUCTIONS:
                                     )}
                                 </div>
                             ))}
+
+                            {/* Follow-up suggestions */}
+                            {!isLoading && suggestedFollowups.length > 0 && messages.length > 0 && (
+                                <div className="space-y-1.5 pl-8">
+                                    <span className="text-[10px] text-sentinel-600 uppercase tracking-wider font-mono">Follow up</span>
+                                    {suggestedFollowups.map((q, i) => (
+                                        <button
+                                            key={i}
+                                            onClick={() => { setInput(q); setSuggestedFollowups([]); setTimeout(() => inputRef.current?.focus(), 50); }}
+                                            className="block w-full text-left px-2.5 py-1.5 text-[11px] text-sentinel-400 hover:text-sentinel-200 bg-sentinel-900/30 hover:bg-sentinel-800/50 rounded-lg transition-colors cursor-pointer border border-sentinel-800/20 hover:border-blue-500/20"
+                                        >
+                                            {q}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
 
                             {isLoading && (
                                 <div className="flex gap-2.5">
