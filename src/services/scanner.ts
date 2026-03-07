@@ -43,6 +43,8 @@ import { AdaptiveThresholds } from './adaptiveThresholds';
 import { DynamicCalibrator } from './dynamicCalibrator';
 import { PriceCorrelationMatrix } from './priceCorrelationMatrix';
 import { PortfolioAwareSizer } from './portfolioAwareSizer';
+import { SectorRotationService } from './sectorRotation';
+import { MultiTimeframeService } from './multiTimeframe';
 import { DEFAULT_MIN_CONFIDENCE, DEFAULT_MIN_PRICE_DROP_PCT, CONFIDENCE_GATE_OVERREACTION, CONFIDENCE_GATE_CONTAGION, CONFIDENCE_GATE_CRITIQUE, CONFIDENCE_FLOOR, SEVERITY_THRESHOLD } from '@/config/constants';
 import type { MultiTimeframeResult } from './technicalAnalysis';
 
@@ -304,6 +306,18 @@ export class ScannerService {
                 }
             } catch (regimeErr) {
                 console.warn('[Scanner] Market regime detection failed (non-fatal):', regimeErr);
+            }
+
+            // 3d-1b. Sector Rotation — detect money flow between sectors
+            let sectorRotationCtx = '';
+            try {
+                const rotationSnapshot = await SectorRotationService.getRotationSnapshot();
+                sectorRotationCtx = SectorRotationService.formatForPrompt(rotationSnapshot);
+                if (rotationSnapshot.regime !== 'neutral') {
+                    console.log(`[Scanner] Sector rotation: ${rotationSnapshot.regime.toUpperCase()} — ${rotationSnapshot.regimeReason}`);
+                }
+            } catch (rotErr) {
+                console.warn('[Scanner] Sector rotation detection failed (non-fatal):', rotErr);
             }
 
             // 3d-2. Adaptive Thresholds — adjust based on market regime
@@ -642,7 +656,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                 } catch { /* non-fatal */ }
 
                                 // Combine TA + divergence + gap + earnings + fundamentals + regime + options + peers into unified context
-                                const enrichedTaContext = earlyTaContext + divergenceCtx + gapCtx + earningsCtx + fundamentalsCtx + regimeCtx + optionsFlowCtx + peerStrengthCtx;
+                                const enrichedTaContext = earlyTaContext + divergenceCtx + gapCtx + earningsCtx + fundamentalsCtx + regimeCtx + sectorRotationCtx + optionsFlowCtx + peerStrengthCtx;
 
                                 // Pipeline A: Overreaction Analysis
                                 const analysis = await AgentService.evaluateOverreaction(
@@ -817,6 +831,19 @@ If there is genuinely no major news, return: {"events": []}`,
                                                     analysis.data.confidence_score + mtfResult.confidenceAdjustment
                                                 ));
                                                 console.log(`[Scanner] Multi-timeframe (${mtfResult.alignment}) adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${mtfResult.confidenceAdjustment > 0 ? '+' : ''}${mtfResult.confidenceAdjustment})`);
+                                            }
+                                        } catch { /* non-fatal */ }
+
+                                        // 7.11b. GEMINI MULTI-TIMEFRAME — deeper 3-timeframe trend confirmation via AI
+                                        try {
+                                            const signalBias = analysis.data.bias_type || 'bullish';
+                                            const geminiMtf = await MultiTimeframeService.analyze(ev.ticker, signalBias);
+                                            if (geminiMtf.confidenceBonus !== 0) {
+                                                const before = analysis.data.confidence_score;
+                                                analysis.data.confidence_score = Math.min(100, Math.max(CONFIDENCE_FLOOR,
+                                                    analysis.data.confidence_score + geminiMtf.confidenceBonus
+                                                ));
+                                                console.log(`[Scanner] Gemini MTF (${geminiMtf.alignedCount}/${geminiMtf.totalChecked} aligned) adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${geminiMtf.confidenceBonus > 0 ? '+' : ''}${geminiMtf.confidenceBonus})`);
                                             }
                                         } catch { /* non-fatal */ }
 

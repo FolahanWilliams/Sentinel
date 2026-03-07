@@ -83,7 +83,7 @@ export function PotentialSignals() {
             </div>
 
             {loading ? (
-                <div className="grid grid-cols-3 gap-3 animate-pulse">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 animate-pulse">
                     {[1, 2, 3].map(i => (
                         <div key={i} className="bg-sentinel-800/30 rounded-lg p-3 space-y-2">
                             <div className="h-3 bg-sentinel-800 rounded w-16"></div>
@@ -97,7 +97,7 @@ export function PotentialSignals() {
                     No signals detected yet. The scanner is watching.
                 </div>
             ) : (
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     {signals.map((signal, i) => (
                         <motion.div
                             key={i}

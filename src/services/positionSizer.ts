@@ -19,6 +19,7 @@ export interface PositionSizeResult {
     stopLoss: number | null;
     trailingStopRule: string | null;
     riskRewardRatio: number | null;
+    drawdownScaling: { currentDrawdownPct: number; scalingFactor: number } | null;
     comparisons: {
         fixedPct: { pct: number; usd: number };
         riskBased: { pct: number; usd: number };
@@ -114,6 +115,7 @@ export class PositionSizer {
                 stopLoss: null,
                 trailingStopRule: null,
                 riskRewardRatio: null,
+                drawdownScaling: null,
                 comparisons: {
                     fixedPct: { pct: 1.0, usd: 0 },
                     riskBased: { pct: 1.0, usd: 0 },
@@ -241,11 +243,51 @@ export class PositionSizer {
             method = 'risk_based';
         }
 
+        // 8b. Drawdown-aware scaling — reduce size when portfolio is in drawdown
+        let drawdownScaling: PositionSizeResult['drawdownScaling'] = null;
+        try {
+            const { data: positions } = await supabase
+                .from('portfolio_positions')
+                .select('unrealized_pnl')
+                .not('unrealized_pnl', 'is', null);
+
+            if (positions && positions.length > 0) {
+                const totalUnrealizedPnl = positions.reduce(
+                    (sum: number, p: { unrealized_pnl: number }) => sum + (p.unrealized_pnl || 0), 0
+                );
+
+                if (totalUnrealizedPnl < 0) {
+                    const drawdownPct = Math.abs(totalUnrealizedPnl) / totalCapital * 100;
+                    let scalingFactor = 1.0;
+
+                    if (drawdownPct >= 20) scalingFactor = 0.25;
+                    else if (drawdownPct >= 10) scalingFactor = 0.50;
+                    else if (drawdownPct >= 5) scalingFactor = 0.75;
+                    // 0-5%: no reduction (scalingFactor stays 1.0)
+
+                    drawdownScaling = {
+                        currentDrawdownPct: Math.round(drawdownPct * 100) / 100,
+                        scalingFactor,
+                    };
+
+                    if (scalingFactor < 1.0) {
+                        recommendedPct *= scalingFactor;
+                    }
+                }
+            }
+        } catch (err) {
+            console.warn('[PositionSizer] Failed to fetch drawdown data, skipping scaling', err);
+        }
+
         // Enforce caps
         let limitReason: string | null = null;
         if (recommendedPct > (maxExposurePct)) {
             recommendedPct = maxExposurePct;
             limitReason = 'Hit max position limit';
+        }
+        if (drawdownScaling && drawdownScaling.scalingFactor < 1.0) {
+            const ddNote = `Drawdown scaling: ${drawdownScaling.currentDrawdownPct.toFixed(1)}% drawdown → ${Math.round(drawdownScaling.scalingFactor * 100)}% size`;
+            limitReason = limitReason ? `${limitReason}; ${ddNote}` : ddNote;
         }
 
         // 9. Risk:Reward ratio
@@ -267,6 +309,7 @@ export class PositionSizer {
             stopLoss,
             trailingStopRule,
             riskRewardRatio,
+            drawdownScaling,
             comparisons: {
                 fixedPct: { pct: Math.round(fixedPct * 100) / 100, usd: Math.round(fixedUsd * 100) / 100 },
                 riskBased: { pct: Math.round(riskBasedPct * 100) / 100, usd: Math.round(riskBasedUsd * 100) / 100 },

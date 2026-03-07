@@ -309,11 +309,11 @@ function MarketSnapshotSkeleton() {
                 </div>
                 <div className="lg:col-span-7 p-5 space-y-4">
                     <div className="h-3 bg-sentinel-800 rounded w-16" />
-                    <div className="grid grid-cols-4 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                         {[1, 2, 3, 4].map(i => <div key={i} className="h-20 bg-sentinel-800 rounded-lg" />)}
                     </div>
                     <div className="h-3 bg-sentinel-800 rounded w-28 mt-4" />
-                    <div className="grid grid-cols-4 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                         {[1, 2, 3, 4].map(i => <div key={i} className="h-20 bg-sentinel-800 rounded-lg" />)}
                     </div>
                 </div>

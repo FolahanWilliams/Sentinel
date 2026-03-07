@@ -281,8 +281,8 @@ export function Analysis() {
                                         </div>
                                     </div>
 
-                                    <div className="flex items-center gap-6 text-sm">
-                                        <div className="w-24">
+                                    <div className="flex flex-wrap items-center gap-3 sm:gap-6 text-sm">
+                                        <div className="w-20 sm:w-24">
                                             <ConfidenceMeter value={signal.confidence_score} size="sm" />
                                             {signal.calibrated_confidence != null && (
                                                 <p className="text-[10px] text-sentinel-500 font-mono text-center mt-0.5">

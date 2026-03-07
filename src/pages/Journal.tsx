@@ -14,6 +14,7 @@ import { CalendarHeatmap } from '@/components/journal/CalendarHeatmap';
 import { TradeReviewCard } from '@/components/journal/TradeReviewCard';
 import { JournalService } from '@/services/journalService';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { exportJournalToCSV, downloadCSV } from '@/utils/exportData';
 
 const MOODS = ['😡', '😐', '😊', '🔥'] as const;
 const MOOD_LABELS: Record<string, string> = { '😡': 'Frustrated', '😐': 'Neutral', '😊': 'Confident', '🔥': 'On Fire' };
@@ -288,7 +289,16 @@ export function Journal() {
                         onClick={exportMarkdown}
                         className="px-3 py-2 bg-sentinel-800 hover:bg-sentinel-700 text-sentinel-300 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ring-1 ring-sentinel-700"
                     >
-                        <Download className="w-4 h-4" /> <span className="hidden sm:inline">Export</span>
+                        <Download className="w-4 h-4" /> <span className="hidden sm:inline">MD</span>
+                    </button>
+                    <button
+                        onClick={() => {
+                            const csv = exportJournalToCSV(filteredEntries);
+                            downloadCSV(`journal-${new Date().toISOString().split('T')[0]}`, csv);
+                        }}
+                        className="px-3 py-2 bg-sentinel-800 hover:bg-sentinel-700 text-sentinel-300 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ring-1 ring-sentinel-700"
+                    >
+                        <Download className="w-4 h-4" /> <span className="hidden sm:inline">CSV</span>
                     </button>
                     <button
                         onClick={() => setShowForm(!showForm)}
