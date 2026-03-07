@@ -30,6 +30,11 @@ import { SelfCritiqueAgent } from './selfCritique';
 import { SentimentDivergenceDetector } from './sentimentDivergence';
 import { EarningsGuard } from './earningsGuard';
 import { calculateWeightedRoi } from '@/utils/weightedRoi';
+import { MarketRegimeFilter } from './marketRegime';
+import { CorrelationGuard } from './correlationGuard';
+import { BacktestValidator } from './backtestValidator';
+import { SignalDecayEngine } from './signalDecay';
+import type { MultiTimeframeResult } from './technicalAnalysis';
 
 export class ScannerService {
 
@@ -276,6 +281,29 @@ export class ScannerService {
                 }
             } catch (reflErr) {
                 console.warn('[Scanner] Failed to load reflection lessons (non-fatal):', reflErr);
+            }
+
+            // 3d. Market Regime Detection — detect bull/bear/crisis environment
+            let regimeResult: import('./marketRegime').MarketRegimeResult | null = null;
+            let regimeCtx = '';
+            try {
+                regimeResult = await MarketRegimeFilter.detect();
+                regimeCtx = MarketRegimeFilter.formatForPrompt(regimeResult);
+                if (regimeResult.regime !== 'neutral') {
+                    console.log(`[Scanner] Market regime: ${regimeResult.regime.toUpperCase()} (penalty=${regimeResult.confidencePenalty})`);
+                }
+            } catch (regimeErr) {
+                console.warn('[Scanner] Market regime detection failed (non-fatal):', regimeErr);
+            }
+
+            // 3e. Signal Decay — expire stale signals before generating new ones
+            try {
+                const decayResult = await SignalDecayEngine.processActiveSignals();
+                if (decayResult.expired > 0 || decayResult.stale > 0) {
+                    console.log(`[Scanner] Signal decay: ${decayResult.expired} expired, ${decayResult.stale} stale out of ${decayResult.processed} active.`);
+                }
+            } catch (decayErr) {
+                console.warn('[Scanner] Signal decay processing failed (non-fatal):', decayErr);
             }
 
             // 4. Find fresh unparsed articles from the cache
@@ -550,8 +578,8 @@ If there is genuinely no major news, return: {"events": []}`,
                                     }
                                 } catch { /* non-fatal */ }
 
-                                // Combine TA + divergence + gap + earnings + fundamentals into unified context
-                                const enrichedTaContext = earlyTaContext + divergenceCtx + gapCtx + earningsCtx + fundamentalsCtx;
+                                // Combine TA + divergence + gap + earnings + fundamentals + regime into unified context
+                                const enrichedTaContext = earlyTaContext + divergenceCtx + gapCtx + earningsCtx + fundamentalsCtx + regimeCtx;
 
                                 // Pipeline A: Overreaction Analysis
                                 const analysis = await AgentService.evaluateOverreaction(
@@ -689,6 +717,72 @@ If there is genuinely no major news, return: {"events": []}`,
                                             }
                                         }
 
+                                        // 7.9. MARKET REGIME PENALTY — reduce confidence in crisis/correction
+                                        if (regimeResult && regimeResult.confidencePenalty !== 0) {
+                                            const before = analysis.data.confidence_score;
+                                            analysis.data.confidence_score = Math.max(30,
+                                                analysis.data.confidence_score + regimeResult.confidencePenalty
+                                            );
+                                            console.log(`[Scanner] Market regime (${regimeResult.regime}) adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${regimeResult.confidencePenalty})`);
+                                        }
+
+                                        // 7.10. BACKTEST VALIDATION — check historical performance of this signal type + ticker
+                                        let backtestResult: import('./backtestValidator').BacktestResult | null = null;
+                                        try {
+                                            backtestResult = await BacktestValidator.validate('long_overreaction', ev.ticker);
+                                            if (backtestResult.shouldSuppress) {
+                                                console.warn(`[Scanner] BACKTEST suppressed ${ev.ticker}: ${backtestResult.reason}`);
+                                                continue;
+                                            }
+                                            if (backtestResult.confidencePenalty !== 0) {
+                                                const before = analysis.data.confidence_score;
+                                                analysis.data.confidence_score = Math.max(30,
+                                                    analysis.data.confidence_score + backtestResult.confidencePenalty
+                                                );
+                                                console.log(`[Scanner] Backtest adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${backtestResult.confidencePenalty})`);
+                                            }
+                                        } catch { /* non-fatal */ }
+
+                                        // 7.11. MULTI-TIMEFRAME CONFIRMATION — check weekly trend alignment
+                                        let mtfResult: MultiTimeframeResult | null = null;
+                                        try {
+                                            mtfResult = await TechnicalAnalysisService.getMultiTimeframeConfirmation(ev.ticker, 'long');
+                                            if (mtfResult.confidenceAdjustment !== 0) {
+                                                const before = analysis.data.confidence_score;
+                                                analysis.data.confidence_score = Math.min(100, Math.max(30,
+                                                    analysis.data.confidence_score + mtfResult.confidenceAdjustment
+                                                ));
+                                                console.log(`[Scanner] Multi-timeframe (${mtfResult.alignment}) adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${mtfResult.confidenceAdjustment > 0 ? '+' : ''}${mtfResult.confidenceAdjustment})`);
+                                            }
+                                        } catch { /* non-fatal */ }
+
+                                        // 7.12. CORRELATION GUARD — penalize sector concentration
+                                        const tickerSector = tickersToScan.find(t => t.ticker === ev.ticker)?.sector || 'Unknown';
+                                        let correlationResult: import('./correlationGuard').CorrelationGuardResult | null = null;
+                                        try {
+                                            correlationResult = await CorrelationGuard.check(ev.ticker, tickerSector);
+                                            if (correlationResult.shouldBlock) {
+                                                console.warn(`[Scanner] CORRELATION GUARD blocked ${ev.ticker}: ${correlationResult.reason}`);
+                                                continue;
+                                            }
+                                            if (correlationResult.confidencePenalty !== 0) {
+                                                const before = analysis.data.confidence_score;
+                                                analysis.data.confidence_score = Math.max(30,
+                                                    analysis.data.confidence_score + correlationResult.confidencePenalty
+                                                );
+                                                console.log(`[Scanner] Correlation guard adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${correlationResult.confidencePenalty})`);
+                                            }
+                                        } catch { /* non-fatal */ }
+
+                                        // 7.13. SIGNAL FRESHNESS — skip if a fresh duplicate exists
+                                        try {
+                                            const hasFresh = await SignalDecayEngine.hasFreshSignal(ev.ticker, 'long_overreaction');
+                                            if (hasFresh) {
+                                                console.log(`[Scanner] Skipping ${ev.ticker} — fresh active signal already exists for this type.`);
+                                                continue;
+                                            }
+                                        } catch { /* non-fatal */ }
+
                                         // Drop signal if all adjustments brought it below threshold
                                         if (analysis.data.confidence_score < 50) {
                                             console.warn(`[Scanner] Signal for ${ev.ticker} dropped — confidence ${analysis.data.confidence_score} below 50 after all adjustments`);
@@ -815,6 +909,29 @@ If there is genuinely no major news, return: {"events": []}`,
                                                     revenue_growth_yoy: fundamentalsData.revenue_growth_yoy,
                                                     short_interest_pct: (fundamentalsData as any).short_interest_pct,
                                                 } : null,
+                                                market_regime: regimeResult ? {
+                                                    regime: regimeResult.regime,
+                                                    vix: regimeResult.vixLevel,
+                                                    penalty: regimeResult.confidencePenalty,
+                                                } : null,
+                                                backtest: backtestResult ? {
+                                                    signal_type_win_rate: backtestResult.signalTypeWinRate,
+                                                    ticker_win_rate: backtestResult.tickerWinRate,
+                                                    ticker_consecutive_losses: backtestResult.tickerConsecutiveLosses,
+                                                    penalty: backtestResult.confidencePenalty,
+                                                } : null,
+                                                multi_timeframe: mtfResult ? {
+                                                    weekly_trend: mtfResult.weeklyTrend,
+                                                    weekly_rsi: mtfResult.weeklyRsi,
+                                                    alignment: mtfResult.alignment,
+                                                    adjustment: mtfResult.confidenceAdjustment,
+                                                } : null,
+                                                correlation_guard: correlationResult ? {
+                                                    sector: correlationResult.sector,
+                                                    sector_count: correlationResult.sectorSignalCount,
+                                                    total_active: correlationResult.totalActiveSignals,
+                                                    penalty: correlationResult.confidencePenalty,
+                                                } : null,
                                             },
                                             status: 'active',
                                             secondary_biases: [],
@@ -824,6 +941,9 @@ If there is genuinely no major news, return: {"events": []}`,
 
                                         // 8b. Seed outcome tracking row so OutcomeTracker can follow this signal
                                         if (savedSignal) {
+                                            // Invalidate correlation cache so next signal check uses fresh data
+                                            CorrelationGuard.invalidateCache();
+
                                             // Dispatch alert rules
                                             NotificationService.checkAndDispatchAlerts(savedSignal);
 
