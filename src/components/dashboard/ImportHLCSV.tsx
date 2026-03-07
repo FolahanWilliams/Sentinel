@@ -14,7 +14,7 @@
 
 import { useState, useCallback, useRef } from 'react';
 import { supabase } from '@/config/supabase';
-import { Upload, X, FileText, AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react';
+import { Upload, X, FileText, AlertTriangle, CheckCircle2, Loader2, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatPrice } from '@/utils/formatters';
 import { inferCurrency } from '@/utils/portfolio';
@@ -238,7 +238,8 @@ export function ImportHLCSV({ onClose, existingTickers = [] }: ImportHLCSVProps)
     const [step, setStep] = useState<'upload' | 'preview' | 'importing' | 'done'>('upload');
     const [holdings, setHoldings] = useState<ParsedHolding[]>([]);
     const [parseErrors, setParseErrors] = useState<string[]>([]);
-    const [importResult, setImportResult] = useState<{ success: number; failed: number }>({ success: 0, failed: 0 });
+    const [importResult, setImportResult] = useState<{ success: number; failed: number; replaced: number }>({ success: 0, failed: 0, replaced: 0 });
+    const [replaceExisting, setReplaceExisting] = useState(false);
     const [dragActive, setDragActive] = useState(false);
     const fileRef = useRef<HTMLInputElement>(null);
 
@@ -285,6 +286,15 @@ export function ImportHLCSV({ onClose, existingTickers = [] }: ImportHLCSVProps)
         setHoldings(prev => prev.map(h => ({ ...h, selected: !allSelected })));
     };
 
+    const toggleReplaceDuplicates = () => {
+        const next = !replaceExisting;
+        setReplaceExisting(next);
+        // When enabling replace, auto-select all duplicates
+        if (next) {
+            setHoldings(prev => prev.map(h => h.isDuplicate ? { ...h, selected: true } : h));
+        }
+    };
+
     const toggleSuffix = (idx: number) => {
         setHoldings(prev => prev.map((h, i) => {
             if (i !== idx) return h;
@@ -312,6 +322,28 @@ export function ImportHLCSV({ onClose, existingTickers = [] }: ImportHLCSVProps)
         setStep('importing');
         let success = 0;
         let failed = 0;
+        let replaced = 0;
+
+        // If replacing duplicates, delete existing open positions for those tickers first
+        if (replaceExisting) {
+            const dupTickers = selected.filter(h => h.isDuplicate).map(h => h.ticker.toUpperCase());
+            // Also check .L variants
+            const allVariants = dupTickers.flatMap(t => t.endsWith('.L') ? [t, t.replace('.L', '')] : [t, `${t}.L`]);
+
+            if (allVariants.length > 0) {
+                const { error: delErr } = await supabase
+                    .from('positions')
+                    .delete()
+                    .eq('status', 'open')
+                    .in('ticker', allVariants);
+
+                if (delErr) {
+                    console.error('[ImportHLCSV] Failed to delete existing positions:', delErr);
+                } else {
+                    replaced = dupTickers.length;
+                }
+            }
+        }
 
         const rows = selected.map(h => ({
             ticker: h.ticker.toUpperCase(),
@@ -342,7 +374,7 @@ export function ImportHLCSV({ onClose, existingTickers = [] }: ImportHLCSVProps)
             success = rows.length;
         }
 
-        setImportResult({ success, failed });
+        setImportResult({ success, failed, replaced });
         setStep('done');
     };
 
@@ -433,13 +465,26 @@ export function ImportHLCSV({ onClose, existingTickers = [] }: ImportHLCSVProps)
                     {step === 'preview' && (
                         <motion.div key="preview" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                             {parseErrors.length > 0 && (
-                                <div className="mb-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg space-y-1">
+                                <div className="mb-4 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg space-y-2">
                                     {parseErrors.map((err, i) => (
                                         <p key={i} className="text-[11px] text-amber-400 flex items-start gap-2">
                                             <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
                                             {err}
                                         </p>
                                     ))}
+                                    {holdings.some(h => h.isDuplicate) && (
+                                        <button
+                                            onClick={toggleReplaceDuplicates}
+                                            className={`mt-1 px-2.5 py-1 text-[11px] font-medium rounded-md border-none cursor-pointer transition-colors flex items-center gap-1.5 ${
+                                                replaceExisting
+                                                    ? 'bg-amber-500/20 text-amber-300 ring-1 ring-amber-500/40'
+                                                    : 'bg-sentinel-800/50 text-sentinel-400 hover:text-sentinel-300 hover:bg-sentinel-800'
+                                            }`}
+                                        >
+                                            <RefreshCw className="w-3 h-3" />
+                                            {replaceExisting ? 'Will replace duplicates' : 'Replace existing positions'}
+                                        </button>
+                                    )}
                                 </div>
                             )}
 
@@ -565,6 +610,9 @@ export function ImportHLCSV({ onClose, existingTickers = [] }: ImportHLCSVProps)
                             </p>
                             <p className="text-xs text-sentinel-400 mb-4">
                                 {importResult.success} position{importResult.success !== 1 ? 's' : ''} imported successfully
+                                {importResult.replaced > 0 && (
+                                    <span className="text-amber-400"> ({importResult.replaced} replaced)</span>
+                                )}
                                 {importResult.failed > 0 && (
                                     <span className="text-red-400"> ({importResult.failed} failed)</span>
                                 )}
