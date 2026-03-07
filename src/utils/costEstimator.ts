@@ -121,10 +121,10 @@ export async function getBudgetSummary() {
     return {
         dailySpend: Math.round(dailySpend * 10000) / 10000,
         dailyBudget: DEFAULT_DAILY_BUDGET,
-        dailyPct: DEFAULT_DAILY_BUDGET > 0 ? Math.min(100, Math.round((dailySpend / DEFAULT_DAILY_BUDGET) * 100)) : 0,
+        dailyPct: DEFAULT_DAILY_BUDGET > 0 ? Math.round((dailySpend / DEFAULT_DAILY_BUDGET) * 100) : 0,
         monthlySpend: Math.round(monthlySpend * 10000) / 10000,
         monthlyBudget: DEFAULT_MONTHLY_BUDGET,
-        monthlyPct: DEFAULT_MONTHLY_BUDGET > 0 ? Math.min(100, Math.round((monthlySpend / DEFAULT_MONTHLY_BUDGET) * 100)) : 0,
+        monthlyPct: DEFAULT_MONTHLY_BUDGET > 0 ? Math.round((monthlySpend / DEFAULT_MONTHLY_BUDGET) * 100) : 0,
         callCounts,
         totalCalls,
         avgCostPerCall: totalCalls > 0 ? Math.round((dailySpend / totalCalls) * 10000) / 10000 : 0,

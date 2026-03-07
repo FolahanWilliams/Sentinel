@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/config/supabase';
+import { CACHE_TTL_MARKET_TRENDS } from '@/config/constants';
 
 interface TrendItem {
     text: string;
@@ -12,7 +13,7 @@ interface MarketTrendsData {
 }
 
 const CACHE_KEY = 'sentinel_market_trends';
-const CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const CACHE_TTL_MS = CACHE_TTL_MARKET_TRENDS;
 
 function getCached(): MarketTrendsData | null {
     try {
