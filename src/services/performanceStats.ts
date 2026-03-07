@@ -44,34 +44,23 @@ export class PerformanceStats {
      * Win rate grouped by bias type.
      */
     async getWinRateByBias(): Promise<Record<string, WinRateResult>> {
-        const { data: signals } = await supabase
-            .from('signals')
-            .select('id, bias_type');
-
-        if (!signals || signals.length === 0) return {};
-
-        const signalIds = signals.map(s => s.id);
-        const { data: outcomes } = await supabase
+        // Single query with JOIN instead of separate signals + outcomes queries
+        const { data: joined } = await supabase
             .from('signal_outcomes')
-            .select('signal_id, outcome')
-            .in('signal_id', signalIds)
+            .select('outcome, signals!inner(bias_type)')
             .neq('outcome', 'pending');
 
-        if (!outcomes) return {};
+        if (!joined || joined.length === 0) return {};
 
-        const outcomeMap = new Map(outcomes.map(o => [o.signal_id, o.outcome]));
         const results: Record<string, WinRateResult> = {};
 
-        for (const signal of signals) {
-            const bias = signal.bias_type || 'unknown';
-            const outcome = outcomeMap.get(signal.id);
-            if (!outcome) continue;
-
+        for (const row of joined) {
+            const bias = (row as any).signals?.bias_type || 'unknown';
             if (!results[bias]) {
                 results[bias] = { total: 0, wins: 0, losses: 0, winRate: 0 };
             }
             results[bias].total++;
-            if (outcome === 'win') results[bias].wins++;
+            if (row.outcome === 'win') results[bias].wins++;
             else results[bias].losses++;
         }
 
@@ -136,22 +125,13 @@ export class PerformanceStats {
      * Confidence calibration — are our 80% confidence signals actually winning 80%?
      */
     async getConfidenceCalibration(): Promise<ConfidenceCalibrationBucket[]> {
-        const { data: signals } = await supabase
-            .from('signals')
-            .select('id, confidence_score');
-
-        if (!signals || signals.length === 0) return [];
-
-        const signalIds = signals.map(s => s.id);
-        const { data: outcomes } = await supabase
+        // Single query with JOIN instead of separate signals + outcomes queries
+        const { data: joined } = await supabase
             .from('signal_outcomes')
-            .select('signal_id, outcome')
-            .in('signal_id', signalIds)
+            .select('outcome, signals!inner(confidence_score)')
             .neq('outcome', 'pending');
 
-        if (!outcomes) return [];
-
-        const outcomeMap = new Map(outcomes.map(o => [o.signal_id, o.outcome]));
+        if (!joined || joined.length === 0) return [];
 
         const buckets: Record<string, { wins: number; total: number }> = {};
         for (let i = 0; i < 10; i++) {
@@ -159,16 +139,14 @@ export class PerformanceStats {
             buckets[key] = { wins: 0, total: 0 };
         }
 
-        for (const signal of signals) {
-            const outcome = outcomeMap.get(signal.id);
-            if (!outcome) continue;
-
-            const bucketIdx = Math.min(9, Math.floor(signal.confidence_score / 10));
+        for (const row of joined) {
+            const confidence = (row as any).signals?.confidence_score ?? 0;
+            const bucketIdx = Math.min(9, Math.floor(confidence / 10));
             const key = `${bucketIdx * 10}-${(bucketIdx + 1) * 10}`;
             const bucket = buckets[key];
             if (!bucket) continue;
             bucket.total++;
-            if (outcome === 'win') bucket.wins++;
+            if (row.outcome === 'win') bucket.wins++;
         }
 
         return Object.entries(buckets)

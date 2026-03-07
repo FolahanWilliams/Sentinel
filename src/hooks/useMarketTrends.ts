@@ -89,15 +89,16 @@ export function useMarketTrends() {
                 setCache(trendsData);
             }
         } catch (err: any) {
-            setError(err.message);
+            const errorMsg = err.message || 'Failed to load trends';
+            setError(errorMsg);
             console.error('[useMarketTrends] Error:', err);
-            // Use fallback if no cache
+            // Use cached data if available, otherwise show error state (not fake "Loading" text)
             setData(prev => prev ?? {
                 midTerm: [
-                    { text: 'Loading trends...', direction: 'neutral' as const },
+                    { text: 'Trends unavailable', direction: 'neutral' as const },
                 ],
                 longTerm: [
-                    { text: 'Loading trends...', direction: 'neutral' as const },
+                    { text: 'Trends unavailable', direction: 'neutral' as const },
                 ],
             });
         } finally {

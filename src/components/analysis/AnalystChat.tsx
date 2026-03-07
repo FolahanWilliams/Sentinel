@@ -225,12 +225,24 @@ function AnalystChatInner() {
         } catch { /* ignore */ }
     };
 
-    // Persist messages to sessionStorage
+    // Persist messages to sessionStorage (cap at 50 messages to prevent quota overflow)
     useEffect(() => {
         if (messages.length > 0) {
             try {
-                sessionStorage.setItem(`sentinel_chat_${ticker}`, JSON.stringify(messages));
-            } catch { /* quota exceeded — ignore */ }
+                const toStore = messages.slice(-50); // Keep last 50 messages max
+                sessionStorage.setItem(`sentinel_chat_${ticker}`, JSON.stringify(toStore));
+            } catch {
+                // Quota exceeded — clear oldest chat caches to make room
+                try {
+                    for (let i = 0; i < sessionStorage.length; i++) {
+                        const key = sessionStorage.key(i);
+                        if (key?.startsWith('sentinel_chat_') && key !== `sentinel_chat_${ticker}`) {
+                            sessionStorage.removeItem(key);
+                            break; // Remove one at a time
+                        }
+                    }
+                } catch { /* give up */ }
+            }
         }
     }, [messages, ticker]);
 

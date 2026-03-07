@@ -7,7 +7,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { MarketDataService } from '@/services/marketData';
@@ -18,8 +18,9 @@ import { SignalsSection } from '@/components/dashboard/SignalsSection';
 import { UnifiedPortfolioView } from '@/components/dashboard/UnifiedPortfolioView';
 import { WatchlistSection } from '@/components/dashboard/WatchlistSection';
 import { PerformanceMetrics } from '@/components/dashboard/PerformanceMetrics';
+import { SentinelPanel } from '@/components/sentinel/SentinelPanel';
 import {
-    Activity, Briefcase, Eye, BarChart3, Zap, User, TrendingUp,
+    Activity, Briefcase, Eye, BarChart3, Zap, User, TrendingUp, Newspaper,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MarketSnapshot } from '@/components/dashboard/MarketSnapshot';
@@ -29,6 +30,7 @@ import type { DashboardTab } from '@/types/dashboard';
 
 const TABS: { id: DashboardTab; label: string; icon: typeof Activity }[] = [
     { id: 'signals', label: 'AI Signals', icon: Zap },
+    { id: 'intelligence', label: 'Intelligence', icon: Newspaper },
     { id: 'portfolio', label: 'My Portfolio', icon: Briefcase },
     { id: 'watchlist', label: 'Watchlist', icon: Eye },
     { id: 'performance', label: 'Performance', icon: BarChart3 },
@@ -36,7 +38,13 @@ const TABS: { id: DashboardTab; label: string; icon: typeof Activity }[] = [
 
 export function UnifiedDashboard() {
     const navigate = useNavigate();
-    const [activeTab, setActiveTab] = useState<DashboardTab>('signals');
+    const [searchParams] = useSearchParams();
+    const initialTab = (searchParams.get('tab') as DashboardTab) || 'signals';
+    const [activeTab, setActiveTab] = useState<DashboardTab>(
+        (['signals', 'intelligence', 'portfolio', 'watchlist', 'performance'] as DashboardTab[]).includes(initialTab)
+            ? initialTab
+            : 'signals'
+    );
 
     // Top-bar live data
     const { config, openPositions } = usePortfolio();
@@ -256,6 +264,11 @@ export function UnifiedDashboard() {
                         aria-label={TABS.find(t => t.id === activeTab)?.label}
                     >
                         {activeTab === 'signals' && <SignalsSection />}
+                        {activeTab === 'intelligence' && (
+                            <div className="h-[calc(100vh-16rem)]">
+                                <SentinelPanel />
+                            </div>
+                        )}
                         {activeTab === 'portfolio' && <UnifiedPortfolioView />}
                         {activeTab === 'watchlist' && <WatchlistSection />}
                         {activeTab === 'performance' && <PerformanceMetrics />}

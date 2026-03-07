@@ -14,7 +14,7 @@ import {
     Briefcase, Plus, X, TrendingUp, TrendingDown,
     AlertTriangle, DollarSign,
     Loader2, BarChart3, ArrowUpRight, ArrowDownRight,
-    CheckCircle2
+    CheckCircle2, Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SkeletonTable } from '@/components/shared/SkeletonPrimitives';
@@ -56,6 +56,8 @@ export function Positions() {
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(hasPrefill);
     const [showCloseModal, setShowCloseModal] = useState<string | null>(null);
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+    const [deleting, setDeleting] = useState(false);
     const [liveQuotes, setLiveQuotes] = useState<Record<string, LiveQuote>>({});
     const [quotesLoading, setQuotesLoading] = useState(false);
     const [generatingPostMortem, setGeneratingPostMortem] = useState<string | null>(null);
@@ -240,6 +242,22 @@ export function Positions() {
         }
     }
 
+    async function handleDeletePosition() {
+        if (!showDeleteConfirm) return;
+        setDeleting(true);
+
+        const { error } = await supabase
+            .from('positions')
+            .delete()
+            .eq('id', showDeleteConfirm);
+
+        if (!error) {
+            setShowDeleteConfirm(null);
+            fetchPositions();
+        }
+        setDeleting(false);
+    }
+
     const openPositions = positions.filter(p => p.status === 'open');
     const closedPositions = positions.filter(p => p.status === 'closed');
 
@@ -404,12 +422,21 @@ export function Positions() {
                                                 )}
                                             </td>
                                             <td className="px-5 py-3 text-right">
-                                                <button
-                                                    onClick={() => setShowCloseModal(pos.id)}
-                                                    className="px-3 py-1.5 bg-sentinel-800 hover:bg-red-500/20 hover:text-red-400 text-sentinel-300 rounded-lg text-xs font-medium transition-colors cursor-pointer border border-sentinel-700 hover:border-red-500/30"
-                                                >
-                                                    Close
-                                                </button>
+                                                <div className="flex items-center justify-end gap-2">
+                                                    <button
+                                                        onClick={() => setShowCloseModal(pos.id)}
+                                                        className="px-3 py-1.5 bg-sentinel-800 hover:bg-red-500/20 hover:text-red-400 text-sentinel-300 rounded-lg text-xs font-medium transition-colors cursor-pointer border border-sentinel-700 hover:border-red-500/30"
+                                                    >
+                                                        Close
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setShowDeleteConfirm(pos.id)}
+                                                        title="Delete position (remove mistaken entry)"
+                                                        className="p-1.5 text-sentinel-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer border-none bg-transparent"
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     );
@@ -444,6 +471,7 @@ export function Positions() {
                                         <th className="px-5 py-3 text-right">Return</th>
                                         <th className="px-5 py-3 text-left">Reason</th>
                                         <th className="px-5 py-3 text-left">Notes</th>
+                                        <th className="px-5 py-3 w-10"></th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -479,10 +507,19 @@ export function Positions() {
                                                             <span className="text-xs text-sentinel-600">—</span>
                                                         )}
                                                     </td>
+                                                    <td className="px-5 py-3 text-right">
+                                                        <button
+                                                            onClick={() => setShowDeleteConfirm(pos.id)}
+                                                            title="Delete position"
+                                                            className="p-1.5 text-sentinel-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer border-none bg-transparent"
+                                                        >
+                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    </td>
                                                 </tr>
                                                 {expandedNotes === pos.id && pos.notes && (
                                                     <tr>
-                                                        <td colSpan={8} className="px-5 py-3 bg-white/5">
+                                                        <td colSpan={9} className="px-5 py-3 bg-white/5">
                                                             <p className="text-xs text-sentinel-300 leading-relaxed whitespace-pre-wrap max-w-2xl">{pos.notes}</p>
                                                         </td>
                                                     </tr>
@@ -599,6 +636,59 @@ export function Positions() {
                                     Open Position
                                 </button>
                             </form>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Delete Position Confirmation Modal */}
+            <AnimatePresence>
+                {showDeleteConfirm && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+                        onClick={() => setShowDeleteConfirm(null)}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.9, opacity: 0 }}
+                            className="bg-black/60 backdrop-blur-2xl rounded-2xl border border-white/10 p-6 w-full max-w-sm shadow-2xl"
+                            onClick={e => e.stopPropagation()}
+                        >
+                            <h3 className="text-lg font-bold text-sentinel-100 mb-2">Delete Position</h3>
+                            <p className="text-sm text-sentinel-400 mb-1">
+                                Are you sure you want to permanently delete this position?
+                            </p>
+                            {(() => {
+                                const pos = positions.find(p => p.id === showDeleteConfirm);
+                                return pos ? (
+                                    <p className="text-sm font-mono text-sentinel-300 mb-4">
+                                        {pos.ticker} — {pos.shares} shares @ ${pos.entry_price?.toFixed(2)}
+                                    </p>
+                                ) : null;
+                            })()}
+                            <p className="text-xs text-amber-400/80 mb-4">
+                                This removes the record entirely (use for mistaken entries). To record a completed trade, use Close instead.
+                            </p>
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => setShowDeleteConfirm(null)}
+                                    className="flex-1 py-2.5 bg-sentinel-800 text-sentinel-300 rounded-xl text-sm font-medium transition-colors cursor-pointer border border-sentinel-700"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleDeletePosition}
+                                    disabled={deleting}
+                                    className="flex-1 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-xl text-sm font-semibold transition-colors cursor-pointer border-none disabled:opacity-50 flex items-center justify-center gap-2"
+                                >
+                                    {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                                    Delete
+                                </button>
+                            </div>
                         </motion.div>
                     </motion.div>
                 )}

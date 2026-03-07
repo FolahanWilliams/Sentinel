@@ -22,6 +22,7 @@ import { TABadge } from '@/components/shared/TABadge';
 import { SignalRating } from '@/components/shared/SignalRating';
 import { LoadingState } from '@/components/shared/LoadingState';
 import { useTickerAnalysis } from '@/hooks/useTickerAnalysis';
+import { TickerNewsFeed } from '@/components/analysis/TickerNewsFeed';
 
 export function Analysis() {
     const { ticker: urlTicker } = useParams<{ ticker?: string }>();
@@ -144,6 +145,9 @@ export function Analysis() {
                     </button>
                 </div>
             </div>
+
+            {/* Per-ticker news context */}
+            {urlTicker && <TickerNewsFeed ticker={urlTicker.toUpperCase()} />}
 
             {signals.length === 0 ? (
                 <div className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 p-12 text-center space-y-4">
