@@ -47,6 +47,7 @@ import { SectorRotationService } from './sectorRotation';
 import { MultiTimeframeService } from './multiTimeframe';
 import { DEFAULT_MIN_CONFIDENCE, DEFAULT_MIN_PRICE_DROP_PCT, CONFIDENCE_GATE_OVERREACTION, CONFIDENCE_GATE_CONTAGION, CONFIDENCE_GATE_CRITIQUE, CONFIDENCE_FLOOR, SEVERITY_THRESHOLD } from '@/config/constants';
 import type { MultiTimeframeResult } from './technicalAnalysis';
+import type { AgentOutputsJson, SignalType } from '@/types/signals';
 
 export class ScannerService {
 
@@ -61,7 +62,7 @@ export class ScannerService {
             sector: 'Unknown',
             is_active: true,
             notes: 'Auto-added by AI discovery scan'
-        } as any, { onConflict: 'ticker', ignoreDuplicates: true });
+        }, { onConflict: 'ticker', ignoreDuplicates: true });
         if (error) {
             console.warn(`[Scanner] Failed to ensure watchlist entry for ${ticker}:`, error.message);
         }
@@ -136,19 +137,19 @@ export class ScannerService {
         // High-impact articles mentioning a watchlist ticker get a massive priority boost
         const sentinelCounts: Record<string, { total: number; highImpact: number }> = {};
         try {
-            const { data: sentinelArticles } = await (supabase
-                .from('sentinel_articles' as any)
-                .select('title, summary, impact, signals, affected_tickers') as any)
+            const { data: sentinelArticles } = await supabase
+                .from('sentinel_articles')
+                .select('title, summary, impact, signals, affected_tickers')
                 .gte('processed_at', oneDayAgo)
                 .limit(100);
 
-            for (const article of (sentinelArticles || []) as any[]) {
+            for (const article of sentinelArticles || []) {
                 // Check affected_tickers array first (most reliable)
-                const affectedTickers: string[] = article.affected_tickers || [];
+                const affectedTickers = (article.affected_tickers as string[]) || [];
                 // Also scan title + summary for ticker mentions
                 const textToScan = `${article.title || ''} ${article.summary || ''}`.toUpperCase();
                 // Also extract tickers from signals JSONB [{ ticker, direction, confidence }]
-                const articleSignals: Array<{ ticker?: string }> = Array.isArray(article.signals) ? article.signals : [];
+                const articleSignals = (Array.isArray(article.signals) ? article.signals : []) as Array<{ ticker?: string }>;
 
                 for (const t of tickerNames) {
                     const mentioned = affectedTickers.includes(t)
@@ -211,7 +212,7 @@ export class ScannerService {
                     events_detected: 0,
                     signals_generated: 0,
                     estimated_cost_usd: 0
-                } as any)
+                })
                 .select('id')
                 .single();
 
@@ -237,7 +238,7 @@ export class ScannerService {
                         status: 'completed',
                         error_message: 'Skipped: daily budget exceeded',
                         duration_ms: Date.now() - startTime,
-                    } as any).eq('id', scanLog.id);
+                    }).eq('id', scanLog.id);
                 }
                 return { success: true, summary: 'Scan skipped: daily budget exceeded.' };
             }
@@ -499,7 +500,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                 severity: ev.severity,
                                 is_overreaction_candidate: ev.severity >= SEVERITY_THRESHOLD,
                                 source_type: 'rss'
-                            } as any).select('id').single();
+                            }).select('id').single();
 
                             if (insertedEvent) {
                                 savedEvent = insertedEvent;
@@ -1011,7 +1012,7 @@ If there is genuinely no major news, return: {"events": []}`,
 
                                         const { data: savedSignal } = await supabase.from('signals').insert({
                                             ticker: ev.ticker,
-                                            signal_type: 'long_overreaction',
+                                            signal_type: 'long_overreaction' as SignalType,
                                             confidence_score: analysis.data.confidence_score,
                                             calibrated_confidence: calibratedConfidence,
                                             risk_level: sanity.data.risk_score > 80 ? 'low' : 'medium',
@@ -1057,7 +1058,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                                     debt_to_equity: fundamentalsData.debt_to_equity,
                                                     profit_margin: fundamentalsData.profit_margin,
                                                     revenue_growth_yoy: fundamentalsData.revenue_growth_yoy,
-                                                    short_interest_pct: (fundamentalsData as any).short_interest_pct,
+                                                    short_interest_pct: fundamentalsData.short_interest_pct,
                                                 } : null,
                                                 market_regime: regimeResult ? {
                                                     regime: regimeResult.regime,
@@ -1132,7 +1133,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                                 outcome: 'pending',
                                                 hit_stop_loss: false,
                                                 hit_target: false,
-                                            } as any);
+                                            });
                                         }
 
                                         // 9. Position sizing recommendation (portfolio-aware V2 with dynamic stops)
@@ -1152,20 +1153,20 @@ If there is genuinely no major news, return: {"events": []}`,
 
                                             // Persist position sizing into agent_outputs
                                             if (savedSignal) {
-                                                const existingOutputs = (savedSignal as any).agent_outputs || {};
+                                                const existingOutputs = (savedSignal.agent_outputs as unknown as AgentOutputsJson) || {};
                                                 await supabase.from('signals').update({
                                                     agent_outputs: {
                                                         ...existingOutputs,
                                                         position_sizing: {
                                                             recommended_pct: sizing.recommendedPct,
                                                             usd_value: sizing.usdValue,
-                                                            shares: sizing.shares,
+                                                            shares: sizing.shares ?? null,
                                                             method: sizing.method,
                                                             stop_loss: sizing.stopLoss,
                                                             risk_reward_ratio: sizing.riskRewardRatio,
                                                         },
-                                                    },
-                                                } as any).eq('id', savedSignal.id);
+                                                    } as any,
+                                                }).eq('id', savedSignal.id);
                                             }
                                         } catch { /* non-fatal */ }
                                     }
@@ -1268,7 +1269,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                                                 secondary_biases: ['herding'],
                                                                 sources: [],
                                                                 is_paper: false
-                                                            } as any).select().single();
+                                                            }).select().single();
 
                                                             // Seed outcome tracking
                                                             if (savedContagionSignal) {
@@ -1281,7 +1282,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                                                     outcome: 'pending',
                                                                     hit_stop_loss: false,
                                                                     hit_target: false,
-                                                                } as any);
+                                                                });
                                                             }
 
                                                             console.log(`[Scanner] Contagion signal: ${sat.ticker} (sympathy drop from ${ev.ticker})`);
@@ -1334,7 +1335,7 @@ If there is genuinely no major news, return: {"events": []}`,
                     events_detected: eventsFound,
                     signals_generated: signalsGenerated,
                     duration_ms: durationMs,
-                } as any).eq('id', scanLog.id);
+                }).eq('id', scanLog.id);
             }
 
             console.log(`[Scanner] Scan completed in ${durationMs}ms. ${signalsGenerated} signals generated.`);
@@ -1352,7 +1353,7 @@ If there is genuinely no major news, return: {"events": []}`,
 
             // Attempt to update log as failed
             await supabase.from('scan_logs')
-                .update({ status: 'failed', error_message: e.message } as any)
+                .update({ status: 'failed', error_message: (e as Error).message })
                 .eq('status', 'running'); // Best effort fallback
 
             return { success: false, error: e.message };
@@ -1382,7 +1383,7 @@ If there is genuinely no major news, return: {"events": []}`,
                     events_detected: 0,
                     signals_generated: 0,
                     estimated_cost_usd: 0
-                } as any)
+                })
                 .select('id')
                 .single();
 
@@ -1403,7 +1404,7 @@ If there is genuinely no major news, return: {"events": []}`,
                         status: 'completed',
                         error_message: `No live quote available for ${ticker}`,
                         duration_ms: Date.now() - startTime,
-                    } as any).eq('id', scanLog.id);
+                    }).eq('id', scanLog.id);
                 }
                 return { success: false, summary: `No live quote available for ${ticker}. Skipping to avoid fabricated signals.`, signalsGenerated: 0 };
             }
@@ -1434,7 +1435,7 @@ If there is genuinely no major news, return: {"events": []}`,
                 severity: 8, // Force trigger analysis
                 is_overreaction_candidate: true,
                 source_type: 'manual'
-            } as any, { onConflict: 'ticker,headline', ignoreDuplicates: true });
+            }, { onConflict: 'ticker,headline', ignoreDuplicates: true });
             if (upsertErr) {
                 console.warn('[Scanner] Upsert failed, falling back to insert:', upsertErr.message);
                 await supabase.from('market_events').insert({
@@ -1444,7 +1445,7 @@ If there is genuinely no major news, return: {"events": []}`,
                     severity: 8,
                     is_overreaction_candidate: true,
                     source_type: 'manual'
-                } as any);
+                });
             }
 
             // 5. Run Overreaction Analysis
@@ -1508,59 +1509,59 @@ If there is genuinely no major news, return: {"events": []}`,
                     if (singleConfidence < CONFIDENCE_GATE_CRITIQUE) {
                         console.log(`[Scanner] Single-ticker ${ticker} dropped by self-critique: ${analysis.data.confidence_score}→${singleConfidence}`);
                     } else {
-                    // 7c. Calibrated confidence
-                    let calibratedConf = singleConfidence;
-                    try {
-                        const curve = await ConfidenceCalibrator.getCachedCurve();
-                        calibratedConf = ConfidenceCalibrator.getCalibratedWinRate(singleConfidence, curve);
-                    } catch { /* non-fatal */ }
+                        // 7c. Calibrated confidence
+                        let calibratedConf = singleConfidence;
+                        try {
+                            const curve = await ConfidenceCalibrator.getCachedCurve();
+                            calibratedConf = ConfidenceCalibrator.getCalibratedWinRate(singleConfidence, curve);
+                        } catch { /* non-fatal */ }
 
-                    // 7d. Confluence with TA
-                    const discConfluence = TechnicalAnalysisService.computeConfluence(
-                        singleTaSnapshot, 'long', singleConfidence
-                    );
+                        // 7d. Confluence with TA
+                        const discConfluence = TechnicalAnalysisService.computeConfluence(
+                            singleTaSnapshot, 'long', singleConfidence
+                        );
 
-                    const { data: savedSignal } = await supabase.from('signals').insert({
-                        ticker: ticker,
-                        signal_type: 'long_overreaction',
-                        confidence_score: singleConfidence,
-                        calibrated_confidence: calibratedConf,
-                        risk_level: sanity.data.risk_score > 80 ? 'low' : 'medium',
-                        bias_type: 'recency_bias',
-                        thesis: analysis.data.thesis,
-                        counter_argument: sanity.data.counter_thesis,
-                        suggested_entry_low: analysis.data.suggested_entry_low,
-                        suggested_entry_high: analysis.data.suggested_entry_high,
-                        stop_loss: analysis.data.stop_loss,
-                        target_price: analysis.data.target_price,
-                        ta_snapshot: singleTaSnapshot,
-                        ta_alignment: singleTaAlignment,
-                        confluence_score: discConfluence.score,
-                        confluence_level: discConfluence.level,
-                        agent_outputs: {
-                            overreaction: analysis.data,
-                            red_team: sanity.data,
-                            self_critique: critiqueOutput,
-                        },
-                        status: 'active',
-                        data_quality: singleTaSnapshot ? 'full' : 'partial',
-                        sources: [],
-                        is_paper: isPaper
-                    } as any).select().single();
-
-                    if (savedSignal) {
-                        NotificationService.checkAndDispatchAlerts(savedSignal);
-
-                        // Seed outcome tracking so OutcomeTracker can follow this signal
-                        await supabase.from('signal_outcomes').insert({
-                            signal_id: savedSignal.id,
+                        const { data: savedSignal } = await supabase.from('signals').insert({
                             ticker: ticker,
-                            entry_price: currentPrice,
-                            outcome: 'pending',
-                            hit_stop_loss: false,
-                            hit_target: false,
-                        } as any);
-                    }
+                            signal_type: 'long_overreaction',
+                            confidence_score: singleConfidence,
+                            calibrated_confidence: calibratedConf,
+                            risk_level: sanity.data.risk_score > 80 ? 'low' : 'medium',
+                            bias_type: 'recency_bias',
+                            thesis: analysis.data.thesis,
+                            counter_argument: sanity.data.counter_thesis,
+                            suggested_entry_low: analysis.data.suggested_entry_low,
+                            suggested_entry_high: analysis.data.suggested_entry_high,
+                            stop_loss: analysis.data.stop_loss,
+                            target_price: analysis.data.target_price,
+                            ta_snapshot: singleTaSnapshot,
+                            ta_alignment: singleTaAlignment,
+                            confluence_score: discConfluence.score,
+                            confluence_level: discConfluence.level,
+                            agent_outputs: {
+                                overreaction: analysis.data,
+                                red_team: sanity.data,
+                                self_critique: critiqueOutput,
+                            },
+                            status: 'active',
+                            data_quality: singleTaSnapshot ? 'full' : 'partial',
+                            sources: [],
+                            is_paper: isPaper
+                        } as any).select().single();
+
+                        if (savedSignal) {
+                            NotificationService.checkAndDispatchAlerts(savedSignal);
+
+                            // Seed outcome tracking so OutcomeTracker can follow this signal
+                            await supabase.from('signal_outcomes').insert({
+                                signal_id: savedSignal.id,
+                                ticker: ticker,
+                                entry_price: currentPrice,
+                                outcome: 'pending',
+                                hit_stop_loss: false,
+                                hit_target: false,
+                            });
+                        }
                     } // end self-critique else
                 }
             }
@@ -1574,7 +1575,7 @@ If there is genuinely no major news, return: {"events": []}`,
                     events_detected: 1,
                     signals_generated: signalsGenerated,
                     duration_ms: durationMs,
-                } as any).eq('id', scanLog.id);
+                }).eq('id', scanLog.id);
             }
 
             return {
@@ -1588,7 +1589,7 @@ If there is genuinely no major news, return: {"events": []}`,
 
             // Attempt to update log as failed
             await supabase.from('scan_logs')
-                .update({ status: 'failed', error_message: e.message } as any)
+                .update({ status: 'failed', error_message: (e as Error).message })
                 .eq('status', 'running');
 
             return { success: false, error: e.message };
@@ -1712,7 +1713,7 @@ You MUST respond with ONLY a JSON object — no markdown, no commentary, no code
                 events_detected: 0,
                 signals_generated: 0,
                 estimated_cost_usd: 0
-            } as any)
+            })
             .select('id')
             .single();
 

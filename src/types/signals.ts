@@ -70,9 +70,9 @@ export interface Signal {
 }
 
 export interface AgentOutputsJson {
-    overreaction?: Record<string, unknown>;
-    red_team?: Record<string, unknown>;
-    self_critique?: Record<string, unknown>;
+    overreaction?: any;
+    red_team?: any;
+    self_critique?: any;
     sentiment_divergence?: {
         type: string;
         sentiment_avg: number;
@@ -88,7 +88,7 @@ export interface AgentOutputsJson {
     position_sizing?: {
         recommended_pct: number;
         usd_value: number;
-        shares: number;
+        shares: number | null;
         method: string;
         stop_loss: number | null;
         risk_reward_ratio: number | null;
@@ -157,6 +157,7 @@ export interface AgentOutputsJson {
         highly_correlated: Array<{ ticker: string; correlation: number }>;
         max_correlation: number;
         penalty: number;
+        reason?: string | null;
     } | null;
     portfolio_context?: {
         open_exposure_pct: number;
@@ -172,11 +173,11 @@ export interface AgentOutputsJson {
         generated_at: string;
     } | null;
     // Legacy fields for older signals
-    event_detector?: Record<string, unknown>;
-    bias_classifier?: Record<string, unknown>;
-    sanity_checker?: Record<string, unknown>;
-    historical_matcher?: Record<string, unknown>;
-    signal_synthesizer?: Record<string, unknown>;
+    event_detector?: any;
+    bias_classifier?: any;
+    sanity_checker?: any;
+    historical_matcher?: any;
+    signal_synthesizer?: any;
 }
 
 export interface BiasClassification {

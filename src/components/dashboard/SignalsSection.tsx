@@ -69,7 +69,7 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
             setSignals(data as unknown as Signal[]);
 
             // Fetch live quotes for unique tickers
-            const tickers = [...new Set((data as unknown as Signal[]).map(s => s.ticker))];
+            const tickers = [...new Set(data.map(s => s.ticker))];
             if (tickers.length > 0) {
                 try {
                     const q = await MarketDataService.getQuotesBulk(tickers);
@@ -205,7 +205,7 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
     const handleCloseSignal = useCallback(async (signalId: string) => {
         setClosingId(signalId);
         try {
-            const { error } = await supabase.from('signals').update({ status: 'manually_closed' } as any).eq('id', signalId);
+            const { error } = await supabase.from('signals').update({ status: 'manually_closed' }).eq('id', signalId);
             if (error) throw error;
             setSignals(prev => prev.filter(s => s.id !== signalId));
             setExpandedId(null);
@@ -219,7 +219,7 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
     const handleSaveNotes = useCallback(async (signalId: string) => {
         setSavingNotes(true);
         try {
-            const { error } = await supabase.from('signals').update({ user_notes: notesText } as any).eq('id', signalId);
+            const { error } = await supabase.from('signals').update({ user_notes: notesText }).eq('id', signalId);
             if (error) throw error;
             setSignals(prev => prev.map(s => s.id === signalId ? { ...s, user_notes: notesText } : s));
             setNotesId(null);
@@ -232,9 +232,9 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
 
     const handleMarkTriggered = useCallback(async (signalId: string) => {
         try {
-            const { error } = await supabase.from('signals').update({ status: 'triggered' } as any).eq('id', signalId);
+            const { error } = await supabase.from('signals').update({ status: 'triggered' }).eq('id', signalId);
             if (error) throw error;
-            setSignals(prev => prev.map(s => s.id === signalId ? { ...s, status: 'triggered' as any } : s));
+            setSignals(prev => prev.map(s => s.id === signalId ? { ...s, status: 'triggered' } : s));
         } catch (err) {
             console.error('[SignalsSection] Failed to mark signal triggered:', err);
         }
@@ -293,8 +293,8 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                             if (!highRoiOnly) setSortBy('projected_roi');
                         }}
                         className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ring-1 flex items-center gap-2 border-none cursor-pointer ${highRoiOnly
-                                ? 'bg-emerald-500/15 text-emerald-400 ring-emerald-500/30'
-                                : 'bg-sentinel-800/50 text-sentinel-400 ring-sentinel-700/50 hover:bg-sentinel-700/50'
+                            ? 'bg-emerald-500/15 text-emerald-400 ring-emerald-500/30'
+                            : 'bg-sentinel-800/50 text-sentinel-400 ring-sentinel-700/50 hover:bg-sentinel-700/50'
                             }`}
                         aria-label="Toggle high ROI signals only"
                     >
@@ -305,8 +305,8 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                     <button
                         onClick={() => setShowFilters(!showFilters)}
                         className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ring-1 flex items-center gap-2 border-none cursor-pointer ${activeFilterCount > 0
-                                ? 'bg-blue-500/15 text-blue-400 ring-blue-500/30'
-                                : 'bg-sentinel-800/50 text-sentinel-400 ring-sentinel-700/50 hover:bg-sentinel-700/50'
+                            ? 'bg-blue-500/15 text-blue-400 ring-blue-500/30'
+                            : 'bg-sentinel-800/50 text-sentinel-400 ring-sentinel-700/50 hover:bg-sentinel-700/50'
                             }`}
                         aria-label="Toggle signal filters"
                     >
@@ -491,8 +491,8 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                                     </span>
                                                 )}
                                                 <span className={`px-2 py-0.5 text-[10px] font-bold rounded ring-1 ${isLong
-                                                        ? 'bg-emerald-500/15 text-emerald-400 ring-emerald-500/30'
-                                                        : 'bg-red-500/15 text-red-400 ring-red-500/30'
+                                                    ? 'bg-emerald-500/15 text-emerald-400 ring-emerald-500/30'
+                                                    : 'bg-red-500/15 text-red-400 ring-red-500/30'
                                                     }`}>
                                                     {isLong ? 'BUY' : 'SELL'}
                                                 </span>
@@ -527,8 +527,8 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                             <div className="h-1.5 bg-sentinel-800 rounded-full overflow-hidden">
                                                 <div
                                                     className={`h-full rounded-full transition-all ${signal.confidence_score >= 80 ? 'bg-emerald-500' :
-                                                            signal.confidence_score >= 60 ? 'bg-blue-500' :
-                                                                signal.confidence_score >= 40 ? 'bg-amber-500' : 'bg-red-500'
+                                                        signal.confidence_score >= 60 ? 'bg-blue-500' :
+                                                            signal.confidence_score >= 40 ? 'bg-amber-500' : 'bg-red-500'
                                                         }`}
                                                     style={{ width: `${signal.confidence_score}%` }}
                                                 />
@@ -549,8 +549,8 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                             )}
                                             {signal.projected_roi != null && (
                                                 <span className={`px-2 py-0.5 text-[10px] font-bold font-mono rounded ring-1 ${signal.projected_roi > 0
-                                                        ? 'bg-emerald-500/10 text-emerald-400 ring-emerald-500/20'
-                                                        : 'bg-red-500/10 text-red-400 ring-red-500/20'
+                                                    ? 'bg-emerald-500/10 text-emerald-400 ring-emerald-500/20'
+                                                    : 'bg-red-500/10 text-red-400 ring-red-500/20'
                                                     }`}>
                                                     ROI {signal.projected_roi > 0 ? '+' : ''}{signal.projected_roi}%
                                                 </span>
@@ -563,34 +563,32 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                             )}
                                             {/* Z-Score badge */}
                                             {signal.ta_snapshot?.zScore20 != null && Math.abs(Number(signal.ta_snapshot.zScore20)) >= 1.5 && (
-                                                <span className={`px-2 py-0.5 text-[10px] font-bold font-mono rounded ring-1 ${
-                                                    Number(signal.ta_snapshot.zScore20) < -2.0
-                                                        ? 'bg-emerald-500/10 text-emerald-400 ring-emerald-500/20'
-                                                        : Number(signal.ta_snapshot.zScore20) > 2.0
-                                                            ? 'bg-red-500/10 text-red-400 ring-red-500/20'
-                                                            : 'bg-sentinel-800/50 text-sentinel-400 ring-sentinel-700/30'
-                                                }`} title={`Z-Score: ${Number(signal.ta_snapshot.zScore20).toFixed(2)} standard deviations from 20-day mean`}>
+                                                <span className={`px-2 py-0.5 text-[10px] font-bold font-mono rounded ring-1 ${Number(signal.ta_snapshot.zScore20) < -2.0
+                                                    ? 'bg-emerald-500/10 text-emerald-400 ring-emerald-500/20'
+                                                    : Number(signal.ta_snapshot.zScore20) > 2.0
+                                                        ? 'bg-red-500/10 text-red-400 ring-red-500/20'
+                                                        : 'bg-sentinel-800/50 text-sentinel-400 ring-sentinel-700/30'
+                                                    }`} title={`Z-Score: ${Number(signal.ta_snapshot.zScore20).toFixed(2)} standard deviations from 20-day mean`}>
                                                     Z: {Number(signal.ta_snapshot.zScore20).toFixed(1)}
                                                 </span>
                                             )}
                                             {/* Sentiment divergence badge */}
                                             {(() => {
-                                                const div = (signal.agent_outputs as any)?.sentiment_divergence;
+                                                const div = signal.agent_outputs?.sentiment_divergence;
                                                 if (!div || div.type === 'neutral' || div.type === 'rational') return null;
                                                 const isPanic = div.type === 'panic_exhaustion';
                                                 return (
-                                                    <span className={`px-2 py-0.5 text-[10px] font-bold rounded ring-1 ${
-                                                        isPanic
-                                                            ? 'bg-emerald-500/10 text-emerald-400 ring-emerald-500/20'
-                                                            : 'bg-red-500/10 text-red-400 ring-red-500/20'
-                                                    }`} title={isPanic ? 'Sentiment improving while price oversold — bullish divergence' : 'Sentiment worsening while price overbought — bearish divergence'}>
+                                                    <span className={`px-2 py-0.5 text-[10px] font-bold rounded ring-1 ${isPanic
+                                                        ? 'bg-emerald-500/10 text-emerald-400 ring-emerald-500/20'
+                                                        : 'bg-red-500/10 text-red-400 ring-red-500/20'
+                                                        }`} title={isPanic ? 'Sentiment improving while price oversold — bullish divergence' : 'Sentiment worsening while price overbought — bearish divergence'}>
                                                         {isPanic ? 'PANIC EXHAUSTION' : 'EUPHORIA CLIMAX'}
                                                     </span>
                                                 );
                                             })()}
                                             {/* Gap badge */}
                                             {(() => {
-                                                const gap = (signal.agent_outputs as any)?.gap_analysis;
+                                                const gap = signal.agent_outputs?.gap_analysis;
                                                 if (!gap || gap.gap_pct == null) return null;
                                                 return (
                                                     <span className="px-2 py-0.5 text-[10px] font-bold font-mono rounded ring-1 bg-violet-500/10 text-violet-400 ring-violet-500/20"
@@ -601,7 +599,7 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                             })()}
                                             {/* Position sizing badge */}
                                             {(() => {
-                                                const ps = (signal.agent_outputs as any)?.position_sizing;
+                                                const ps = signal.agent_outputs?.position_sizing;
                                                 if (!ps || ps.recommended_pct == null || ps.usd_value == null) return null;
                                                 return (
                                                     <span className="px-2 py-0.5 text-[10px] font-bold font-mono rounded ring-1 bg-cyan-500/10 text-cyan-400 ring-cyan-500/20"
@@ -667,13 +665,12 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                                                 </span>
                                                             )}
                                                             {signal.ta_snapshot.zScore20 != null && !isNaN(Number(signal.ta_snapshot.zScore20)) && (
-                                                                <span className={`text-[10px] font-mono px-2 py-0.5 rounded ring-1 ${
-                                                                    Number(signal.ta_snapshot.zScore20) < -2.0
-                                                                        ? 'bg-emerald-800/50 text-emerald-400 ring-emerald-700/30'
-                                                                        : Number(signal.ta_snapshot.zScore20) > 2.0
-                                                                            ? 'bg-red-800/50 text-red-400 ring-red-700/30'
-                                                                            : 'bg-sentinel-800/50 text-sentinel-400 ring-sentinel-700/30'
-                                                                }`}>
+                                                                <span className={`text-[10px] font-mono px-2 py-0.5 rounded ring-1 ${Number(signal.ta_snapshot.zScore20) < -2.0
+                                                                    ? 'bg-emerald-800/50 text-emerald-400 ring-emerald-700/30'
+                                                                    : Number(signal.ta_snapshot.zScore20) > 2.0
+                                                                        ? 'bg-red-800/50 text-red-400 ring-red-700/30'
+                                                                        : 'bg-sentinel-800/50 text-sentinel-400 ring-sentinel-700/30'
+                                                                    }`}>
                                                                     Z: {Number(signal.ta_snapshot.zScore20).toFixed(2)}
                                                                 </span>
                                                             )}
@@ -696,10 +693,10 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                                                 </span>
                                                                 <span className="text-[10px] text-sentinel-500">|</span>
                                                                 <span className={`text-[10px] font-mono font-bold ${Number(impact.newExposurePct) > (portfolioConfig?.max_total_exposure_pct ?? 60)
-                                                                        ? 'text-red-400'
-                                                                        : Number(impact.newExposurePct) > 40
-                                                                            ? 'text-amber-400'
-                                                                            : 'text-emerald-400'
+                                                                    ? 'text-red-400'
+                                                                    : Number(impact.newExposurePct) > 40
+                                                                        ? 'text-amber-400'
+                                                                        : 'text-emerald-400'
                                                                     }`}>
                                                                     New Exposure: {Number(impact.newExposurePct).toFixed(1)}%
                                                                 </span>

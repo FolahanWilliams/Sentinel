@@ -83,6 +83,9 @@ export interface FundamentalData {
     avg_volume: number | null;
     beta: number | null;
     dividend_yield: number | null;
+    short_interest_pct: number | null;
+    institutional_ownership_pct: number | null;
+    next_earnings_date: string | null;
     updated_at: Date;
 }
 

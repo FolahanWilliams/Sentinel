@@ -12,33 +12,47 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.1"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
+      agent_reflections: {
+        Row: {
+          bias_type: string
+          created_at: string
+          id: string
+          is_active: boolean
+          rule: string
+          sample_size: number
+          sector: string
+          severity: string
+          updated_at: string
+          win_rate: number
+        }
+        Insert: {
+          bias_type: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          rule: string
+          sample_size?: number
+          sector?: string
+          severity?: string
+          updated_at?: string
+          win_rate: number
+        }
+        Update: {
+          bias_type?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          rule?: string
+          sample_size?: number
+          sector?: string
+          severity?: string
+          updated_at?: string
+          win_rate?: number
+        }
+        Relationships: []
+      }
       api_usage: {
         Row: {
           agent_name: string | null
@@ -248,6 +262,7 @@ export type Database = {
         Row: {
           close_reason: string | null
           closed_at: string | null
+          currency: string
           entry_price: number | null
           exit_price: number | null
           id: string
@@ -266,6 +281,7 @@ export type Database = {
         Insert: {
           close_reason?: string | null
           closed_at?: string | null
+          currency?: string
           entry_price?: number | null
           exit_price?: number | null
           id?: string
@@ -284,6 +300,7 @@ export type Database = {
         Update: {
           close_reason?: string | null
           closed_at?: string | null
+          currency?: string
           entry_price?: number | null
           exit_price?: number | null
           id?: string
@@ -396,6 +413,90 @@ export type Database = {
         }
         Relationships: []
       }
+      sentinel_articles: {
+        Row: {
+          affected_tickers: Json | null
+          category: string
+          created_at: string
+          entities: string[] | null
+          id: string
+          impact: string
+          link: string
+          processed_at: string
+          pub_date: string
+          sentiment: string
+          sentiment_score: number
+          signals: Json | null
+          source: string
+          summary: string | null
+          title: string
+        }
+        Insert: {
+          affected_tickers?: Json | null
+          category?: string
+          created_at?: string
+          entities?: string[] | null
+          id?: string
+          impact?: string
+          link: string
+          processed_at?: string
+          pub_date: string
+          sentiment?: string
+          sentiment_score?: number
+          signals?: Json | null
+          source: string
+          summary?: string | null
+          title: string
+        }
+        Update: {
+          affected_tickers?: Json | null
+          category?: string
+          created_at?: string
+          entities?: string[] | null
+          id?: string
+          impact?: string
+          link?: string
+          processed_at?: string
+          pub_date?: string
+          sentiment?: string
+          sentiment_score?: number
+          signals?: Json | null
+          source?: string
+          summary?: string | null
+          title?: string
+        }
+        Relationships: []
+      }
+      sentinel_briefings: {
+        Row: {
+          briefing_date: string
+          generated_at: string
+          id: string
+          market_mood: string
+          signal_count: Json
+          top_stories: string[]
+          trending_topics: string[]
+        }
+        Insert: {
+          briefing_date?: string
+          generated_at?: string
+          id?: string
+          market_mood?: string
+          signal_count?: Json
+          top_stories?: string[]
+          trending_topics?: string[]
+        }
+        Update: {
+          briefing_date?: string
+          generated_at?: string
+          id?: string
+          market_mood?: string
+          signal_count?: Json
+          top_stories?: string[]
+          trending_topics?: string[]
+        }
+        Relationships: []
+      }
       signal_outcomes: {
         Row: {
           completed_at: string | null
@@ -470,32 +571,71 @@ export type Database = {
           },
         ]
       }
+      signal_ratings: {
+        Row: {
+          id: string
+          rated_at: string
+          rating: string
+          signal_id: string
+        }
+        Insert: {
+          id?: string
+          rated_at?: string
+          rating: string
+          signal_id: string
+        }
+        Update: {
+          id?: string
+          rated_at?: string
+          rating?: string
+          signal_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "signal_ratings_signal_id_fkey"
+            columns: ["signal_id"]
+            isOneToOne: true
+            referencedRelation: "signals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       signals: {
         Row: {
           agent_outputs: Json | null
           bias_explanation: string | null
           bias_type: string
+          calibrated_confidence: number | null
           confidence_score: number
+          confluence_level: string | null
+          confluence_score: number | null
           correction_probability: number | null
           counter_argument: string | null
           created_at: string
+          data_quality: string | null
           expected_timeframe_days: number | null
           historical_avg_return: number | null
           historical_matches_count: number | null
           historical_win_rate: number | null
           id: string
           is_paper: boolean
+          projected_roi: number | null
+          projected_win_rate: number | null
           risk_level: string
           secondary_biases: string[]
           signal_type: string
+          similar_events_count: number | null
           sources: string[]
           status: string
           stop_loss: number | null
           suggested_entry_high: number | null
           suggested_entry_low: number | null
+          ta_alignment: string | null
+          ta_snapshot: Json | null
           target_price: number | null
           thesis: string | null
           ticker: string
+          trailing_stop_rule: string | null
           updated_at: string
           user_notes: string | null
         }
@@ -503,27 +643,37 @@ export type Database = {
           agent_outputs?: Json | null
           bias_explanation?: string | null
           bias_type: string
+          calibrated_confidence?: number | null
           confidence_score: number
+          confluence_level?: string | null
+          confluence_score?: number | null
           correction_probability?: number | null
           counter_argument?: string | null
           created_at?: string
+          data_quality?: string | null
           expected_timeframe_days?: number | null
           historical_avg_return?: number | null
           historical_matches_count?: number | null
           historical_win_rate?: number | null
           id?: string
           is_paper?: boolean
+          projected_roi?: number | null
+          projected_win_rate?: number | null
           risk_level: string
           secondary_biases?: string[]
           signal_type: string
+          similar_events_count?: number | null
           sources?: string[]
           status?: string
           stop_loss?: number | null
           suggested_entry_high?: number | null
           suggested_entry_low?: number | null
+          ta_alignment?: string | null
+          ta_snapshot?: Json | null
           target_price?: number | null
           thesis?: string | null
           ticker: string
+          trailing_stop_rule?: string | null
           updated_at?: string
           user_notes?: string | null
         }
@@ -531,27 +681,37 @@ export type Database = {
           agent_outputs?: Json | null
           bias_explanation?: string | null
           bias_type?: string
+          calibrated_confidence?: number | null
           confidence_score?: number
+          confluence_level?: string | null
+          confluence_score?: number | null
           correction_probability?: number | null
           counter_argument?: string | null
           created_at?: string
+          data_quality?: string | null
           expected_timeframe_days?: number | null
           historical_avg_return?: number | null
           historical_matches_count?: number | null
           historical_win_rate?: number | null
           id?: string
           is_paper?: boolean
+          projected_roi?: number | null
+          projected_win_rate?: number | null
           risk_level?: string
           secondary_biases?: string[]
           signal_type?: string
+          similar_events_count?: number | null
           sources?: string[]
           status?: string
           stop_loss?: number | null
           suggested_entry_high?: number | null
           suggested_entry_low?: number | null
+          ta_alignment?: string | null
+          ta_snapshot?: Json | null
           target_price?: number | null
           thesis?: string | null
           ticker?: string
+          trailing_stop_rule?: string | null
           updated_at?: string
           user_notes?: string | null
         }
@@ -620,121 +780,118 @@ type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
 
 export type Tables<
   DefaultSchemaTableNameOrOptions extends
-  | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
-  | { schema: keyof DatabaseWithoutInternals },
+    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
+    | { schema: keyof DatabaseWithoutInternals },
   TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
-  ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
-    DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-  : never = never,
+    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
+    : never = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
   ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
-    DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
       Row: infer R
     }
-  ? R
-  : never
+    ? R
+    : never
   : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
-    DefaultSchema["Views"])
-  ? (DefaultSchema["Tables"] &
-    DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
-      Row: infer R
-    }
-  ? R
-  : never
-  : never
+        DefaultSchema["Views"])
+    ? (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
+        Row: infer R
+      }
+      ? R
+      : never
+    : never
 
 export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
-  | keyof DefaultSchema["Tables"]
-  | { schema: keyof DatabaseWithoutInternals },
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
   TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
-  ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-  : never = never,
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
   ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
-    Insert: infer I
-  }
-  ? I
-  : never
+      Insert: infer I
+    }
+    ? I
+    : never
   : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
-  ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
-    Insert: infer I
-  }
-  ? I
-  : never
-  : never
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Insert: infer I
+      }
+      ? I
+      : never
+    : never
 
 export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
-  | keyof DefaultSchema["Tables"]
-  | { schema: keyof DatabaseWithoutInternals },
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
   TableName extends DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
-  ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-  : never = never,
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
   ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
-    Update: infer U
-  }
-  ? U
-  : never
+      Update: infer U
+    }
+    ? U
+    : never
   : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
-  ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
-    Update: infer U
-  }
-  ? U
-  : never
-  : never
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Update: infer U
+      }
+      ? U
+      : never
+    : never
 
 export type Enums<
   DefaultSchemaEnumNameOrOptions extends
-  | keyof DefaultSchema["Enums"]
-  | { schema: keyof DatabaseWithoutInternals },
+    | keyof DefaultSchema["Enums"]
+    | { schema: keyof DatabaseWithoutInternals },
   EnumName extends DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
-  ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-  : never = never,
+    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
+    : never = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
   ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
   : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
-  ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
-  : never
+    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
+    : never
 
 export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
-  | keyof DefaultSchema["CompositeTypes"]
-  | { schema: keyof DatabaseWithoutInternals },
+    | keyof DefaultSchema["CompositeTypes"]
+    | { schema: keyof DatabaseWithoutInternals },
   CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
-  ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-  : never = never,
+    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
+    : never = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
   ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
   : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
-  ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
-  : never
+    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+    : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {},
   },

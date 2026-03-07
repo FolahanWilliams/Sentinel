@@ -101,14 +101,14 @@ export class SignalDecayEngine {
                     await supabase.from('signals').update({
                         status: 'expired',
                         user_notes: `[Auto-expired] ${reason}`,
-                    } as any).eq('id', signal.id);
+                    }).eq('id', signal.id);
                     console.log(`[SignalDecay] Expired ${signal.ticker} (${signal.id}): ${reason}`);
                 } else if (action === 'stale') {
                     stale++;
                     await supabase.from('signals').update({
                         status: 'stale',
                         user_notes: `[Auto-stale] ${reason}`,
-                    } as any).eq('id', signal.id);
+                    }).eq('id', signal.id);
                     console.log(`[SignalDecay] Stale: ${signal.ticker} (${signal.id}): ${reason}`);
                 }
             }

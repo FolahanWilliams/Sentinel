@@ -228,13 +228,13 @@ export class MarketDataService {
                 avg_volume: parsed.avg_volume ?? null,
                 beta: parsed.beta ?? null,
                 dividend_yield: parsed.dividend_yield ?? null,
+                short_interest_pct: parsed.short_interest_pct ?? null,
+                institutional_ownership_pct: parsed.institutional_ownership_pct ?? null,
+                next_earnings_date: parsed.next_earnings_date ?? null,
                 updated_at: new Date(),
             };
 
-            // Store extra fields on the object for agent use
-            (fundamentals as any).short_interest_pct = parsed.short_interest_pct ?? null;
-            (fundamentals as any).institutional_ownership_pct = parsed.institutional_ownership_pct ?? null;
-            (fundamentals as any).next_earnings_date = parsed.next_earnings_date ?? null;
+
 
             cache.set(cacheKey, { data: fundamentals, timestamp: Date.now() });
             console.log(`[MarketData] Fundamentals for ${ticker}: P/E=${parsed.pe_ratio}, D/E=${parsed.debt_to_equity}`);
@@ -257,8 +257,8 @@ export class MarketDataService {
         if (data.profit_margin != null) lines.push(`- Profit Margin: ${(data.profit_margin * 100).toFixed(1)}%${data.profit_margin < 0 ? ' ⚠ NEGATIVE MARGINS' : ''}`);
         if (data.revenue_growth_yoy != null) lines.push(`- Revenue Growth (YoY): ${(data.revenue_growth_yoy * 100).toFixed(1)}%`);
         if (data.beta != null) lines.push(`- Beta: ${data.beta}`);
-        if ((data as any).short_interest_pct != null) lines.push(`- Short Interest: ${(data as any).short_interest_pct}%${(data as any).short_interest_pct > 20 ? ' ⚠ HIGH SHORT INTEREST' : ''}`);
-        if ((data as any).institutional_ownership_pct != null) lines.push(`- Institutional Ownership: ${(data as any).institutional_ownership_pct}%`);
+        if (data.short_interest_pct != null) lines.push(`- Short Interest: ${data.short_interest_pct}%${data.short_interest_pct > 20 ? ' ⚠ HIGH SHORT INTEREST' : ''}`);
+        if (data.institutional_ownership_pct != null) lines.push(`- Institutional Ownership: ${data.institutional_ownership_pct}%`);
         lines.push('Use fundamental data to validate signal thesis. High debt, negative margins, or extreme P/E should lower confidence.');
         return lines.join('\n');
     }

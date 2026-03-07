@@ -180,7 +180,7 @@ export function Positions() {
             status: 'open',
             opened_at: new Date().toISOString(),
             notes: formNotes || null
-        } as any);
+        });
 
         if (!error) {
             setShowForm(false);
@@ -212,7 +212,7 @@ export function Positions() {
                 realized_pnl: realizedPnl,
                 realized_pnl_pct: realizedPnlPct,
                 close_reason: closeReason
-            } as any)
+            })
             .eq('id', showCloseModal);
 
         if (!error) {
