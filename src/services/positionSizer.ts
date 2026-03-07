@@ -86,6 +86,7 @@ export class PositionSizer {
     /**
      * V2: Dynamic position sizing using ACTUAL historical win-rate per category + ATR risk.
      * Uses DB lookup for real win rates instead of AI confidence as proxy.
+     * Now supports dynamic stop sizing based on confluence strength.
      */
     static async calculateSizeV2(
         aiConfidence: number,
@@ -94,6 +95,7 @@ export class PositionSizer {
         signalType: string,
         taSnapshot: TASnapshot | null,
         _ticker?: string,
+        confluenceScore?: number,
     ): Promise<PositionSizeResult> {
         // 1. Fetch config
         const { data: config, error } = await supabase
@@ -175,16 +177,26 @@ export class PositionSizer {
             }
         }
 
-        // 4. ATR-based stop loss
+        // 4. ATR-based stop loss — dynamic multiplier based on confluence strength
+        //    Strong confluence → tighter stops (1.0x ATR) — higher conviction
+        //    Weak confluence → wider stops (2.0x ATR) — more room for uncertainty
         let stopLoss: number | null = null;
         let trailingStopRule: string | null = null;
         let stopDistancePct = avgLossPct; // fallback
 
         if (taSnapshot?.atr14 && entryPrice > 0) {
-            stopLoss = Math.round((entryPrice - taSnapshot.atr14 * 1.5) * 100) / 100;
-            stopDistancePct = (taSnapshot.atr14 * 1.5) / entryPrice;
+            let atrMultiplier = 1.5; // default
+            if (confluenceScore !== undefined) {
+                if (confluenceScore >= 75) atrMultiplier = 1.0;       // strong confluence = tight stop
+                else if (confluenceScore >= 55) atrMultiplier = 1.25; // moderate
+                else if (confluenceScore >= 35) atrMultiplier = 1.75; // weak
+                else atrMultiplier = 2.0;                             // very weak = wide stop
+            }
+
+            stopLoss = Math.round((entryPrice - taSnapshot.atr14 * atrMultiplier) * 100) / 100;
+            stopDistancePct = (taSnapshot.atr14 * atrMultiplier) / entryPrice;
             const breakevenTarget = entryPrice + taSnapshot.atr14;
-            trailingStopRule = `Move stop to breakeven ($${Number(entryPrice).toFixed(2)}) after price reaches $${Number(breakevenTarget).toFixed(2)} (+1x ATR). Trail by 1.5x ATR thereafter.`;
+            trailingStopRule = `ATR stop: ${atrMultiplier}x ATR ($${Number(taSnapshot.atr14 * atrMultiplier).toFixed(2)} risk). Move stop to breakeven ($${Number(entryPrice).toFixed(2)}) after +1x ATR ($${Number(breakevenTarget).toFixed(2)}). Trail by ${atrMultiplier}x ATR.`;
         }
 
         // 5. Method 1: Fixed percentage (simple)

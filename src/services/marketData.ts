@@ -7,7 +7,7 @@
  */
 
 import { supabase } from '@/config/supabase';
-import type { Quote, NewsItem } from '@/types/market';
+import type { Quote, NewsItem, FundamentalData } from '@/types/market';
 
 // Simple in-memory cache for the client session (clears on reload)
 // TTL: 2 minutes for quotes — keeps data reasonably fresh for a trading platform
@@ -172,6 +172,95 @@ export class MarketDataService {
 
             return results;
         }
+    }
+
+    /**
+     * Fetch fundamental data for a ticker via Gemini grounded search.
+     * Returns P/E, market cap, debt/equity, revenue growth, etc.
+     * Cached for 24 hours — fundamentals don't change intraday.
+     */
+    static async getFundamentals(ticker: string): Promise<FundamentalData | null> {
+        const cacheKey = `fundamentals_${ticker.toUpperCase()}`;
+        const FUNDAMENTALS_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
+        const cached = cache.get(cacheKey);
+        if (cached && (Date.now() - cached.timestamp < FUNDAMENTALS_TTL)) {
+            return cached.data as FundamentalData;
+        }
+
+        try {
+            const today = new Date().toISOString().split('T')[0];
+            const { data, error } = await supabase.functions.invoke('proxy-gemini', {
+                body: {
+                    prompt: `Look up current financial fundamentals for ${ticker.toUpperCase()} as of ${today}. Return ONLY a JSON object with these fields (use null if unavailable): {"ticker": "${ticker.toUpperCase()}", "pe_ratio": number, "pe_sector_avg": number, "debt_to_equity": number, "profit_margin": number, "revenue_ttm": number, "revenue_growth_yoy": number, "eps": number, "week_52_high": number, "week_52_low": number, "avg_volume": number, "beta": number, "dividend_yield": number, "short_interest_pct": number, "institutional_ownership_pct": number, "next_earnings_date": "YYYY-MM-DD" or null}`,
+                    systemInstruction: 'You are a financial data assistant. Return ONLY valid JSON with no markdown. Use real current data.',
+                    requireGroundedSearch: true,
+                    temperature: 0.1,
+                },
+            });
+
+            if (error || !data?.text) {
+                console.warn(`[MarketData] Fundamentals fetch failed for ${ticker}:`, error);
+                return null;
+            }
+
+            let parsed: any;
+            try {
+                const jsonText = data.text.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+                const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
+                parsed = JSON.parse(jsonMatch ? jsonMatch[0] : jsonText);
+            } catch {
+                console.warn(`[MarketData] Failed to parse fundamentals for ${ticker}`);
+                return null;
+            }
+
+            const fundamentals: FundamentalData = {
+                ticker: ticker.toUpperCase(),
+                revenue_ttm: parsed.revenue_ttm ?? null,
+                revenue_growth_yoy: parsed.revenue_growth_yoy ?? null,
+                eps: parsed.eps ?? null,
+                pe_ratio: parsed.pe_ratio ?? null,
+                pe_sector_avg: parsed.pe_sector_avg ?? null,
+                debt_to_equity: parsed.debt_to_equity ?? null,
+                profit_margin: parsed.profit_margin ?? null,
+                week_52_high: parsed.week_52_high ?? null,
+                week_52_low: parsed.week_52_low ?? null,
+                avg_volume: parsed.avg_volume ?? null,
+                beta: parsed.beta ?? null,
+                dividend_yield: parsed.dividend_yield ?? null,
+                updated_at: new Date(),
+            };
+
+            // Store extra fields on the object for agent use
+            (fundamentals as any).short_interest_pct = parsed.short_interest_pct ?? null;
+            (fundamentals as any).institutional_ownership_pct = parsed.institutional_ownership_pct ?? null;
+            (fundamentals as any).next_earnings_date = parsed.next_earnings_date ?? null;
+
+            cache.set(cacheKey, { data: fundamentals, timestamp: Date.now() });
+            console.log(`[MarketData] Fundamentals for ${ticker}: P/E=${parsed.pe_ratio}, D/E=${parsed.debt_to_equity}`);
+            return fundamentals;
+        } catch (err) {
+            console.error(`[MarketData] Fundamentals error for ${ticker}:`, err);
+            return null;
+        }
+    }
+
+    /**
+     * Format fundamental data as a text block for agent prompts.
+     */
+    static formatFundamentalsForPrompt(data: FundamentalData | null): string {
+        if (!data) return '';
+        const lines = ['\nFUNDAMENTAL DATA:'];
+        if (data.pe_ratio != null) lines.push(`- P/E Ratio: ${data.pe_ratio}${data.pe_sector_avg != null ? ` (sector avg: ${data.pe_sector_avg})` : ''}`);
+        if (data.eps != null) lines.push(`- EPS: $${data.eps}`);
+        if (data.debt_to_equity != null) lines.push(`- Debt/Equity: ${data.debt_to_equity}${data.debt_to_equity > 2 ? ' ⚠ HIGH LEVERAGE' : ''}`);
+        if (data.profit_margin != null) lines.push(`- Profit Margin: ${(data.profit_margin * 100).toFixed(1)}%${data.profit_margin < 0 ? ' ⚠ NEGATIVE MARGINS' : ''}`);
+        if (data.revenue_growth_yoy != null) lines.push(`- Revenue Growth (YoY): ${(data.revenue_growth_yoy * 100).toFixed(1)}%`);
+        if (data.beta != null) lines.push(`- Beta: ${data.beta}`);
+        if ((data as any).short_interest_pct != null) lines.push(`- Short Interest: ${(data as any).short_interest_pct}%${(data as any).short_interest_pct > 20 ? ' ⚠ HIGH SHORT INTEREST' : ''}`);
+        if ((data as any).institutional_ownership_pct != null) lines.push(`- Institutional Ownership: ${(data as any).institutional_ownership_pct}%`);
+        lines.push('Use fundamental data to validate signal thesis. High debt, negative margins, or extreme P/E should lower confidence.');
+        return lines.join('\n');
     }
 
     /**
