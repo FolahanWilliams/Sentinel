@@ -1,8 +1,14 @@
 /**
- * AnalystChat — Floating conversational AI panel for the Research page.
+ * AnalystChat — Floating conversational AI panel.
  *
- * Injects the current ticker's full context (bias, fundamentals, news, signals)
- * into every Gemini prompt so the user can interrogate the AI's logic.
+ * Portfolio-aware: injects full portfolio state (positions, exposure, P&L,
+ * sector allocation, active signals) into every prompt so the AI can answer
+ * questions like "Am I over-exposed to one sector?" or "Where should I rotate?"
+ *
+ * Also injects per-ticker context when a ticker is active (bias, fundamentals,
+ * news, signals) so the user can interrogate the AI's logic.
+ *
+ * Uses Gemini with grounded search for real-time web data in recommendations.
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
@@ -13,50 +19,36 @@ import { supabase } from '@/config/supabase';
 import { useChat } from '@/contexts/ChatContext';
 import { MarketDataService } from '@/services/marketData';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
+import { formatPrice, formatPercent } from '@/utils/formatters';
+import { inferCurrency, calcUnrealizedPnl, getPositionExposure } from '@/utils/portfolio';
+import type { Position, PortfolioConfig } from '@/hooks/usePortfolio';
 
-// Schema for the chatbot response
-const ChatbotResponseSchema = {
-    type: "object",
-    properties: {
-        message: {
-            type: "string",
-            description: "The conversational response to the user."
-        },
-        action: {
-            type: "object",
-            description: "Optional action to perform based on the user's intent. Only include if the user EXPLICITLY asks to add a position or journal entry.",
-            nullable: true,
-            properties: {
-                type: {
-                    type: "string",
-                    enum: ["add_position", "add_journal_entry"]
-                },
-                payload: {
-                    type: "object",
-                    description: "The data required for the action.",
-                    properties: {
-                        ticker: { type: "string" },
-                        entry_price: { type: "number" },
-                        shares: { type: "number" },
-                        side: { type: "string", enum: ["LONG", "SHORT"] },
-                        content: { type: "string" },
-                        entry_type: { type: "string", enum: ["TRADE_REVIEW", "MARKET_OBSERVATION", "STRATEGY_NOTE"] },
-                        mood: { type: "string", enum: ["NEUTRAL", "CONFIDENT", "UNCERTAIN", "FRUSTRATED"] },
-                        tags: { type: "array", items: { type: "string" } }
-                    }
-                }
-            },
-            required: ["type", "payload"]
-        }
-    },
-    required: ["message"]
-};
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 interface ChatMessage {
     role: 'user' | 'assistant' | 'system';
     content: string;
     timestamp: Date;
 }
+
+interface PortfolioSnapshot {
+    config: PortfolioConfig | null;
+    positions: Position[];
+    sectorMap: Record<string, string>;
+    activeSignals: ActiveSignalSummary[];
+}
+
+interface ActiveSignalSummary {
+    ticker: string;
+    signal_type: string;
+    confidence_score: number;
+    thesis: string;
+    target_price: number | null;
+    stop_loss: number | null;
+    created_at: string;
+}
+
+// ─── Component ───────────────────────────────────────────────────────────────
 
 export function AnalystChat() {
     return (
@@ -81,7 +73,71 @@ function AnalystChatInner() {
     const [quote, setQuote] = useState<any>(null);
     const [hasLoadedContext, setHasLoadedContext] = useState(false);
 
-    // Fetch context if we have an active ticker
+    // Portfolio state — always loaded when chat opens
+    const [portfolio, setPortfolio] = useState<PortfolioSnapshot | null>(null);
+    const [portfolioLoading, setPortfolioLoading] = useState(false);
+
+    // Fetch portfolio context (positions, config, signals, sector data)
+    useEffect(() => {
+        if (!isOpen) return;
+        let isMounted = true;
+
+        async function fetchPortfolio() {
+            setPortfolioLoading(true);
+            try {
+                // Parallel fetch: config, positions, active signals, watchlist (for sectors)
+                const [configRes, positionsRes, signalsRes, watchlistRes] = await Promise.all([
+                    supabase.from('portfolio_config').select('*').limit(1).maybeSingle(),
+                    supabase.from('positions').select('*').order('opened_at', { ascending: false }),
+                    supabase.from('signals').select('ticker, signal_type, confidence_score, thesis, target_price, stop_loss, created_at')
+                        .eq('status', 'active').order('created_at', { ascending: false }).limit(20),
+                    supabase.from('watchlist').select('ticker, sector'),
+                ]);
+
+                if (!isMounted) return;
+
+                const config = configRes.data ? {
+                    id: configRes.data.id,
+                    total_capital: Number(configRes.data.total_capital),
+                    max_position_pct: Number(configRes.data.max_position_pct),
+                    max_total_exposure_pct: Number(configRes.data.max_total_exposure_pct),
+                    max_sector_exposure_pct: Number(configRes.data.max_sector_exposure_pct),
+                    max_concurrent_positions: configRes.data.max_concurrent_positions,
+                    risk_per_trade_pct: Number(configRes.data.risk_per_trade_pct),
+                    kelly_fraction: Number(configRes.data.kelly_fraction),
+                } as PortfolioConfig : null;
+
+                const positions = (positionsRes.data || []) as Position[];
+
+                // Build sector map from watchlist
+                const sectorMap: Record<string, string> = {};
+                (watchlistRes.data || []).forEach((w: any) => {
+                    if (w.ticker && w.sector) sectorMap[w.ticker] = w.sector;
+                });
+
+                const activeSignals: ActiveSignalSummary[] = (signalsRes.data || []).map((s: any) => ({
+                    ticker: s.ticker,
+                    signal_type: s.signal_type,
+                    confidence_score: s.confidence_score,
+                    thesis: s.thesis,
+                    target_price: s.target_price,
+                    stop_loss: s.stop_loss,
+                    created_at: s.created_at,
+                }));
+
+                setPortfolio({ config, positions, sectorMap, activeSignals });
+            } catch (err) {
+                console.error('[AnalystChat] Failed to fetch portfolio context:', err);
+            } finally {
+                if (isMounted) setPortfolioLoading(false);
+            }
+        }
+
+        fetchPortfolio();
+        return () => { isMounted = false; };
+    }, [isOpen]);
+
+    // Fetch ticker-specific context if we have an active ticker
     useEffect(() => {
         let isMounted = true;
 
@@ -90,11 +146,9 @@ function AnalystChatInner() {
 
             setHasLoadedContext(false);
             try {
-                // Fetch quote
                 const q = await MarketDataService.getQuote(activeTicker);
                 if (isMounted) setQuote(q);
 
-                // Fetch recent events (like in StockAnalysis)
                 const { data: events } = await supabase
                     .from('market_events')
                     .select('*')
@@ -102,7 +156,6 @@ function AnalystChatInner() {
                     .order('detected_at', { ascending: false })
                     .limit(5);
 
-                // Fetch latest signal for bias/fundamentals
                 const { data: signal } = await supabase
                     .from('signals')
                     .select('agent_outputs')
@@ -132,7 +185,6 @@ function AnalystChatInner() {
     }, [activeTicker, isOpen]);
 
     const [messages, setMessages] = useState<ChatMessage[]>(() => {
-        // Restore from sessionStorage on mount
         try {
             const stored = sessionStorage.getItem(`sentinel_chat_${ticker}`);
             if (stored) {
@@ -182,26 +234,107 @@ function AnalystChatInner() {
         }
     }, [messages, ticker]);
 
-    // Auto-scroll to bottom when new messages arrive
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
 
-    // Focus input when chat opens
     useEffect(() => {
         if (isOpen) {
             setTimeout(() => inputRef.current?.focus(), 300);
         }
     }, [isOpen]);
 
-    // Build rich context string from current page state
-    const buildContext = useCallback(() => {
+    // ─── Build Portfolio Context ─────────────────────────────────────────────
+
+    const buildPortfolioContext = useCallback((): string => {
+        if (!portfolio) return '';
+        const parts: string[] = [];
+        const { config, positions, sectorMap, activeSignals } = portfolio;
+
+        const openPositions = positions.filter(p => p.status === 'open');
+        const closedPositions = positions.filter(p => p.status === 'closed');
+        const totalCapital = config?.total_capital ?? 10000;
+
+        parts.push('=== PORTFOLIO SNAPSHOT ===');
+        parts.push(`Total Capital: ${formatPrice(totalCapital)}`);
+        parts.push(`Risk Limits: Max ${config?.max_position_pct ?? 10}% per position, ${config?.max_total_exposure_pct ?? 50}% total exposure, ${config?.max_sector_exposure_pct ?? 25}% per sector`);
+
+        // Open positions with exposure
+        if (openPositions.length > 0) {
+            let totalExposure = 0;
+            let unrealizedPnl = 0;
+
+            parts.push(`\nOPEN POSITIONS (${openPositions.length}):`);
+            for (const pos of openPositions) {
+                const size = getPositionExposure(pos);
+                totalExposure += size;
+                const currency = inferCurrency(pos.ticker);
+                const pct = totalCapital > 0 ? (size / totalCapital * 100) : 0;
+                const sector = sectorMap[pos.ticker] || sectorMap[pos.ticker.replace('.L', '')] || 'Unknown';
+
+                // Approximate P&L using entry price (no live quotes in this context)
+                const entryPrice = pos.entry_price ?? 0;
+                const shares = pos.shares ?? 0;
+
+                parts.push(`  ${pos.ticker} | ${pos.side.toUpperCase()} | ${shares} shares @ ${formatPrice(entryPrice, currency)} | Size: ${formatPrice(size, currency)} (${pct.toFixed(1)}%) | Sector: ${sector}`);
+            }
+
+            // Sector allocation breakdown
+            const sectorExposure: Record<string, number> = {};
+            for (const pos of openPositions) {
+                const sector = sectorMap[pos.ticker] || sectorMap[pos.ticker.replace('.L', '')] || 'Other';
+                const size = getPositionExposure(pos);
+                sectorExposure[sector] = (sectorExposure[sector] || 0) + size;
+            }
+
+            parts.push(`\nSECTOR ALLOCATION:`);
+            for (const [sector, exposure] of Object.entries(sectorExposure).sort((a, b) => b[1] - a[1])) {
+                const pct = totalCapital > 0 ? (exposure / totalCapital * 100) : 0;
+                const overLimit = pct > (config?.max_sector_exposure_pct ?? 25);
+                parts.push(`  ${sector}: ${formatPrice(exposure)} (${pct.toFixed(1)}%)${overLimit ? ' ⚠️ OVER LIMIT' : ''}`);
+            }
+
+            const exposurePct = totalCapital > 0 ? (totalExposure / totalCapital * 100) : 0;
+            const overTotalLimit = exposurePct > (config?.max_total_exposure_pct ?? 50);
+            parts.push(`\nTOTAL EXPOSURE: ${formatPrice(totalExposure)} (${exposurePct.toFixed(1)}% of capital)${overTotalLimit ? ' ⚠️ OVER LIMIT' : ''}`);
+            parts.push(`CASH AVAILABLE: ${formatPrice(totalCapital - totalExposure)} (${(100 - exposurePct).toFixed(1)}%)`);
+
+            // Realized P&L from closed positions
+            if (closedPositions.length > 0) {
+                const realizedPnl = closedPositions.reduce((sum, p) => sum + (p.realized_pnl ?? 0), 0);
+                const wins = closedPositions.filter(p => (p.realized_pnl ?? 0) > 0).length;
+                const losses = closedPositions.filter(p => (p.realized_pnl ?? 0) < 0).length;
+                parts.push(`\nCLOSED TRADES: ${closedPositions.length} (${wins}W/${losses}L) | Realized P&L: ${formatPrice(realizedPnl)}`);
+            }
+        } else {
+            parts.push('\nNo open positions.');
+        }
+
+        // Active signals (high-conviction opportunities)
+        if (activeSignals.length > 0) {
+            parts.push(`\nACTIVE SIGNALS (${activeSignals.length}):`);
+            for (const sig of activeSignals.slice(0, 10)) {
+                const target = sig.target_price ? formatPrice(sig.target_price) : 'N/A';
+                const stop = sig.stop_loss ? formatPrice(sig.stop_loss) : 'N/A';
+                parts.push(`  ${sig.ticker} | ${sig.signal_type} | Confidence: ${sig.confidence_score}/100 | Target: ${target} | Stop: ${stop}`);
+                if (sig.thesis) parts.push(`    Thesis: ${sig.thesis.slice(0, 120)}${sig.thesis.length > 120 ? '...' : ''}`);
+            }
+        }
+
+        parts.push('=== END PORTFOLIO ===');
+        return parts.join('\n');
+    }, [portfolio]);
+
+    // ─── Build Ticker Context ────────────────────────────────────────────────
+
+    const buildTickerContext = useCallback((): string => {
+        if (!activeTicker) return '';
         const parts: string[] = [];
 
-        parts.push(`TICKER: ${ticker}`);
+        parts.push(`\n=== ACTIVE TICKER: ${ticker} ===`);
 
         if (quote) {
-            parts.push(`CURRENT PRICE: $${quote.price != null ? Number(quote.price).toFixed(2) : 'N/A'} | CHANGE: ${quote.changePercent != null ? Number(quote.changePercent).toFixed(2) : 'N/A'}%`);
+            parts.push(`PRICE: $${quote.price != null ? Number(quote.price).toFixed(2) : 'N/A'} | CHANGE: ${quote.changePercent != null ? Number(quote.changePercent).toFixed(2) : 'N/A'}%`);
             if (quote.volume) parts.push(`VOLUME: ${quote.volume.toLocaleString()}`);
         }
 
@@ -238,8 +371,11 @@ function AnalystChatInner() {
             });
         }
 
+        parts.push(`=== END TICKER ===`);
         return parts.join('\n');
-    }, [ticker, tickerAnalysis, quote]);
+    }, [ticker, activeTicker, tickerAnalysis, quote]);
+
+    // ─── Send Message ────────────────────────────────────────────────────────
 
     const handleSend = async () => {
         const trimmed = input.trim();
@@ -275,8 +411,13 @@ function AnalystChatInner() {
                         systemResponse = `**Risk Profile for ${ticker}:**\n- Volatility (Beta): ${tickerAnalysis?.fundamentals?.beta || 'Unknown'}\n- Recent Events Severity: ${severitySum} (Cumulative)\n- AI Bias Confidence: ${tickerAnalysis?.biasWeights?.overall_score || 'Unknown'}/100\n\n*Note: This is a simulated risk profile based on current context.*`;
                         break;
                     }
+                    case '/portfolio': {
+                        const ctx = buildPortfolioContext();
+                        systemResponse = ctx || 'No portfolio data loaded. Try reopening the chat.';
+                        break;
+                    }
                     case '/help':
-                        systemResponse = `**Available Commands:**\n- \`/screen [criteria]\`: Run a custom market screen\n- \`/compare [ticker]\`: Compare current active ticker with another\n- \`/risk\`: Get a quick risk summary for the current ticker\n- \`/clear\`: Clear the chat history`;
+                        systemResponse = `**Available Commands:**\n- \`/screen [criteria]\`: Run a custom market screen\n- \`/compare [ticker]\`: Compare current active ticker with another\n- \`/risk\`: Get a quick risk summary for the current ticker\n- \`/portfolio\`: Show raw portfolio snapshot\n- \`/clear\`: Clear the chat history`;
                         break;
                     case '/clear':
                         setMessages([]);
@@ -292,11 +433,12 @@ function AnalystChatInner() {
                     timestamp: new Date()
                 }]);
                 setIsLoading(false);
-                return; // Early return for slash commands
+                return;
             }
             // --- END SLASH COMMANDS ---
 
-            const context = buildContext();
+            const portfolioContext = buildPortfolioContext();
+            const tickerContext = buildTickerContext();
 
             // Build conversation history for context
             const historyBlock = messages.slice(-6).map(m =>
@@ -304,85 +446,76 @@ function AnalystChatInner() {
             ).join('\n');
 
             const prompt = `
-You are Sentinel's AI Stock Analyst. You are helping the user analyze ${ticker}.
+You are Sentinel's AI Trading Analyst. You have FULL access to the user's live portfolio data and active trading signals.
+${activeTicker ? `The user is currently viewing ${ticker}.` : 'The user is in global market mode.'}
 
-CURRENT MARKET CONTEXT:
-${context}
+${portfolioContext}
+
+${tickerContext}
 
 ${historyBlock ? `CONVERSATION HISTORY:\n${historyBlock}\n` : ''}
 USER'S QUESTION: ${trimmed}
 
 INSTRUCTIONS:
-1. Respond conversationally but with precision. Reference specific data points from the context above when relevant. 
-2. Keep responses concise (2-4 paragraphs max). If the user asks about something not in the context, say so honestly.
-3. If the user explicitly asks to log a trade (e.g., "I bought NVDA at 120", "Add my TSLA short to positions"), extract the details (ticker, price, shares, side) and include an \`action\` of type \`add_position\`. Default to LONG side and 100 shares if unspecified unless the context implies otherwise.
-4. If the user explicitly asks to add a journal entry or note, include an \`action\` of type \`add_journal_entry\` with a summarized \`content\` and appropriate tags.
+1. You have the user's COMPLETE portfolio state above — positions, sector allocation, exposure limits, P&L, and active signals. Use this data to give specific, quantitative answers.
+2. When asked about exposure, concentration, or risk — reference their ACTUAL numbers (sector %, position sizes, limit breaches).
+3. When asked about rotation opportunities or high-conviction finds — reference their ACTIVE SIGNALS with confidence scores and theses. Also use your grounded search capability to find current market opportunities.
+4. Keep responses concise (2-4 paragraphs). Be direct with numbers and specific tickers.
+5. If the user explicitly asks to log a trade, extract the details and include them in your response with the prefix "[ACTION:ADD_POSITION]" followed by ticker, price, shares, side.
+6. If the user asks about something not in the provided context, use your knowledge and grounded search to answer.
+7. Do NOT add financial disclaimers. Be opinionated and direct — this is a trading intelligence system.
 `;
 
             const result = await GeminiService.generate<any>({
                 prompt,
                 requireGroundedSearch: true,
-                responseSchema: ChatbotResponseSchema
+                temperature: 0.4,
             });
 
             if (!result.success || !result.data) {
-                throw new Error('Failed to generate response');
+                throw new Error(result.error || 'Failed to generate response');
             }
 
-            const parsed = result.data;
+            // With grounded search + no responseSchema, result.data is the raw text string
+            let messageText: string;
+            if (typeof result.data === 'string') {
+                messageText = result.data;
+            } else if (result.data.message) {
+                messageText = result.data.message;
+            } else {
+                messageText = JSON.stringify(result.data);
+            }
 
             const assistantMsg: ChatMessage = {
                 role: 'assistant',
-                content: parsed.message || 'Done.',
+                content: messageText,
                 timestamp: new Date(),
             };
             setMessages(prev => [...prev, assistantMsg]);
 
-            // Execute the action if present
-            if (parsed.action && parsed.action.type) {
+            // Check for action patterns in the response
+            if (messageText.includes('[ACTION:ADD_POSITION]')) {
                 try {
-                    const actionType = parsed.action.type;
-                    const payload = parsed.action.payload || {};
-                    let successMsg = '';
-
-                    if (actionType === 'add_position') {
-                        const targetTicker = (payload.ticker || ticker).toUpperCase();
+                    const actionMatch = messageText.match(/\[ACTION:ADD_POSITION\]\s*(\w+)\s*@?\s*\$?([\d.]+)\s*x?\s*(\d+)?\s*(LONG|SHORT)?/i);
+                    if (actionMatch) {
+                        const [, actionTicker, price, shares, side] = actionMatch;
                         await supabase.from('positions').insert({
-                            ticker: targetTicker,
-                            entry_price: typeof payload.entry_price === 'number' ? payload.entry_price : null,
-                            shares: typeof payload.shares === 'number' ? payload.shares : 100,
-                            side: payload.side === 'SHORT' ? 'SHORT' : 'LONG',
-                            status: 'OPEN',
-                            opened_at: new Date().toISOString()
+                            ticker: (actionTicker || ticker).toUpperCase(),
+                            entry_price: parseFloat(price || '0'),
+                            shares: parseInt(shares || '100', 10),
+                            side: (side || 'long').toLowerCase(),
+                            status: 'open',
+                            currency: inferCurrency((actionTicker || ticker).toUpperCase()),
+                            opened_at: new Date().toISOString(),
                         });
-                        successMsg = `Successfully added ${targetTicker} to your open positions.`;
-                    }
-                    else if (actionType === 'add_journal_entry') {
-                        const targetTicker = (payload.ticker || ticker).toUpperCase();
-                        await supabase.from('journal_entries').insert({
-                            ticker: targetTicker,
-                            content: payload.content || 'Added via AI Assistant',
-                            entry_type: payload.entry_type || 'MARKET_OBSERVATION',
-                            mood: payload.mood || 'NEUTRAL',
-                            tags: Array.isArray(payload.tags) ? payload.tags : ['ai_note']
-                        });
-                        successMsg = `Successfully saved journal entry for ${targetTicker}.`;
-                    }
-
-                    if (successMsg) {
                         setMessages(prev => [...prev, {
                             role: 'system',
-                            content: successMsg,
+                            content: `Position added: ${(actionTicker || ticker).toUpperCase()}`,
                             timestamp: new Date(),
                         }]);
                     }
                 } catch (actionErr: any) {
                     console.error('Failed to execute AI action:', actionErr);
-                    setMessages(prev => [...prev, {
-                        role: 'system',
-                        content: `Failed to execute action: ${actionErr.message}`,
-                        timestamp: new Date(),
-                    }]);
                 }
             }
 
@@ -405,28 +538,50 @@ INSTRUCTIONS:
         }
     };
 
+    // ─── Quick Questions (portfolio-aware) ───────────────────────────────────
+
+    const hasPositions = (portfolio?.positions.filter(p => p.status === 'open').length ?? 0) > 0;
+    const hasSignals = (portfolio?.activeSignals.length ?? 0) > 0;
+
     const quickQuestions = activeTicker ? [
         `What's the bull case for ${ticker}?`,
-        `Why is the bias ${tickerAnalysis?.biasWeights?.overall_bias || 'unknown'}?`,
-        `Compare ${ticker} vs MSFT`,
-        `What are the biggest risks?`,
+        `Am I already overexposed to ${ticker}'s sector?`,
+        `What are the biggest risks for ${ticker}?`,
+        `Should I add to my ${ticker} position or trim?`,
     ] : [
-        `Screen for undervalued tech stocks`,
-        `What is the overall market sentiment today?`,
-        `Find contagion risks in the financial sector`,
-        `Which sectors are showing extreme overreaction?`
-    ];
+        ...(hasPositions ? [
+            'Am I over-exposed to any single sector right now?',
+            'Which of my positions has the worst risk/reward?',
+        ] : []),
+        ...(hasSignals ? [
+            'What are the highest conviction signals I should act on?',
+            'Where should I rotate my capital based on active signals?',
+        ] : [
+            'What sectors are showing the most opportunity right now?',
+            'Find me high-conviction setups in the current market.',
+        ]),
+        ...(hasPositions ? [
+            'Give me a portfolio health check — concentration, risk, and suggestions.',
+        ] : []),
+        ...(!hasPositions && !hasSignals ? [
+            'What is the overall market sentiment today?',
+            'Which sectors are showing extreme overreaction?',
+        ] : []),
+    ].slice(0, 4);
 
     const availableCommands = [
         { cmd: '/screen', desc: 'Run a custom market screen', usage: '/screen ' },
         { cmd: '/compare', desc: 'Compare active ticker with another', usage: '/compare ' },
         { cmd: '/risk', desc: 'Get a quick risk summary', usage: '/risk' },
+        { cmd: '/portfolio', desc: 'Show portfolio snapshot', usage: '/portfolio' },
         { cmd: '/help', desc: 'Show available commands', usage: '/help' },
         { cmd: '/clear', desc: 'Clear the chat history', usage: '/clear' },
     ];
 
     const showCommandPalette = input.startsWith('/');
     const filteredCommands = availableCommands.filter(c => c.cmd.startsWith(input.split(' ')[0] || '/'));
+
+    // ─── Render ──────────────────────────────────────────────────────────────
 
     return (
         <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end">
@@ -487,7 +642,8 @@ INSTRUCTIONS:
                                 <div>
                                     <h3 className="text-sm font-semibold text-sentinel-100">AI Analyst</h3>
                                     <p className="text-[10px] text-sentinel-500 font-mono">
-                                        {activeTicker ? `${ticker} Context Active` : 'Global Market Mode'}
+                                        {activeTicker ? `${ticker} + Portfolio` : 'Portfolio Mode'}
+                                        {portfolioLoading ? ' (loading...)' : ''}
                                     </p>
                                 </div>
                             </div>
@@ -507,9 +663,13 @@ INSTRUCTIONS:
                                         <MessageSquare className="w-6 h-6 text-blue-400" />
                                     </div>
                                     <div>
-                                        <p className="text-sm text-sentinel-300 font-medium">Ask me anything about {activeTicker ? ticker : 'the market'}</p>
+                                        <p className="text-sm text-sentinel-300 font-medium">
+                                            {activeTicker ? `Ask about ${ticker} or your portfolio` : 'Ask about your portfolio or the market'}
+                                        </p>
                                         <p className="text-xs text-sentinel-500 mt-1">
-                                            {activeTicker ? 'I have full context on the current analysis, fundamentals, and recent events.' : 'I can help you screen stocks, compare assets, or answer general market questions.'}
+                                            {hasPositions
+                                                ? 'I can see your positions, exposure, signals, and sector allocation.'
+                                                : 'I can help you screen stocks, find opportunities, and analyze the market.'}
                                         </p>
                                     </div>
                                     <div className="space-y-2">
@@ -604,7 +764,7 @@ INSTRUCTIONS:
                                     value={input}
                                     onChange={(e) => setInput(e.target.value)}
                                     onKeyDown={handleKeyDown}
-                                    placeholder={`Ask about ${ticker}...`}
+                                    placeholder={activeTicker ? `Ask about ${ticker} or your portfolio...` : 'Ask about your portfolio or the market...'}
                                     disabled={isLoading}
                                     className="flex-1 bg-transparent text-sm text-sentinel-100 placeholder-sentinel-500 border-none outline-none"
                                 />
