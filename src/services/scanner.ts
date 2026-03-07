@@ -43,6 +43,7 @@ import { AdaptiveThresholds } from './adaptiveThresholds';
 import { DynamicCalibrator } from './dynamicCalibrator';
 import { PriceCorrelationMatrix } from './priceCorrelationMatrix';
 import { PortfolioAwareSizer } from './portfolioAwareSizer';
+import { DEFAULT_MIN_CONFIDENCE, DEFAULT_MIN_PRICE_DROP_PCT } from '@/config/constants';
 import type { MultiTimeframeResult } from './technicalAnalysis';
 
 export class ScannerService {
@@ -306,8 +307,8 @@ export class ScannerService {
             }
 
             // 3d-2. Adaptive Thresholds — adjust based on market regime
-            let adaptiveMinConfidence = 50;
-            let adaptiveMinPriceDrop = -5;
+            let adaptiveMinConfidence = DEFAULT_MIN_CONFIDENCE;
+            let adaptiveMinPriceDrop = DEFAULT_MIN_PRICE_DROP_PCT;
             try {
                 const thresholds = await AdaptiveThresholds.getThresholds();
                 adaptiveMinConfidence = thresholds.minConfidence;
@@ -1430,7 +1431,7 @@ If there is genuinely no major news, return: {"events": []}`,
 
             let signalsGenerated = 0;
 
-            if (analysis.success && analysis.data?.is_overreaction && analysis.data.confidence_score > 50) {
+            if (analysis.success && analysis.data?.is_overreaction && analysis.data.confidence_score > DEFAULT_MIN_CONFIDENCE) {
                 // 6. Run Sanity Check
                 const sanity = await AgentService.runSanityCheck(
                     ticker,
