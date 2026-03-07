@@ -372,6 +372,7 @@ export function UnifiedPortfolioView({ className = '' }: UnifiedPortfolioViewPro
                         <ImportHLCSV
                             onClose={() => setShowImportModal(false)}
                             existingTickers={openPositions.map(p => p.ticker)}
+                            existingPositions={openPositions}
                         />
                     )}
                 </AnimatePresence>
