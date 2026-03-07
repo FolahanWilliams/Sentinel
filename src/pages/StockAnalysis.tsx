@@ -14,7 +14,7 @@ import { MarketDataService } from '@/services/marketData';
 import { BiasBreakdown } from '@/components/analysis/BiasBreakdown';
 import { EventTimeline } from '@/components/analysis/EventTimeline';
 import { FundamentalSnapshot } from '@/components/analysis/FundamentalSnapshot';
-import { TradingViewChart } from '@/components/analysis/TradingViewChart';
+import { MultiTimeframeChart } from '@/components/analysis/MultiTimeframeChart';
 import { NewsFeed } from '@/components/dashboard/NewsFeed';
 import { formatPrice } from '@/utils/formatters';
 import type { Quote } from '@/types/market';
@@ -279,7 +279,7 @@ export function StockAnalysis() {
                     </motion.div>
 
                     {/* TradingView Interactive Chart */}
-                    <TradingViewChart ticker={activeTicker} height={600} />
+                    <MultiTimeframeChart ticker={activeTicker} height={600} />
 
                     {/* Analysis Grid */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

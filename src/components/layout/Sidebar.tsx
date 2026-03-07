@@ -21,6 +21,7 @@ import {
     BookOpen,
     Newspaper,
     Briefcase,
+    BarChart3,
     ChevronLeft,
     ChevronRight,
     LogOut,
@@ -34,6 +35,7 @@ const NAV_ITEMS = [
     { to: '/scanner', icon: Radar, label: 'Scanner' },
     { to: '/research', icon: Microscope, label: 'Research' },
     { to: '/backtest', icon: FlaskConical, label: 'Backtest' },
+    { to: '/performance', icon: BarChart3, label: 'Performance' },
     { to: '/journal', icon: BookOpen, label: 'Journal' },
     { to: '/settings', icon: Settings, label: 'Settings' },
 ] as const;

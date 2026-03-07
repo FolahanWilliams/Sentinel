@@ -935,3 +935,55 @@ body {
     display: none !important;
   }
 }
+
+/* ===========================
+   MOBILE-FIRST RESPONSIVE
+   =========================== */
+
+/* Safe area for mobile bottom nav (notch devices) */
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Mobile: Better touch targets */
+@media (max-width: 767px) {
+  /* Increase tap targets on mobile */
+  button, a, select, input {
+    min-height: 36px;
+  }
+
+  /* Tables scroll horizontally */
+  table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Full-width cards on mobile */
+  .card, .glass-panel {
+    border-radius: 12px;
+  }
+
+  /* Reduce padding on mobile */
+  .card {
+    padding: 12px;
+  }
+
+  /* Hide overflow on smaller screens */
+  .mobile-scroll-x {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .mobile-scroll-x::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Tablet: Adjust layout */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .card {
+    padding: 16px;
+  }
+}
