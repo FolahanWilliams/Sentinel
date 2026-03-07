@@ -13,7 +13,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageSquare, X, Send, Loader2, Sparkles, Bot, User, CheckCircle2, Eye, Radar, BookOpen } from 'lucide-react';
+import { MessageSquare, X, Send, Loader2, Sparkles, Bot, User, CheckCircle2 } from 'lucide-react';
 import { GeminiService } from '@/services/gemini';
 import { supabase } from '@/config/supabase';
 import { useChat } from '@/contexts/ChatContext';
@@ -685,7 +685,7 @@ INSTRUCTIONS:
                 // ACTION: Add to Watchlist
                 if (messageText.includes('[ACTION:ADD_WATCHLIST]')) {
                     const watchMatch = messageText.match(/\[ACTION:ADD_WATCHLIST\]\s*(\w+(?:\.\w+)?)/i);
-                    if (watchMatch) {
+                    if (watchMatch?.[1]) {
                         const watchTicker = watchMatch[1].toUpperCase();
                         await supabase.from('watchlist').upsert(
                             { ticker: watchTicker, is_active: true, sector: 'Other', company_name: watchTicker } as any,
@@ -702,7 +702,7 @@ INSTRUCTIONS:
                 // ACTION: Run Scanner
                 if (messageText.includes('[ACTION:RUN_SCAN]')) {
                     const scanMatch = messageText.match(/\[ACTION:RUN_SCAN\]\s*(\w+(?:\.\w+)?)/i);
-                    if (scanMatch) {
+                    if (scanMatch?.[1]) {
                         const scanTicker = scanMatch[1].toUpperCase();
                         // Navigate to scanner with the ticker pre-filled
                         setMessages(prev => [...prev, {
@@ -770,7 +770,7 @@ INSTRUCTIONS:
         `What are the biggest risks for ${ticker}?`,
         `Should I add to my ${ticker} position or trim?`,
     ].slice(0, 4) : [
-        ...(distressedPositions.length > 0 ? [
+        ...(distressedPositions.length > 0 && distressedPositions[0] ? [
             `My ${distressedPositions[0].ticker} position is underwater — should I cut or hold?`,
         ] : []),
         ...(hasPositions ? [
