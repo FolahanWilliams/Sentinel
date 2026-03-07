@@ -80,7 +80,7 @@ export const ScanConfiguration: React.FC = () => {
                         <input
                             type="number"
                             value={localSettings.interval_minutes}
-                            onChange={(e) => setLocalSettings({ ...localSettings, interval_minutes: parseInt(e.target.value) || 60 })}
+                            onChange={(e) => setLocalSettings({ ...localSettings, interval_minutes: parseInt(e.target.value) || 5 })}
                             className="w-full bg-[#1a1a1a] border border-gray-700 text-white rounded-lg px-4 py-2 focus:outline-none focus:border-indigo-500"
                         />
                     </div>
@@ -91,7 +91,7 @@ export const ScanConfiguration: React.FC = () => {
                         <input
                             type="number"
                             value={localSettings.min_confidence}
-                            onChange={(e) => setLocalSettings({ ...localSettings, min_confidence: parseInt(e.target.value) || 70 })}
+                            onChange={(e) => setLocalSettings({ ...localSettings, min_confidence: parseInt(e.target.value) || 60 })}
                             className="w-full bg-[#1a1a1a] border border-gray-700 text-white rounded-lg px-4 py-2 focus:outline-none focus:border-indigo-500"
                         />
                     </div>

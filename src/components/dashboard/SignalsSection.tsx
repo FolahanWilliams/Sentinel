@@ -205,7 +205,8 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
     const handleCloseSignal = useCallback(async (signalId: string) => {
         setClosingId(signalId);
         try {
-            await supabase.from('signals').update({ status: 'manually_closed' } as any).eq('id', signalId);
+            const { error } = await supabase.from('signals').update({ status: 'manually_closed' } as any).eq('id', signalId);
+            if (error) throw error;
             setSignals(prev => prev.filter(s => s.id !== signalId));
             setExpandedId(null);
         } catch (err) {
@@ -218,7 +219,8 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
     const handleSaveNotes = useCallback(async (signalId: string) => {
         setSavingNotes(true);
         try {
-            await supabase.from('signals').update({ user_notes: notesText } as any).eq('id', signalId);
+            const { error } = await supabase.from('signals').update({ user_notes: notesText } as any).eq('id', signalId);
+            if (error) throw error;
             setSignals(prev => prev.map(s => s.id === signalId ? { ...s, user_notes: notesText } : s));
             setNotesId(null);
         } catch (err) {
@@ -230,7 +232,8 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
 
     const handleMarkTriggered = useCallback(async (signalId: string) => {
         try {
-            await supabase.from('signals').update({ status: 'triggered' } as any).eq('id', signalId);
+            const { error } = await supabase.from('signals').update({ status: 'triggered' } as any).eq('id', signalId);
+            if (error) throw error;
             setSignals(prev => prev.map(s => s.id === signalId ? { ...s, status: 'triggered' as any } : s));
         } catch (err) {
             console.error('[SignalsSection] Failed to mark signal triggered:', err);

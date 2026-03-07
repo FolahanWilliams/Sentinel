@@ -118,8 +118,8 @@ export function PortfolioOverview() {
         sectorExposure[sector] = (sectorExposure[sector] || 0) + (Number(p.position_size_usd) || 0);
     });
 
-    const winCount = closedPositions.filter(p => (Number(p.realized_pnl) ?? 0) > 0).length;
-    const lossCount = closedPositions.filter(p => (Number(p.realized_pnl) ?? 0) <= 0).length;
+    const winCount = closedPositions.filter(p => (Number(p.realized_pnl) || 0) > 0).length;
+    const lossCount = closedPositions.filter(p => (Number(p.realized_pnl) || 0) <= 0).length;
 
     return (
         <div className="space-y-4">

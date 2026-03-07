@@ -73,7 +73,11 @@ export function WatchlistSection({ className = '' }: WatchlistSectionProps) {
     }, [fetchQuotes]);
 
     const handleRemove = async (id: string) => {
-        await supabase.from('watchlist').update({ is_active: false }).eq('id', id);
+        const { error } = await supabase.from('watchlist').update({ is_active: false }).eq('id', id);
+        if (error) {
+            console.error('[WatchlistSection] Failed to remove ticker:', error);
+            return;
+        }
         removeTicker(id);
     };
 
