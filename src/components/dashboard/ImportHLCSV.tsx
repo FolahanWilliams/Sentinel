@@ -4,12 +4,14 @@
  * Drag-and-drop CSV import for HL portfolio exports.
  * Parses HL's standard format, shows a preview table, and batch-inserts into positions.
  *
- * Improvements over naive CSV import:
+ * Features:
  * - Auto-detects pence vs pounds in Price column (HL often exports in pence)
  * - Duplicate detection: warns if ticker already exists in open positions
  * - Select all / deselect all toggle
- * - GBP display for UK stocks (.L suffix)
+ * - GBP→USD conversion using HL's own exchange rate from the CSV footer
+ * - Auto-appends .L suffix for UK-native stocks (non-*R)
  * - Editable quantity and price fields in preview
+ * - Auto-updates portfolio total capital from HL account summary
  */
 
 import { useState, useCallback, useRef } from 'react';
@@ -23,18 +25,25 @@ interface ParsedHolding {
     ticker: string;
     name: string;
     quantity: number;
-    price: number;
+    price: number;       // Entry price (cost basis per share) — in target currency (USD)
     value: number;
-    cost: number;
+    cost: number;        // Total cost basis — in target currency (USD)
     pnl: number;
     pnlPct: number;
     selected: boolean;
     isDuplicate: boolean;
+    isConverted: boolean; // true if *R stock (HL converted from foreign currency to GBP)
 }
 
 interface ImportHLCSVProps {
     onClose: () => void;
     existingTickers?: string[];
+}
+
+interface AccountSummary {
+    stockValue: number;
+    totalCash: number;
+    totalValue: number;
 }
 
 /** Safe column accessor — returns '' for missing indices */
@@ -55,28 +64,10 @@ function findHeaderRow(lines: string[]): number {
     const headerKeywords = ['code', 'ticker', 'tidm', 'stock', 'units held', 'price', 'value', 'cost'];
     for (let i = 0; i < Math.min(lines.length, 20); i++) {
         const lower = (lines[i] ?? '').toLowerCase();
-        // A header row should match at least 3 of our keywords
         const matches = headerKeywords.filter(kw => lower.includes(kw));
         if (matches.length >= 3) return i;
     }
     return -1;
-}
-
-/**
- * Parse HL CSV export. Handles the actual HL "account-summary" format:
- *
- * Rows 1-10: Metadata (account name, client number, stock value, cash, etc.)
- * Row 11:    Header — Code, Stock, Units held, Price (pence), Value (£), Cost (£), Gain/loss (£), Gain/loss (%)
- * Rows 12+:  Data rows (one per holding)
- * Last row:  "Totals" summary row
- * Footer:    Disclaimers and exchange rate notes
- *
- * Also supports simpler CSV formats with headers on row 1.
- */
-interface AccountSummary {
-    stockValue: number;
-    totalCash: number;
-    totalValue: number;
 }
 
 /**
@@ -91,43 +82,85 @@ function parseAccountSummary(lines: string[], headerIdx: number): AccountSummary
     for (let i = 0; i < headerIdx; i++) {
         const cols = parseCSVLine(lines[i] ?? '');
         const label = (cols[0] ?? '').toLowerCase().replace(/[:]/g, '').trim();
-        // Value is typically in column B (index 1) or C (index 2)
         const val = parseNumber(cols[2] ?? '') || parseNumber(cols[1] ?? '');
         if (label === 'stock value') summary.stockValue = val;
         else if (label === 'total cash') summary.totalCash = val;
         else if (label === 'amount available to invest' && summary.totalCash === 0) summary.totalCash = val;
         else if (label === 'total value') summary.totalValue = val;
     }
-    // Fallback: compute total from parts if not found
     if (summary.totalValue === 0 && summary.stockValue > 0) {
         summary.totalValue = summary.stockValue + summary.totalCash;
     }
     return summary;
 }
 
-function parseHLCSV(text: string, existingTickers: Set<string>): { holdings: ParsedHolding[]; errors: string[]; accountSummary: AccountSummary | null } {
+/**
+ * Parse GBP/USD exchange rate from HL CSV footer.
+ *
+ * HL includes a line like:
+ *   "- US and Canadian stocks: 1.3411USD to 100 pence. Exchange rate correct at 07/03/2026"
+ *
+ * This means 100 pence (= £1) = 1.3411 USD, so GBP→USD rate = 1.3411.
+ */
+function parseExchangeRate(lines: string[]): number | null {
+    for (let i = lines.length - 1; i >= 0; i--) {
+        const line = (lines[i] ?? '').toLowerCase();
+        // Match patterns like "1.3411usd to 100 pence" or "1.34usd to 100p"
+        const match = line.match(/([\d.]+)\s*usd\s+to\s+100\s*p/);
+        if (match) {
+            const rate = parseFloat(match[1]!);
+            if (rate > 0 && rate < 10) return rate; // sanity check
+        }
+    }
+    return null;
+}
+
+interface ParseResult {
+    holdings: ParsedHolding[];
+    errors: string[];
+    accountSummary: AccountSummary | null;
+    exchangeRate: number | null;
+    isGBPSource: boolean;
+}
+
+/**
+ * Parse HL CSV export. Handles the actual HL "account-summary" format:
+ *
+ * Rows 1-10: Metadata (account name, client number, stock value, cash, etc.)
+ * Row 11:    Header — Code, Stock, Units held, Price (pence), Value (£), Cost (£), Gain/loss (£), Gain/loss (%)
+ * Rows 12+:  Data rows (one per holding)
+ * Last row:  "Totals" summary row
+ * Footer:    Disclaimers and exchange rate notes
+ *
+ * Currency handling:
+ * - Stocks marked with *R in the name column had their price converted to GBP by HL.
+ *   These are foreign (typically US) stocks → we convert back to USD using HL's own rate.
+ * - Non-*R stocks are UK-native → we append .L suffix and keep GBP values.
+ * - Account summary (total capital) is converted to USD.
+ */
+function parseHLCSV(text: string, existingTickers: Set<string>): ParseResult {
     const errors: string[] = [];
     const holdings: ParsedHolding[] = [];
 
     const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
     if (lines.length < 2) {
         errors.push('CSV file appears empty or has no data rows.');
-        return { holdings, errors, accountSummary: null };
+        return { holdings, errors, accountSummary: null, exchangeRate: null, isGBPSource: false };
     }
 
-    // Find the actual header row (HL has metadata rows before the data table)
     const headerIdx = findHeaderRow(lines);
     if (headerIdx === -1) {
         errors.push('Could not find the data header row. Expected columns like "Code", "Stock", "Units held", "Price", "Value", "Cost".');
-        return { holdings, errors, accountSummary: null };
+        return { holdings, errors, accountSummary: null, exchangeRate: null, isGBPSource: false };
     }
 
-    // Extract account summary from metadata rows above the header
     const accountSummary = parseAccountSummary(lines, headerIdx);
-
+    const exchangeRate = parseExchangeRate(lines);
     const headers = parseCSVLine(lines[headerIdx] ?? '').map(h => h.toLowerCase().trim());
 
-    // Map known HL column names to our fields
+    // Detect GBP source from headers (£ or pence in column names)
+    const isGBPSource = headers.some(h => h.includes('£') || h.includes('pence'));
+
     const colMap: Record<string, number | undefined> = {};
     const aliases: Record<string, string[]> = {
         ticker: ['code', 'ticker', 'tidm', 'epic', 'symbol'],
@@ -145,53 +178,64 @@ function parseHLCSV(text: string, existingTickers: Set<string>): { holdings: Par
         if (idx !== -1) colMap[field] = idx;
     }
 
-    // Validate minimum required columns
     if (colMap.ticker === undefined) {
         errors.push(`Could not find a Code/Ticker column in header row ${headerIdx + 1}. Found columns: ${headers.filter(h => h).join(', ')}`);
-        return { holdings, errors, accountSummary };
+        return { holdings, errors, accountSummary, exchangeRate, isGBPSource };
     }
     if (colMap.quantity === undefined && colMap.value === undefined) {
         errors.push('Could not find "Units held" or "Value" columns in CSV header.');
-        return { holdings, errors, accountSummary };
+        return { holdings, errors, accountSummary, exchangeRate, isGBPSource };
     }
 
-    // Detect if price column is in pence
     const priceInPence = headers.some(h => h.includes('pence') || h.includes('(p)'));
 
-    // Parse data rows (start after header)
+    // Use exchange rate for GBP→USD conversion (fallback to 1.0 if not found = no conversion)
+    const gbpToUsd = (isGBPSource && exchangeRate) ? exchangeRate : 1;
+
     const tickerIdx = colMap.ticker;
     for (let i = headerIdx + 1; i < lines.length; i++) {
         const cols = parseCSVLine(lines[i] ?? '');
         if (cols.length < 2) continue;
 
         const rawTicker = getCol(cols, tickerIdx);
-        // Skip empty rows, totals row, and footer text
         if (!rawTicker) continue;
         const lowerTicker = rawTicker.toLowerCase().trim();
         if (lowerTicker === 'totals' || lowerTicker === 'total' || lowerTicker === 'cash') continue;
-        // Skip footer rows (HL has disclaimers like "Shares are valued at...")
         if (lowerTicker.startsWith('shares are') || lowerTicker.startsWith('*') || lowerTicker.startsWith('-')) continue;
 
-        // Also check the Stock/name column for "Totals"
-        const nameVal = getCol(cols, colMap.name).toLowerCase().trim();
-        if (nameVal === 'totals' || nameVal === 'total') continue;
+        const nameVal = getCol(cols, colMap.name);
+        if (nameVal.toLowerCase().trim() === 'totals' || nameVal.toLowerCase().trim() === 'total') continue;
 
-        const ticker = rawTicker.toUpperCase().trim();
-        // Skip if it doesn't look like a ticker (must be 1-8 alphanumeric chars with optional dots)
-        if (!/^[A-Z0-9.]{1,10}$/.test(ticker)) continue;
+        const baseTicker = rawTicker.toUpperCase().trim();
+        if (!/^[A-Z0-9.]{1,10}$/.test(baseTicker)) continue;
 
-        const name = getCol(cols, colMap.name) || ticker;
+        // Detect *R flag — HL marks stocks whose price was converted from foreign currency to GBP
+        const isConverted = nameVal.includes('*R');
+
+        // For GBP-source CSVs: non-*R stocks are UK-native → append .L
+        // *R stocks are foreign (usually US) → keep without .L
+        const ticker = (isGBPSource && !isConverted) ? `${baseTicker}.L` : baseTicker;
+
+        const name = nameVal.replace(/\s*\*\d+\s*/g, '').replace(/\s*\*R\s*/g, '').trim() || ticker;
         const quantity = parseNumber(getCol(cols, colMap.quantity));
         let price = parseNumber(getCol(cols, colMap.price));
-        const value = parseNumber(getCol(cols, colMap.value));
-        const cost = parseNumber(getCol(cols, colMap.cost));
+        let value = parseNumber(getCol(cols, colMap.value));
+        let cost = parseNumber(getCol(cols, colMap.cost));
 
-        // Convert pence to pounds if detected
+        // Convert pence to pounds
         if (priceInPence && price > 0) {
             price = price / 100;
         }
 
-        // Use explicit gain/loss columns if available
+        // For *R stocks (foreign stocks with GBP-converted values): convert to USD
+        // For non-*R stocks (UK-native): keep in GBP (market quotes in GBP will match)
+        if (isConverted && gbpToUsd > 1) {
+            value = value * gbpToUsd;
+            cost = cost * gbpToUsd;
+            // price is per-share in pence→pounds, also needs conversion
+            price = price * gbpToUsd;
+        }
+
         const gainLoss = parseNumber(getCol(cols, colMap.gainLoss));
         const gainLossPct = parseNumber(getCol(cols, colMap.gainLossPct));
 
@@ -200,17 +244,16 @@ function parseHLCSV(text: string, existingTickers: Set<string>): { holdings: Par
             continue;
         }
 
-        // Entry price from cost basis (more accurate than current price for P&L tracking)
         const effectiveCost = cost || value;
         const effectiveQty = quantity || (price > 0 ? (value || cost) / price : 0);
         const entryPrice = effectiveQty > 0 ? effectiveCost / effectiveQty : price;
         const pnl = gainLoss || (value - cost);
         const pnlPct = gainLossPct || (cost > 0 ? ((value - cost) / cost) * 100 : 0);
-        const isDuplicate = existingTickers.has(ticker) || existingTickers.has(`${ticker}.L`);
+        const isDuplicate = existingTickers.has(ticker) || existingTickers.has(baseTicker) || existingTickers.has(`${baseTicker}.L`);
 
         holdings.push({
             ticker,
-            name: name.trim(),
+            name,
             quantity: effectiveQty,
             price: entryPrice,
             value: value || cost,
@@ -219,6 +262,7 @@ function parseHLCSV(text: string, existingTickers: Set<string>): { holdings: Par
             pnlPct,
             selected: !isDuplicate,
             isDuplicate,
+            isConverted,
         });
     }
 
@@ -231,7 +275,13 @@ function parseHLCSV(text: string, existingTickers: Set<string>): { holdings: Par
         errors.push(`${dupeCount} holding${dupeCount > 1 ? 's' : ''} already exist in your portfolio (deselected by default).`);
     }
 
-    return { holdings, errors, accountSummary: accountSummary.totalValue > 0 ? accountSummary : null };
+    return {
+        holdings,
+        errors,
+        accountSummary: accountSummary.totalValue > 0 ? accountSummary : null,
+        exchangeRate,
+        isGBPSource,
+    };
 }
 
 /** Parse a single CSV line handling quoted fields */
@@ -276,6 +326,7 @@ export function ImportHLCSV({ onClose, existingTickers = [] }: ImportHLCSVProps)
     const [importResult, setImportResult] = useState<{ success: number; failed: number; replaced: number; capitalUpdated: number | null }>({ success: 0, failed: 0, replaced: 0, capitalUpdated: null });
     const [replaceExisting, setReplaceExisting] = useState(false);
     const [accountSummary, setAccountSummary] = useState<AccountSummary | null>(null);
+    const [exchangeRate, setExchangeRate] = useState<number | null>(null);
     const [dragActive, setDragActive] = useState(false);
     const fileRef = useRef<HTMLInputElement>(null);
 
@@ -290,11 +341,12 @@ export function ImportHLCSV({ onClose, existingTickers = [] }: ImportHLCSVProps)
         const reader = new FileReader();
         reader.onload = (e) => {
             const text = e.target?.result as string;
-            const { holdings: parsed, errors, accountSummary: summary } = parseHLCSV(text, existingSet);
-            setHoldings(parsed);
-            setParseErrors(errors);
-            setAccountSummary(summary);
-            if (parsed.length > 0) setStep('preview');
+            const result = parseHLCSV(text, existingSet);
+            setHoldings(result.holdings);
+            setParseErrors(result.errors);
+            setAccountSummary(result.accountSummary);
+            setExchangeRate(result.exchangeRate);
+            if (result.holdings.length > 0) setStep('preview');
         };
         reader.readAsText(file);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -326,7 +378,6 @@ export function ImportHLCSV({ onClose, existingTickers = [] }: ImportHLCSVProps)
     const toggleReplaceDuplicates = () => {
         const next = !replaceExisting;
         setReplaceExisting(next);
-        // When enabling replace, auto-select all duplicates
         if (next) {
             setHoldings(prev => prev.map(h => h.isDuplicate ? { ...h, selected: true } : h));
         }
@@ -346,7 +397,6 @@ export function ImportHLCSV({ onClose, existingTickers = [] }: ImportHLCSVProps)
         setHoldings(prev => prev.map((h, i) => {
             if (i !== idx) return h;
             const updated = { ...h, [field]: num };
-            // Recalculate cost when quantity or price changes
             updated.cost = updated.quantity * updated.price;
             return updated;
         }));
@@ -364,7 +414,6 @@ export function ImportHLCSV({ onClose, existingTickers = [] }: ImportHLCSVProps)
         // If replacing duplicates, delete existing open positions for those tickers first
         if (replaceExisting) {
             const dupTickers = selected.filter(h => h.isDuplicate).map(h => h.ticker.toUpperCase());
-            // Also check .L variants
             const allVariants = dupTickers.flatMap(t => t.endsWith('.L') ? [t, t.replace('.L', '')] : [t, `${t}.L`]);
 
             if (allVariants.length > 0) {
@@ -411,27 +460,29 @@ export function ImportHLCSV({ onClose, existingTickers = [] }: ImportHLCSVProps)
             success = rows.length;
         }
 
-        // Auto-update total capital from HL account summary
+        // Auto-update total capital from HL account summary (converted to USD)
         let capitalUpdated: number | null = null;
         if (accountSummary && accountSummary.totalValue > 0) {
+            const gbpToUsd = exchangeRate ?? 1;
+            const totalInUsd = Math.round(accountSummary.totalValue * gbpToUsd * 100) / 100;
+
             const { data: existing } = await supabase
                 .from('portfolio_config')
                 .select('id')
                 .limit(1)
                 .single();
 
-            const updateVal = Math.round(accountSummary.totalValue * 100) / 100;
             if (existing?.id) {
                 const { error: capErr } = await supabase
                     .from('portfolio_config')
-                    .update({ total_capital: updateVal })
+                    .update({ total_capital: totalInUsd })
                     .eq('id', existing.id);
-                if (!capErr) capitalUpdated = updateVal;
+                if (!capErr) capitalUpdated = totalInUsd;
             } else {
                 const { error: capErr } = await supabase
                     .from('portfolio_config')
-                    .insert({ total_capital: updateVal });
-                if (!capErr) capitalUpdated = updateVal;
+                    .insert({ total_capital: totalInUsd });
+                if (!capErr) capitalUpdated = totalInUsd;
             }
         }
 
@@ -517,7 +568,7 @@ export function ImportHLCSV({ onClose, existingTickers = [] }: ImportHLCSVProps)
 
                             <p className="text-[10px] text-sentinel-600 mt-4 leading-relaxed">
                                 Export from HL: My Accounts &rarr; Portfolio &rarr; Download CSV.
-                                Supports Ticker, Stock Name, Quantity, Price, Value, and Cost columns.
+                                GBP values are automatically converted to USD using the exchange rate from the CSV.
                             </p>
                         </motion.div>
                     )}
@@ -549,23 +600,40 @@ export function ImportHLCSV({ onClose, existingTickers = [] }: ImportHLCSVProps)
                                 </div>
                             )}
 
-                            {accountSummary && (
-                                <div className="mb-3 flex items-center gap-4 px-1">
+                            {/* Account summary + exchange rate banner */}
+                            <div className="mb-3 flex items-center gap-4 px-1 flex-wrap">
+                                {accountSummary && (
+                                    <>
+                                        <div className="flex flex-col">
+                                            <span className="text-[9px] text-sentinel-600 uppercase tracking-wider">Stock Value</span>
+                                            <span className="text-xs font-mono text-sentinel-300">{formatPrice(accountSummary.stockValue, 'GBP')}</span>
+                                        </div>
+                                        <div className="flex flex-col">
+                                            <span className="text-[9px] text-sentinel-600 uppercase tracking-wider">Cash</span>
+                                            <span className="text-xs font-mono text-sentinel-300">{formatPrice(accountSummary.totalCash, 'GBP')}</span>
+                                        </div>
+                                        <div className="flex flex-col">
+                                            <span className="text-[9px] text-sentinel-600 uppercase tracking-wider">Total (GBP)</span>
+                                            <span className="text-xs font-mono text-sentinel-300">{formatPrice(accountSummary.totalValue, 'GBP')}</span>
+                                        </div>
+                                    </>
+                                )}
+                                {exchangeRate && (
                                     <div className="flex flex-col">
-                                        <span className="text-[9px] text-sentinel-600 uppercase tracking-wider">Stock Value</span>
-                                        <span className="text-xs font-mono text-sentinel-300">{formatPrice(accountSummary.stockValue)}</span>
+                                        <span className="text-[9px] text-sentinel-600 uppercase tracking-wider">GBP/USD Rate</span>
+                                        <span className="text-xs font-mono text-blue-400">{exchangeRate.toFixed(4)}</span>
                                     </div>
-                                    <div className="flex flex-col">
-                                        <span className="text-[9px] text-sentinel-600 uppercase tracking-wider">Cash</span>
-                                        <span className="text-xs font-mono text-sentinel-300">{formatPrice(accountSummary.totalCash)}</span>
+                                )}
+                                {accountSummary && exchangeRate && (
+                                    <div className="flex flex-col ml-auto text-right">
+                                        <span className="text-[9px] text-sentinel-600 uppercase tracking-wider">Capital (USD)</span>
+                                        <span className="text-xs font-mono text-emerald-400 font-medium">{formatPrice(accountSummary.totalValue * exchangeRate)}</span>
                                     </div>
-                                    <div className="flex flex-col">
-                                        <span className="text-[9px] text-sentinel-600 uppercase tracking-wider">Total Value</span>
-                                        <span className="text-xs font-mono text-emerald-400 font-medium">{formatPrice(accountSummary.totalValue)}</span>
-                                    </div>
-                                    <span className="text-[9px] text-sentinel-600 ml-auto">Capital will be updated on import</span>
-                                </div>
-                            )}
+                                )}
+                                {accountSummary && !exchangeRate && (
+                                    <span className="text-[9px] text-amber-500 ml-auto">No exchange rate found in CSV — values stored as-is</span>
+                                )}
+                            </div>
 
                             <div className="overflow-x-auto rounded-lg border border-sentinel-800/50">
                                 <table className="w-full text-sm">
@@ -588,62 +656,65 @@ export function ImportHLCSV({ onClose, existingTickers = [] }: ImportHLCSVProps)
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {holdings.map((h, i) => (
-                                            <tr
-                                                key={i}
-                                                className={`border-b border-sentinel-800/20 transition-colors ${
-                                                    h.selected ? 'hover:bg-sentinel-800/30' : 'opacity-40'
-                                                } ${h.isDuplicate ? 'ring-1 ring-inset ring-amber-500/20' : ''}`}
-                                            >
-                                                <td className="px-3 py-2">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={h.selected}
-                                                        onChange={() => toggleHolding(i)}
-                                                        className="accent-emerald-500 cursor-pointer"
-                                                    />
-                                                </td>
-                                                <td className="px-3 py-2">
-                                                    <div className="flex items-center gap-1.5">
-                                                        <span className="font-mono font-bold text-sentinel-200">{h.ticker}</span>
-                                                        <button
-                                                            onClick={() => toggleSuffix(i)}
-                                                            className="px-1 py-0.5 text-[9px] font-mono bg-blue-500/10 text-blue-400 rounded ring-1 ring-blue-500/20 hover:bg-blue-500/20 transition-colors border-none cursor-pointer"
-                                                            title="Toggle .L suffix for London Stock Exchange"
-                                                        >
-                                                            {h.ticker.endsWith('.L') ? 'UK' : 'US'}
-                                                        </button>
-                                                        {h.isDuplicate && (
-                                                            <span className="px-1 py-0.5 text-[9px] bg-amber-500/10 text-amber-400 rounded ring-1 ring-amber-500/20" title="Already in portfolio">
-                                                                DUP
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                </td>
-                                                <td className="px-3 py-2 text-sentinel-400 text-xs max-w-[160px] truncate">{h.name}</td>
-                                                <td className="px-3 py-2 text-right">
-                                                    <input
-                                                        type="number"
-                                                        value={h.quantity}
-                                                        onChange={(e) => updateField(i, 'quantity', e.target.value)}
-                                                        className="w-16 text-right font-mono text-sentinel-300 bg-transparent border-b border-sentinel-700/50 focus:border-sentinel-500 outline-none text-sm py-0.5"
-                                                        step="any"
-                                                        min="0"
-                                                    />
-                                                </td>
-                                                <td className="px-3 py-2 text-right">
-                                                    <input
-                                                        type="number"
-                                                        value={Math.round(h.price * 100) / 100}
-                                                        onChange={(e) => updateField(i, 'price', e.target.value)}
-                                                        className="w-20 text-right font-mono text-sentinel-300 bg-transparent border-b border-sentinel-700/50 focus:border-sentinel-500 outline-none text-sm py-0.5"
-                                                        step="0.01"
-                                                        min="0"
-                                                    />
-                                                </td>
-                                                <td className="px-3 py-2 text-right font-mono text-sentinel-300">{formatPrice(h.cost)}</td>
-                                            </tr>
-                                        ))}
+                                        {holdings.map((h, i) => {
+                                            const currency = inferCurrency(h.ticker);
+                                            return (
+                                                <tr
+                                                    key={i}
+                                                    className={`border-b border-sentinel-800/20 transition-colors ${
+                                                        h.selected ? 'hover:bg-sentinel-800/30' : 'opacity-40'
+                                                    } ${h.isDuplicate ? 'ring-1 ring-inset ring-amber-500/20' : ''}`}
+                                                >
+                                                    <td className="px-3 py-2">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={h.selected}
+                                                            onChange={() => toggleHolding(i)}
+                                                            className="accent-emerald-500 cursor-pointer"
+                                                        />
+                                                    </td>
+                                                    <td className="px-3 py-2">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <span className="font-mono font-bold text-sentinel-200">{h.ticker}</span>
+                                                            <button
+                                                                onClick={() => toggleSuffix(i)}
+                                                                className="px-1 py-0.5 text-[9px] font-mono bg-blue-500/10 text-blue-400 rounded ring-1 ring-blue-500/20 hover:bg-blue-500/20 transition-colors border-none cursor-pointer"
+                                                                title="Toggle .L suffix for London Stock Exchange"
+                                                            >
+                                                                {h.ticker.endsWith('.L') ? 'UK' : 'US'}
+                                                            </button>
+                                                            {h.isDuplicate && (
+                                                                <span className="px-1 py-0.5 text-[9px] bg-amber-500/10 text-amber-400 rounded ring-1 ring-amber-500/20" title="Already in portfolio">
+                                                                    DUP
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-3 py-2 text-sentinel-400 text-xs max-w-[160px] truncate">{h.name}</td>
+                                                    <td className="px-3 py-2 text-right">
+                                                        <input
+                                                            type="number"
+                                                            value={h.quantity}
+                                                            onChange={(e) => updateField(i, 'quantity', e.target.value)}
+                                                            className="w-16 text-right font-mono text-sentinel-300 bg-transparent border-b border-sentinel-700/50 focus:border-sentinel-500 outline-none text-sm py-0.5"
+                                                            step="any"
+                                                            min="0"
+                                                        />
+                                                    </td>
+                                                    <td className="px-3 py-2 text-right">
+                                                        <input
+                                                            type="number"
+                                                            value={Math.round(h.price * 100) / 100}
+                                                            onChange={(e) => updateField(i, 'price', e.target.value)}
+                                                            className="w-20 text-right font-mono text-sentinel-300 bg-transparent border-b border-sentinel-700/50 focus:border-sentinel-500 outline-none text-sm py-0.5"
+                                                            step="0.01"
+                                                            min="0"
+                                                        />
+                                                    </td>
+                                                    <td className="px-3 py-2 text-right font-mono text-sentinel-300">{formatPrice(h.cost, currency)}</td>
+                                                </tr>
+                                            );
+                                        })}
                                     </tbody>
                                 </table>
                             </div>
@@ -697,8 +768,13 @@ export function ImportHLCSV({ onClose, existingTickers = [] }: ImportHLCSVProps)
                                 )}
                             </p>
                             {importResult.capitalUpdated !== null && (
-                                <p className="text-xs text-emerald-400 mb-4">
+                                <p className="text-xs text-emerald-400 mb-2">
                                     Total capital updated to {formatPrice(importResult.capitalUpdated)}
+                                </p>
+                            )}
+                            {exchangeRate && (
+                                <p className="text-[10px] text-sentinel-500 mb-4">
+                                    GBP/USD rate: {exchangeRate.toFixed(4)} (from HL export)
                                 </p>
                             )}
                             <button
