@@ -133,22 +133,25 @@ export class OutcomeTracker {
         console.log(`[OutcomeTracker] Updated ${updatedCount} outcomes.`);
 
         // Auto-trigger reflection when we have completed outcomes (every 10 completions)
+        // Fire-and-forget: run async to avoid blocking the scan pipeline
         if (updatedCount > 0) {
-            try {
-                const { count } = await supabase
-                    .from('signal_outcomes')
-                    .select('*', { count: 'exact', head: true })
-                    .neq('outcome', 'pending');
+            void (async () => {
+                try {
+                    const { count } = await supabase
+                        .from('signal_outcomes')
+                        .select('*', { count: 'exact', head: true })
+                        .neq('outcome', 'pending');
 
-                // Run reflection every 10 completed outcomes
-                if (count && count >= 5 && count % 10 < updatedCount) {
-                    console.log(`[OutcomeTracker] Triggering auto-reflection (${count} completed outcomes)...`);
-                    const reflection = await ReflectionAgent.runReflection();
-                    console.log(`[OutcomeTracker] Auto-reflection generated ${reflection.lessons.length} lessons from ${reflection.outcomes_analyzed} outcomes.`);
+                    // Run reflection every 10 completed outcomes
+                    if (count && count >= 5 && count % 10 < updatedCount) {
+                        console.log(`[OutcomeTracker] Triggering auto-reflection (${count} completed outcomes)...`);
+                        const reflection = await ReflectionAgent.runReflection();
+                        console.log(`[OutcomeTracker] Auto-reflection generated ${reflection.lessons.length} lessons from ${reflection.outcomes_analyzed} outcomes.`);
+                    }
+                } catch (reflErr) {
+                    console.warn('[OutcomeTracker] Auto-reflection failed (non-fatal):', reflErr);
                 }
-            } catch (reflErr) {
-                console.warn('[OutcomeTracker] Auto-reflection failed (non-fatal):', reflErr);
-            }
+            })();
         }
     }
 }

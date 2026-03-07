@@ -52,7 +52,13 @@ export function useRealtimeSignals() {
                     }
                 }
             )
-            .subscribe();
+            .subscribe((status, err) => {
+                if (status === 'CHANNEL_ERROR') {
+                    console.error('[useRealtimeSignals] Subscription error:', err);
+                } else if (status === 'TIMED_OUT') {
+                    console.warn('[useRealtimeSignals] Subscription timed out, signals may not update in real-time');
+                }
+            });
 
         return () => {
             supabase.removeChannel(channel);

@@ -88,7 +88,19 @@ export class RSSReaderService {
                         );
 
                         if (error) {
-                            console.error(`[RSSReader] DB insert error for ${feed.name}:`, error.message);
+                            // Handle "ON CONFLICT DO UPDATE cannot affect row a second time"
+                            // by falling back to individual upserts
+                            if (error.message?.includes('cannot affect row a second time') || error.code === '21000') {
+                                console.warn(`[RSSReader] Batch conflict for ${feed.name}, falling back to individual upserts`);
+                                let individualAdded = 0;
+                                for (const item of uniqueItems) {
+                                    const { error: singleErr } = await supabase.from('rss_cache').upsert(item as any, { onConflict: 'link' });
+                                    if (!singleErr) individualAdded++;
+                                }
+                                totalAdded += individualAdded;
+                            } else {
+                                console.error(`[RSSReader] DB insert error for ${feed.name}:`, error.message);
+                            }
                         } else {
                             totalAdded += uniqueItems.length;
                         }

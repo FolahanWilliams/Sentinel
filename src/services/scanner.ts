@@ -209,6 +209,7 @@ export class ScannerService {
             }
 
             // Budget gate — skip scan if daily budget exhausted
+            // Check BEFORE any API-consuming operations (RSS sync, news, sentiment)
             const overBudget = await isBudgetExceeded();
             if (overBudget) {
                 console.warn('[Scanner] Daily API budget exceeded. Skipping scan.');
@@ -222,6 +223,10 @@ export class ScannerService {
                 return { success: true, summary: 'Scan skipped: daily budget exceeded.' };
             }
 
+            // 3. Sync RSS Feeds + Google News via Gemini (Feed the beast)
+            // Moved AFTER budget gate to prevent spending quota when over budget
+            await RSSReaderService.syncAllFeeds();
+
             // Smart Scan Prioritization — rank tickers by urgency
             const prioritized = await this.prioritizeTickers(watchlist);
             const maxTickers = scanType === 'fast' ? Math.min(5, prioritized.length) : prioritized.length;
@@ -232,9 +237,6 @@ export class ScannerService {
                 const src = t.prioritySources.length > 0 ? ` [${t.prioritySources.join(', ')}]` : '';
                 return `${t.ticker}(${t.priority}${src})`;
             }).join(', '));
-
-            // 3. Sync RSS Feeds + Google News via Gemini (Feed the beast)
-            await RSSReaderService.syncAllFeeds();
 
             // 3a. Pull Google News (via Gemini grounded search) & Reddit sentiment for watched tickers
             try {

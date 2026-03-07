@@ -32,9 +32,7 @@ export function useScannerLogs(limit = 20) {
     useEffect(() => {
         let mounted = true;
 
-        if (mounted) {
-            fetchLogs();
-        }
+        fetchLogs();
 
         // Subscribe to real-time additions/updates
         const subscription = supabase
@@ -47,6 +45,7 @@ export function useScannerLogs(limit = 20) {
                     table: 'scan_logs'
                 },
                 (payload) => {
+                    if (!mounted) return;
                     const newLog = payload.new as ScanLog;
                     if (payload.eventType === 'INSERT') {
                         setLogs((prev) => [newLog, ...prev].slice(0, limit));
