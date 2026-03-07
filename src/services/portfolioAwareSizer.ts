@@ -15,6 +15,7 @@ import {
     DEFAULT_MAX_EXPOSURE_PCT,
     DEFAULT_MAX_SECTOR_PCT,
     DEFAULT_MAX_CONCURRENT_POSITIONS,
+    DEFAULT_STARTING_CAPITAL,
 } from '@/config/constants';
 
 export interface PortfolioContext {
@@ -44,7 +45,7 @@ export class PortfolioAwareSizer {
             .limit(1)
             .single();
 
-        const totalCapital = config?.total_capital || 10000;
+        const totalCapital = config?.total_capital ?? DEFAULT_STARTING_CAPITAL;
 
         // Fetch open positions
         const { data: openPositions } = await supabase

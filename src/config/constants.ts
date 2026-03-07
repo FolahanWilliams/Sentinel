@@ -48,6 +48,7 @@ export const SIGNAL_EXPIRY_DAYS = 30;
 // ===========================
 // POSITION SIZING DEFAULTS
 // ===========================
+export const DEFAULT_STARTING_CAPITAL = 10_000;
 export const DEFAULT_KELLY_FRACTION = 0.25; // Quarter Kelly
 export const DEFAULT_MAX_POSITION_PCT = 10;
 export const DEFAULT_MAX_EXPOSURE_PCT = 50;

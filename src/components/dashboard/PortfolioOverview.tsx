@@ -4,6 +4,7 @@
  */
 
 import { usePortfolio } from '@/hooks/usePortfolio';
+import { DEFAULT_STARTING_CAPITAL, DEFAULT_MAX_CONCURRENT_POSITIONS, DEFAULT_MAX_EXPOSURE_PCT } from '@/config/constants';
 import { MarketDataService } from '@/services/marketData';
 import { formatPrice, formatPercent } from '@/utils/formatters';
 import { TrendingUp, TrendingDown, Briefcase, PieChart, ArrowRight } from 'lucide-react';
@@ -100,8 +101,8 @@ export function PortfolioOverview() {
         );
     }
 
-    const totalCapital = config?.total_capital || 10000;
-    const maxExposure = config?.max_total_exposure_pct || 50;
+    const totalCapital = config?.total_capital ?? DEFAULT_STARTING_CAPITAL;
+    const maxExposure = config?.max_total_exposure_pct ?? DEFAULT_MAX_EXPOSURE_PCT;
 
     // Calculate exposure
     const totalExposure = openPositions.reduce((sum, p) => sum + (Number(p.position_size_usd) || 0), 0);
@@ -117,8 +118,8 @@ export function PortfolioOverview() {
         sectorExposure[sector] = (sectorExposure[sector] || 0) + (Number(p.position_size_usd) || 0);
     });
 
-    const winCount = closedPositions.filter(p => (Number(p.realized_pnl) || 0) > 0).length;
-    const lossCount = closedPositions.filter(p => (Number(p.realized_pnl) || 0) <= 0).length;
+    const winCount = closedPositions.filter(p => (Number(p.realized_pnl) ?? 0) > 0).length;
+    const lossCount = closedPositions.filter(p => (Number(p.realized_pnl) ?? 0) <= 0).length;
 
     return (
         <div className="space-y-4">
@@ -139,7 +140,7 @@ export function PortfolioOverview() {
                         <div className="bg-sentinel-950/50 p-3 rounded-lg border border-sentinel-800/30">
                             <div className="text-xs text-sentinel-500 mb-1">Open Positions</div>
                             <div className="text-xl font-bold text-sentinel-100">{openPositions.length}</div>
-                            <div className="text-xs text-sentinel-500">of {config?.max_concurrent_positions || 5} max</div>
+                            <div className="text-xs text-sentinel-500">of {config?.max_concurrent_positions ?? DEFAULT_MAX_CONCURRENT_POSITIONS} max</div>
                         </div>
                         <div className="bg-sentinel-950/50 p-3 rounded-lg border border-sentinel-800/30">
                             <div className="text-xs text-sentinel-500 mb-1">Realized PnL</div>
