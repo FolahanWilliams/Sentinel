@@ -44,12 +44,34 @@ function getCol(cols: string[], idx: number | undefined): string {
 }
 
 /**
- * Parse HL CSV export. Handles multiple common HL formats:
- * - "Stock","Ticker","Quantity","Price","Value","Cost"
- * - "Stock","TIDM","Units held","Price","Value","Cost"
+ * Find the header row in an HL CSV export.
  *
- * Auto-detects pence pricing: if prices look like pence (>100× expected for
- * a typical share price relative to value), divides by 100.
+ * HL's account-summary CSV has ~10 metadata rows (client name, account number,
+ * summary values) before the actual data table. The header row contains columns
+ * like "Code", "Stock", "Units held", "Price (pence)", "Value (£)", "Cost (£)".
+ * We scan all lines until we find the one that looks like a data header.
+ */
+function findHeaderRow(lines: string[]): number {
+    const headerKeywords = ['code', 'ticker', 'tidm', 'stock', 'units held', 'price', 'value', 'cost'];
+    for (let i = 0; i < Math.min(lines.length, 20); i++) {
+        const lower = (lines[i] ?? '').toLowerCase();
+        // A header row should match at least 3 of our keywords
+        const matches = headerKeywords.filter(kw => lower.includes(kw));
+        if (matches.length >= 3) return i;
+    }
+    return -1;
+}
+
+/**
+ * Parse HL CSV export. Handles the actual HL "account-summary" format:
+ *
+ * Rows 1-10: Metadata (account name, client number, stock value, cash, etc.)
+ * Row 11:    Header — Code, Stock, Units held, Price (pence), Value (£), Cost (£), Gain/loss (£), Gain/loss (%)
+ * Rows 12+:  Data rows (one per holding)
+ * Last row:  "Totals" summary row
+ * Footer:    Disclaimers and exchange rate notes
+ *
+ * Also supports simpler CSV formats with headers on row 1.
  */
 function parseHLCSV(text: string, existingTickers: Set<string>): { holdings: ParsedHolding[]; errors: string[] } {
     const errors: string[] = [];
@@ -61,18 +83,26 @@ function parseHLCSV(text: string, existingTickers: Set<string>): { holdings: Par
         return { holdings, errors };
     }
 
-    // Parse header to find column indices
-    const headers = parseCSVLine(lines[0] ?? '').map(h => h.toLowerCase().trim());
+    // Find the actual header row (HL has metadata rows before the data table)
+    const headerIdx = findHeaderRow(lines);
+    if (headerIdx === -1) {
+        errors.push('Could not find the data header row. Expected columns like "Code", "Stock", "Units held", "Price", "Value", "Cost".');
+        return { holdings, errors };
+    }
+
+    const headers = parseCSVLine(lines[headerIdx] ?? '').map(h => h.toLowerCase().trim());
 
     // Map known HL column names to our fields
     const colMap: Record<string, number | undefined> = {};
     const aliases: Record<string, string[]> = {
+        ticker: ['code', 'ticker', 'tidm', 'epic', 'symbol'],
         name: ['stock', 'stock name', 'name', 'holding', 'security'],
-        ticker: ['ticker', 'tidm', 'epic', 'symbol', 'code'],
-        quantity: ['quantity', 'units held', 'units', 'shares', 'holding quantity'],
-        price: ['price', 'current price', 'last price', 'price (p)', 'price (gbp)'],
-        value: ['value', 'value (£)', 'market value', 'current value', 'value (gbp)'],
-        cost: ['cost', 'total cost', 'book cost', 'cost (£)', 'avg cost'],
+        quantity: ['units held', 'quantity', 'units', 'shares', 'holding quantity'],
+        price: ['price (pence)', 'price (p)', 'price', 'current price', 'last price'],
+        value: ['value (£)', 'value (gbp)', 'value', 'market value', 'current value'],
+        cost: ['cost (£)', 'cost (gbp)', 'cost', 'total cost', 'book cost'],
+        gainLoss: ['gain/loss (£)', 'gain/loss', 'p&l'],
+        gainLossPct: ['gain/loss (%)', 'gain/loss %', 'p&l %'],
     };
 
     for (const [field, names] of Object.entries(aliases)) {
@@ -82,57 +112,74 @@ function parseHLCSV(text: string, existingTickers: Set<string>): { holdings: Par
 
     // Validate minimum required columns
     if (colMap.ticker === undefined) {
-        errors.push('Could not find a ticker/TIDM column in CSV header.');
+        errors.push(`Could not find a Code/Ticker column in header row ${headerIdx + 1}. Found columns: ${headers.filter(h => h).join(', ')}`);
         return { holdings, errors };
     }
     if (colMap.quantity === undefined && colMap.value === undefined) {
-        errors.push('Could not find quantity or value columns in CSV header.');
+        errors.push('Could not find "Units held" or "Value" columns in CSV header.');
         return { holdings, errors };
     }
 
-    // Detect if price column is in pence (common HL format)
-    // Heuristic: if price header contains "(p)" or prices are suspiciously high vs values
-    const priceInPence = headers.some(h => h.includes('(p)') || h.includes('pence'));
+    // Detect if price column is in pence
+    const priceInPence = headers.some(h => h.includes('pence') || h.includes('(p)'));
 
-    // Parse data rows
+    // Parse data rows (start after header)
     const tickerIdx = colMap.ticker;
-    for (let i = 1; i < lines.length; i++) {
+    for (let i = headerIdx + 1; i < lines.length; i++) {
         const cols = parseCSVLine(lines[i] ?? '');
         if (cols.length < 2) continue;
 
         const rawTicker = getCol(cols, tickerIdx);
-        if (!rawTicker || rawTicker.toLowerCase() === 'total' || rawTicker.toLowerCase() === 'cash') continue;
+        // Skip empty rows, totals row, and footer text
+        if (!rawTicker) continue;
+        const lowerTicker = rawTicker.toLowerCase().trim();
+        if (lowerTicker === 'totals' || lowerTicker === 'total' || lowerTicker === 'cash') continue;
+        // Skip footer rows (HL has disclaimers like "Shares are valued at...")
+        if (lowerTicker.startsWith('shares are') || lowerTicker.startsWith('*') || lowerTicker.startsWith('-')) continue;
+
+        // Also check the Stock/name column for "Totals"
+        const nameVal = getCol(cols, colMap.name).toLowerCase().trim();
+        if (nameVal === 'totals' || nameVal === 'total') continue;
 
         const ticker = rawTicker.toUpperCase().trim();
+        // Skip if it doesn't look like a ticker (must be 1-8 alphanumeric chars with optional dots)
+        if (!/^[A-Z0-9.]{1,10}$/.test(ticker)) continue;
+
         const name = getCol(cols, colMap.name) || ticker;
         const quantity = parseNumber(getCol(cols, colMap.quantity));
         let price = parseNumber(getCol(cols, colMap.price));
-        const value = parseNumber(getCol(cols, colMap.value)) || (quantity * price);
-        const cost = parseNumber(getCol(cols, colMap.cost)) || value;
+        const value = parseNumber(getCol(cols, colMap.value));
+        const cost = parseNumber(getCol(cols, colMap.cost));
 
         // Convert pence to pounds if detected
         if (priceInPence && price > 0) {
             price = price / 100;
         }
 
-        if (quantity <= 0 && value <= 0) {
-            errors.push(`Row ${i + 1}: Skipped "${rawTicker}" — no quantity or value.`);
+        // Use explicit gain/loss columns if available
+        const gainLoss = parseNumber(getCol(cols, colMap.gainLoss));
+        const gainLossPct = parseNumber(getCol(cols, colMap.gainLossPct));
+
+        if (quantity <= 0 && value <= 0 && cost <= 0) {
+            errors.push(`Row ${i + 1}: Skipped "${rawTicker}" — no quantity, value, or cost.`);
             continue;
         }
 
-        // Entry price from cost basis (more accurate than current price for P&L)
-        const entryPrice = quantity > 0 ? cost / quantity : price;
-        const pnl = value - cost;
-        const pnlPct = cost > 0 ? ((value - cost) / cost) * 100 : 0;
+        // Entry price from cost basis (more accurate than current price for P&L tracking)
+        const effectiveCost = cost || value;
+        const effectiveQty = quantity || (price > 0 ? (value || cost) / price : 0);
+        const entryPrice = effectiveQty > 0 ? effectiveCost / effectiveQty : price;
+        const pnl = gainLoss || (value - cost);
+        const pnlPct = gainLossPct || (cost > 0 ? ((value - cost) / cost) * 100 : 0);
         const isDuplicate = existingTickers.has(ticker) || existingTickers.has(`${ticker}.L`);
 
         holdings.push({
             ticker,
             name: name.trim(),
-            quantity: quantity || (price > 0 ? value / price : 0),
+            quantity: effectiveQty,
             price: entryPrice,
-            value,
-            cost,
+            value: value || cost,
+            cost: effectiveCost,
             pnl,
             pnlPct,
             selected: !isDuplicate,
@@ -141,7 +188,7 @@ function parseHLCSV(text: string, existingTickers: Set<string>): { holdings: Par
     }
 
     if (holdings.length === 0 && errors.length === 0) {
-        errors.push('No valid holdings found in CSV. Check that the format matches HL export.');
+        errors.push('No valid holdings found in CSV. Expected HL account-summary format with Code, Stock, Units held, Price, Value, Cost columns.');
     }
 
     const dupeCount = holdings.filter(h => h.isDuplicate).length;
