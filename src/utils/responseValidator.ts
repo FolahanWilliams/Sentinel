@@ -115,10 +115,16 @@ export class ResponseValidator {
             }
 
             // Stop-loss proximity warning: too-tight stops get blown out by noise
-            if (entryLow !== undefined && !isShort) {
+            if (entryLow !== undefined && entryLow > 0 && !isShort) {
                 const stopPct = Math.abs((entryLow - stopLoss) / entryLow) * 100;
                 if (stopPct < 1.0) {
                     warnings.push(`stop_loss is only ${stopPct.toFixed(1)}% below entry — dangerously tight`);
+                }
+            }
+            if (entryHigh !== undefined && entryHigh > 0 && isShort) {
+                const stopPct = Math.abs((stopLoss - entryHigh) / entryHigh) * 100;
+                if (stopPct < 1.0) {
+                    warnings.push(`stop_loss is only ${stopPct.toFixed(1)}% above entry — dangerously tight for short`);
                 }
             }
         }

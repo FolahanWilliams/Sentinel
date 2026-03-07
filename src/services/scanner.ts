@@ -43,7 +43,7 @@ import { AdaptiveThresholds } from './adaptiveThresholds';
 import { DynamicCalibrator } from './dynamicCalibrator';
 import { PriceCorrelationMatrix } from './priceCorrelationMatrix';
 import { PortfolioAwareSizer } from './portfolioAwareSizer';
-import { DEFAULT_MIN_CONFIDENCE, DEFAULT_MIN_PRICE_DROP_PCT } from '@/config/constants';
+import { DEFAULT_MIN_CONFIDENCE, DEFAULT_MIN_PRICE_DROP_PCT, CONFIDENCE_GATE_OVERREACTION, CONFIDENCE_GATE_CONTAGION, CONFIDENCE_GATE_CRITIQUE, CONFIDENCE_FLOOR, SEVERITY_THRESHOLD } from '@/config/constants';
 import type { MultiTimeframeResult } from './technicalAnalysis';
 
 export class ScannerService {
@@ -483,7 +483,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                 event_type: ev.event_type,
                                 headline: ev.headline,
                                 severity: ev.severity,
-                                is_overreaction_candidate: ev.severity >= 4,
+                                is_overreaction_candidate: ev.severity >= SEVERITY_THRESHOLD,
                                 source_type: 'rss'
                             } as any).select('id').single();
 
@@ -501,7 +501,7 @@ If there is genuinely no major news, return: {"events": []}`,
                             }
 
                             // 6. Trigger Deep Analysis Pipeline if moderate-to-severe
-                            if (savedEvent && ev.severity >= 4) {
+                            if (savedEvent && ev.severity >= SEVERITY_THRESHOLD) {
                                 console.log(`[Scanner] Deep analysis triggered for ${ev.ticker} (severity=${ev.severity}): ${ev.headline}`);
                                 // Fetch live quote for context
                                 let quote: any;
@@ -670,7 +670,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                     console.warn(`[Scanner] Overreaction agent FAILED for ${ev.ticker}: ${analysis.error}`);
                                 }
 
-                                if (analysis.success && validation.valid && analysis.data?.is_overreaction && analysis.data.confidence_score > 75) {
+                                if (analysis.success && validation.valid && analysis.data?.is_overreaction && analysis.data.confidence_score > CONFIDENCE_GATE_OVERREACTION) {
 
                                     // 6.5. TA CONFIRMATION LAYER — use pre-fetched TA snapshot
                                     let taSnapshot = earlyTaSnapshot;
@@ -735,7 +735,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                                 analysis.data.confidence_score = critique.adjustedConfidence;
                                             }
                                             // Drop signal if critique brings confidence below threshold
-                                            if (critique.adjustedConfidence < 50) {
+                                            if (critique.adjustedConfidence < CONFIDENCE_GATE_CRITIQUE) {
                                                 console.warn(`[Scanner] Self-critique dropped signal for ${ev.ticker} — adjusted confidence ${critique.adjustedConfidence} below threshold`);
                                                 continue;
                                             }
@@ -747,7 +747,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                         if (divergenceResult && divergenceResult.confidenceBoost !== 0) {
                                             const before = analysis.data.confidence_score;
                                             const weightedDivBoost = AutoLearningService.applyWeight('sentiment_divergence', divergenceResult.confidenceBoost, autoLearnWeights);
-                                            analysis.data.confidence_score = Math.min(100, Math.max(30,
+                                            analysis.data.confidence_score = Math.min(100, Math.max(CONFIDENCE_FLOOR,
                                                 analysis.data.confidence_score + weightedDivBoost
                                             ));
                                             console.log(`[Scanner] Divergence ${divergenceResult.divergenceType} adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${weightedDivBoost > 0 ? '+' : ''}${weightedDivBoost})`);
@@ -756,7 +756,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                         // 7.7. EARNINGS CALENDAR PENALTY — reduce confidence near earnings
                                         if (earningsGuardResult && earningsGuardResult.confidencePenalty !== 0) {
                                             const before = analysis.data.confidence_score;
-                                            analysis.data.confidence_score = Math.min(100, Math.max(30,
+                                            analysis.data.confidence_score = Math.min(100, Math.max(CONFIDENCE_FLOOR,
                                                 analysis.data.confidence_score + earningsGuardResult.confidencePenalty
                                             ));
                                             console.log(`[Scanner] Earnings guard adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${earningsGuardResult.confidencePenalty})`);
@@ -776,7 +776,7 @@ If there is genuinely no major news, return: {"events": []}`,
 
                                             if (fundPenalty !== 0) {
                                                 const before = analysis.data.confidence_score;
-                                                analysis.data.confidence_score = Math.max(30, analysis.data.confidence_score + fundPenalty);
+                                                analysis.data.confidence_score = Math.max(CONFIDENCE_FLOOR, analysis.data.confidence_score + fundPenalty);
                                                 console.log(`[Scanner] Fundamentals penalty for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${fundPenalty})`);
                                             }
                                         }
@@ -784,7 +784,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                         // 7.9. MARKET REGIME PENALTY — reduce confidence in crisis/correction
                                         if (regimeResult && regimeResult.confidencePenalty !== 0) {
                                             const before = analysis.data.confidence_score;
-                                            analysis.data.confidence_score = Math.max(30,
+                                            analysis.data.confidence_score = Math.max(CONFIDENCE_FLOOR,
                                                 analysis.data.confidence_score + regimeResult.confidencePenalty
                                             );
                                             console.log(`[Scanner] Market regime (${regimeResult.regime}) adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${regimeResult.confidencePenalty})`);
@@ -800,7 +800,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                             }
                                             if (backtestResult.confidencePenalty !== 0) {
                                                 const before = analysis.data.confidence_score;
-                                                analysis.data.confidence_score = Math.max(30,
+                                                analysis.data.confidence_score = Math.max(CONFIDENCE_FLOOR,
                                                     analysis.data.confidence_score + backtestResult.confidencePenalty
                                                 );
                                                 console.log(`[Scanner] Backtest adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${backtestResult.confidencePenalty})`);
@@ -813,7 +813,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                             mtfResult = await TechnicalAnalysisService.getMultiTimeframeConfirmation(ev.ticker, 'long');
                                             if (mtfResult.confidenceAdjustment !== 0) {
                                                 const before = analysis.data.confidence_score;
-                                                analysis.data.confidence_score = Math.min(100, Math.max(30,
+                                                analysis.data.confidence_score = Math.min(100, Math.max(CONFIDENCE_FLOOR,
                                                     analysis.data.confidence_score + mtfResult.confidenceAdjustment
                                                 ));
                                                 console.log(`[Scanner] Multi-timeframe (${mtfResult.alignment}) adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${mtfResult.confidenceAdjustment > 0 ? '+' : ''}${mtfResult.confidenceAdjustment})`);
@@ -831,7 +831,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                             }
                                             if (correlationResult.confidencePenalty !== 0) {
                                                 const before = analysis.data.confidence_score;
-                                                analysis.data.confidence_score = Math.max(30,
+                                                analysis.data.confidence_score = Math.max(CONFIDENCE_FLOOR,
                                                     analysis.data.confidence_score + correlationResult.confidencePenalty
                                                 );
                                                 console.log(`[Scanner] Correlation guard adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${correlationResult.confidencePenalty})`);
@@ -844,7 +844,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                             priceCorr = await PriceCorrelationMatrix.check(ev.ticker);
                                             if (priceCorr.confidencePenalty !== 0) {
                                                 const before = analysis.data.confidence_score;
-                                                analysis.data.confidence_score = Math.max(30,
+                                                analysis.data.confidence_score = Math.max(CONFIDENCE_FLOOR,
                                                     analysis.data.confidence_score + priceCorr.confidencePenalty
                                                 );
                                                 console.log(`[Scanner] Price correlation penalty for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${priceCorr.confidencePenalty}, max_corr=${priceCorr.maxCorrelation.toFixed(2)})`);
@@ -863,7 +863,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                         // 7.14. OPTIONS FLOW — adjust confidence based on institutional positioning
                                         if (optionsFlowResult && optionsFlowResult.confidenceAdjustment !== 0) {
                                             const before = analysis.data.confidence_score;
-                                            analysis.data.confidence_score = Math.min(100, Math.max(30,
+                                            analysis.data.confidence_score = Math.min(100, Math.max(CONFIDENCE_FLOOR,
                                                 analysis.data.confidence_score + optionsFlowResult.confidenceAdjustment
                                             ));
                                             console.log(`[Scanner] Options flow (${optionsFlowResult.sentiment}) adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${optionsFlowResult.confidenceAdjustment > 0 ? '+' : ''}${optionsFlowResult.confidenceAdjustment})`);
@@ -872,7 +872,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                         // 7.15. PEER RELATIVE STRENGTH — adjust based on idiosyncratic vs sector-wide move
                                         if (peerStrengthResult && peerStrengthResult.confidenceAdjustment !== 0) {
                                             const before = analysis.data.confidence_score;
-                                            analysis.data.confidence_score = Math.min(100, Math.max(30,
+                                            analysis.data.confidence_score = Math.min(100, Math.max(CONFIDENCE_FLOOR,
                                                 analysis.data.confidence_score + peerStrengthResult.confidenceAdjustment
                                             ));
                                             console.log(`[Scanner] Peer strength (${peerStrengthResult.isIdiosyncratic ? 'idiosyncratic' : 'sector-wide'}) adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${peerStrengthResult.confidenceAdjustment > 0 ? '+' : ''}${peerStrengthResult.confidenceAdjustment})`);
@@ -894,7 +894,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                             }
                                             if (conflictResult.confidencePenalty !== 0) {
                                                 const before = analysis.data.confidence_score;
-                                                analysis.data.confidence_score = Math.max(30,
+                                                analysis.data.confidence_score = Math.max(CONFIDENCE_FLOOR,
                                                     analysis.data.confidence_score + conflictResult.confidencePenalty
                                                 );
                                                 console.log(`[Scanner] Conflict detection adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${conflictResult.confidencePenalty})`);
@@ -1192,7 +1192,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                                         perfContext
                                                     );
 
-                                                    if (contagion.success && contagion.data?.is_contagion && contagion.data.confidence_score > 70) {
+                                                    if (contagion.success && contagion.data?.is_contagion && contagion.data.confidence_score > CONFIDENCE_GATE_CONTAGION) {
                                                         // Sanity check the contagion trade
                                                         const contagionSanity = await AgentService.runSanityCheck(
                                                             sat.ticker,
@@ -1289,7 +1289,7 @@ If there is genuinely no major news, return: {"events": []}`,
                     .neq('outcome', 'pending');
 
                 // Trigger auto-learning every 20 completed outcomes
-                if (completedCount && completedCount >= 10 && completedCount % 20 < signalsGenerated + 1) {
+                if (completedCount && completedCount >= 10 && completedCount % 20 === 0) {
                     console.log(`[Scanner] Triggering auto-learning analysis (${completedCount} completed outcomes)...`);
                     void AutoLearningService.analyzeAndUpdateWeights().catch(e =>
                         console.warn('[Scanner] Auto-learning failed (non-fatal):', e)
@@ -1473,12 +1473,12 @@ If there is genuinely no major news, return: {"events": []}`,
                         const maxReduction = 30;
                         singleConfidence = Math.min(
                             singleConfidence,
-                            Math.max(30, Math.max(rawAdj, singleConfidence - maxReduction))
+                            Math.max(CONFIDENCE_FLOOR, Math.max(rawAdj, singleConfidence - maxReduction))
                         );
                     } catch { /* non-fatal */ }
 
                     // Drop if self-critique pushed below threshold
-                    if (singleConfidence < 50) {
+                    if (singleConfidence < CONFIDENCE_GATE_CRITIQUE) {
                         console.log(`[Scanner] Single-ticker ${ticker} dropped by self-critique: ${analysis.data.confidence_score}→${singleConfidence}`);
                     } else {
                     // 7c. Calibrated confidence

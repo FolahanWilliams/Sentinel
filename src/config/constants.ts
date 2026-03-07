@@ -17,6 +17,13 @@ export const DEFAULT_SCAN_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 export const DEFAULT_MIN_CONFIDENCE = 60;
 export const DEFAULT_MIN_PRICE_DROP_PCT = -5.0;
 export const DEFAULT_MIN_VOLUME_MULTIPLIER = 2.0;
+export const CONFIDENCE_FLOOR = 30; // Absolute minimum after all adjustments
+export const CONFIDENCE_GATE_OVERREACTION = 75; // Initial gate for overreaction signal
+export const CONFIDENCE_GATE_CONTAGION = 70; // Initial gate for contagion signal
+export const CONFIDENCE_GATE_CRITIQUE = 50; // Floor after self-critique pass
+export const CONFIDENCE_EXPIRY_THRESHOLD = 40; // Below this, signal is expired by decay
+export const SEVERITY_THRESHOLD = 4; // Min event severity for deep analysis
+export const DEFAULT_SIGNAL_TIMEFRAME_DAYS = 10; // Default expected holding period
 
 // ===========================
 // RATE LIMITS

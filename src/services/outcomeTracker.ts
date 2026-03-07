@@ -111,7 +111,7 @@ export class OutcomeTracker {
 
                 // If time expired without hitting stop or target, evaluate PnL
                 if (isComplete && finalOutcome === 'pending') {
-                    finalOutcome = currentReturn > 0 ? 'win' : 'loss';
+                    finalOutcome = currentReturn >= 0 ? 'win' : 'loss';
                 }
 
                 if (Object.keys(updates).length > 0) {

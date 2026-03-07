@@ -24,12 +24,12 @@ export function getMatchingAlertRules(signal: any): AlertRule[] {
             // Sector check
             if (rule.sector !== 'All Sectors') {
                 const sector = (signal.sector || '').toLowerCase();
-                if (!sector.includes(rule.sector.toLowerCase())) return false;
+                if (sector !== rule.sector.toLowerCase()) return false;
             }
 
             // Confidence check
             if (rule.minConfidence > 0) {
-                if ((signal.confidence_score || 0) < rule.minConfidence) return false;
+                if ((signal.confidence_score ?? 0) < rule.minConfidence) return false;
             }
 
             // Type check
@@ -41,7 +41,7 @@ export function getMatchingAlertRules(signal: any): AlertRule[] {
             // Bias check
             if (rule.bias !== 'all') {
                 const bias = (signal.bias_type || '').toLowerCase();
-                if (!bias.includes(rule.bias.toLowerCase())) return false;
+                if (bias !== rule.bias.toLowerCase()) return false;
             }
 
             return true;
