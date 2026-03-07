@@ -7,6 +7,7 @@
  * monthly return heatmap, and a trade log table.
  */
 
+import { DEFAULT_STARTING_CAPITAL, DEFAULT_MIN_CONFIDENCE } from '@/config/constants';
 import { useState, useMemo, useCallback } from 'react';
 import {
     History, Play, BarChart3, TrendingUp, TrendingDown,
@@ -169,8 +170,8 @@ function MonthlyHeatmap({ data }: { data: MonthlyReturn[] }) {
 export function Backtest() {
     // Parameters
     const [agentFilter, setAgentFilter] = useState<BacktestParams['agentFilter']>('all');
-    const [minConfidence, setMinConfidence] = useState(60);
-    const [startingCapital, setStartingCapital] = useState(10000);
+    const [minConfidence, setMinConfidence] = useState(DEFAULT_MIN_CONFIDENCE);
+    const [startingCapital, setStartingCapital] = useState(DEFAULT_STARTING_CAPITAL);
     const [positionSizePct, setPositionSizePct] = useState(10);
     const [returnHorizon, setReturnHorizon] = useState<BacktestParams['returnHorizon']>('best');
     const [startDate, setStartDate] = useState('');

@@ -150,7 +150,7 @@ export async function calculateWeightedRoi(
 
         return {
             projectedRoi: Math.round(best.ret * 10) / 10,
-            projectedWinRate: Math.round((wins / scored.length) * 100),
+            projectedWinRate: scored.length > 0 ? Math.round((wins / scored.length) * 100) : 0,
             similarEventsCount: scored.length,
             avgSimilarity: avgSimilarity !== null ? Math.round(avgSimilarity * 100) / 100 : null,
             bestHorizon: best.horizon,

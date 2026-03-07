@@ -9,6 +9,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
+import { DEFAULT_STARTING_CAPITAL } from '@/config/constants';
 import {
     BarChart3, TrendingUp, Target, Shield,
     Activity, Loader2, Zap, Award, Flame,
@@ -197,7 +198,7 @@ export function Performance() {
     const equityPath = useMemo(() => {
         const completed = filteredOutcomes.filter(o => o.outcome !== 'pending');
         if (completed.length < 2) return '';
-        let equity = 10000;
+        let equity = DEFAULT_STARTING_CAPITAL;
         const points: { x: number; y: number }[] = [{ x: 0, y: equity }];
         completed.forEach((o, i) => {
             const ret = o.return_at_5d ?? o.return_at_1d ?? 0;

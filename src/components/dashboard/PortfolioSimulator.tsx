@@ -8,6 +8,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/config/supabase';
+import { DEFAULT_STARTING_CAPITAL } from '@/config/constants';
 import { MarketDataService } from '@/services/marketData';
 import { Briefcase, Loader2, RefreshCw } from 'lucide-react';
 
@@ -96,7 +97,7 @@ export function PortfolioSimulator() {
     const closedPositions = useMemo(() => positions.filter(p => p.status === 'closed'), [positions]);
 
     const stats = useMemo(() => {
-        const capital = portfolioConfig?.total_capital ?? 10000;
+        const capital = portfolioConfig?.total_capital ?? DEFAULT_STARTING_CAPITAL;
 
         // Open position metrics
         let totalExposure = 0;

@@ -38,7 +38,7 @@ export function useRealtimeSignals() {
                 (payload) => {
                     const signal = payload.new as any;
                     // Only surface high-confidence signals
-                    if (signal.confidence_score && signal.confidence_score > 75) {
+                    if (signal.confidence_score != null && signal.confidence_score > 75) {
                         const newSignal: RealtimeSignal = {
                             id: signal.id,
                             ticker: signal.ticker,

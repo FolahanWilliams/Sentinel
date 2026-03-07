@@ -12,11 +12,12 @@
  *
  * Signals are expired when:
  *   - Age exceeds expected_timeframe × 2
- *   - Decayed confidence drops below 40
+ *   - Decayed confidence drops below CONFIDENCE_EXPIRY_THRESHOLD
  *   - Price has moved past stop-loss without being tracked
  */
 
 import { supabase } from '@/config/supabase';
+import { CONFIDENCE_EXPIRY_THRESHOLD, DEFAULT_SIGNAL_TIMEFRAME_DAYS } from '@/config/constants';
 
 export interface DecayResult {
     signalId: string;
@@ -61,7 +62,7 @@ export class SignalDecayEngine {
             for (const signal of activeSignals) {
                 const createdAt = new Date(signal.created_at);
                 const daysActive = (Date.now() - createdAt.getTime()) / (1000 * 60 * 60 * 24);
-                const expectedDays = signal.expected_timeframe_days || 10; // default 10 days
+                const expectedDays = signal.expected_timeframe_days || DEFAULT_SIGNAL_TIMEFRAME_DAYS;
 
                 // Decay factor: linear decay, floored at 0.5
                 const decayFactor = Math.max(0.5, 1 - (daysActive / (expectedDays * 1.5)));
@@ -74,9 +75,9 @@ export class SignalDecayEngine {
                 if (daysActive > expectedDays * 2) {
                     action = 'expired';
                     reason = `Signal exceeded 2× expected timeframe (${daysActive.toFixed(1)}d vs ${expectedDays}d expected).`;
-                } else if (decayedConfidence < 40) {
+                } else if (decayedConfidence < CONFIDENCE_EXPIRY_THRESHOLD) {
                     action = 'expired';
-                    reason = `Decayed confidence (${decayedConfidence}) dropped below expiration threshold of 40.`;
+                    reason = `Decayed confidence (${decayedConfidence}) dropped below expiration threshold of ${CONFIDENCE_EXPIRY_THRESHOLD}.`;
                 } else if (daysActive > expectedDays * 1.2) {
                     action = 'stale';
                     reason = `Signal past expected timeframe (${daysActive.toFixed(1)}d vs ${expectedDays}d). Thesis may be invalidated.`;
@@ -104,6 +105,10 @@ export class SignalDecayEngine {
                     console.log(`[SignalDecay] Expired ${signal.ticker} (${signal.id}): ${reason}`);
                 } else if (action === 'stale') {
                     stale++;
+                    await supabase.from('signals').update({
+                        status: 'stale',
+                        user_notes: `[Auto-stale] ${reason}`,
+                    } as any).eq('id', signal.id);
                     console.log(`[SignalDecay] Stale: ${signal.ticker} (${signal.id}): ${reason}`);
                 }
             }
@@ -125,7 +130,7 @@ export class SignalDecayEngine {
         expectedTimeframeDays: number | null,
     ): { decayedConfidence: number; decayFactor: number; isStale: boolean } {
         const daysActive = (Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60 * 24);
-        const expectedDays = expectedTimeframeDays || 10;
+        const expectedDays = expectedTimeframeDays || DEFAULT_SIGNAL_TIMEFRAME_DAYS;
         const decayFactor = Math.max(0.5, 1 - (daysActive / (expectedDays * 1.5)));
         const decayedConfidence = Math.round(originalConfidence * decayFactor);
         const isStale = daysActive > expectedDays * 1.2;

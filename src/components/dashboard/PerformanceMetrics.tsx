@@ -7,6 +7,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/config/supabase';
+import { DEFAULT_STARTING_CAPITAL, DEFAULT_RISK_PER_TRADE_PCT } from '@/config/constants';
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 import { EmptyState } from '@/components/shared/EmptyState';
@@ -79,8 +80,8 @@ export function PerformanceMetrics({ className = '' }: PerformanceMetricsProps) 
     // Portfolio value over time — uses real closed positions P&L when available,
     // falls back to signal outcomes with actual position sizing from config.
     const performanceChart = useMemo(() => {
-        const startingCapital = config?.total_capital ?? 10000;
-        const positionSizePct = (config?.risk_per_trade_pct ?? 2) / 100;
+        const startingCapital = config?.total_capital ?? DEFAULT_STARTING_CAPITAL;
+        const positionSizePct = (config?.risk_per_trade_pct ?? DEFAULT_RISK_PER_TRADE_PCT) / 100;
 
         // Prefer real closed positions if we have them (actual realized P&L)
         if (closedPositions.length > 0) {
