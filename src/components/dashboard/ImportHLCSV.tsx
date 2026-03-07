@@ -73,22 +73,57 @@ function findHeaderRow(lines: string[]): number {
  *
  * Also supports simpler CSV formats with headers on row 1.
  */
-function parseHLCSV(text: string, existingTickers: Set<string>): { holdings: ParsedHolding[]; errors: string[] } {
+interface AccountSummary {
+    stockValue: number;
+    totalCash: number;
+    totalValue: number;
+}
+
+/**
+ * Extract account summary values from HL metadata rows (before the data table).
+ * HL format has rows like:
+ *   "Stock value:",,"2,049.88"
+ *   "Total cash:",,"0.65"
+ *   "Total value:",,"2,050.53"
+ */
+function parseAccountSummary(lines: string[], headerIdx: number): AccountSummary {
+    const summary: AccountSummary = { stockValue: 0, totalCash: 0, totalValue: 0 };
+    for (let i = 0; i < headerIdx; i++) {
+        const cols = parseCSVLine(lines[i] ?? '');
+        const label = (cols[0] ?? '').toLowerCase().replace(/[:]/g, '').trim();
+        // Value is typically in column B (index 1) or C (index 2)
+        const val = parseNumber(cols[2] ?? '') || parseNumber(cols[1] ?? '');
+        if (label === 'stock value') summary.stockValue = val;
+        else if (label === 'total cash') summary.totalCash = val;
+        else if (label === 'amount available to invest' && summary.totalCash === 0) summary.totalCash = val;
+        else if (label === 'total value') summary.totalValue = val;
+    }
+    // Fallback: compute total from parts if not found
+    if (summary.totalValue === 0 && summary.stockValue > 0) {
+        summary.totalValue = summary.stockValue + summary.totalCash;
+    }
+    return summary;
+}
+
+function parseHLCSV(text: string, existingTickers: Set<string>): { holdings: ParsedHolding[]; errors: string[]; accountSummary: AccountSummary | null } {
     const errors: string[] = [];
     const holdings: ParsedHolding[] = [];
 
     const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
     if (lines.length < 2) {
         errors.push('CSV file appears empty or has no data rows.');
-        return { holdings, errors };
+        return { holdings, errors, accountSummary: null };
     }
 
     // Find the actual header row (HL has metadata rows before the data table)
     const headerIdx = findHeaderRow(lines);
     if (headerIdx === -1) {
         errors.push('Could not find the data header row. Expected columns like "Code", "Stock", "Units held", "Price", "Value", "Cost".');
-        return { holdings, errors };
+        return { holdings, errors, accountSummary: null };
     }
+
+    // Extract account summary from metadata rows above the header
+    const accountSummary = parseAccountSummary(lines, headerIdx);
 
     const headers = parseCSVLine(lines[headerIdx] ?? '').map(h => h.toLowerCase().trim());
 
@@ -113,11 +148,11 @@ function parseHLCSV(text: string, existingTickers: Set<string>): { holdings: Par
     // Validate minimum required columns
     if (colMap.ticker === undefined) {
         errors.push(`Could not find a Code/Ticker column in header row ${headerIdx + 1}. Found columns: ${headers.filter(h => h).join(', ')}`);
-        return { holdings, errors };
+        return { holdings, errors, accountSummary };
     }
     if (colMap.quantity === undefined && colMap.value === undefined) {
         errors.push('Could not find "Units held" or "Value" columns in CSV header.');
-        return { holdings, errors };
+        return { holdings, errors, accountSummary };
     }
 
     // Detect if price column is in pence
@@ -196,7 +231,7 @@ function parseHLCSV(text: string, existingTickers: Set<string>): { holdings: Par
         errors.push(`${dupeCount} holding${dupeCount > 1 ? 's' : ''} already exist in your portfolio (deselected by default).`);
     }
 
-    return { holdings, errors };
+    return { holdings, errors, accountSummary: accountSummary.totalValue > 0 ? accountSummary : null };
 }
 
 /** Parse a single CSV line handling quoted fields */
@@ -238,8 +273,9 @@ export function ImportHLCSV({ onClose, existingTickers = [] }: ImportHLCSVProps)
     const [step, setStep] = useState<'upload' | 'preview' | 'importing' | 'done'>('upload');
     const [holdings, setHoldings] = useState<ParsedHolding[]>([]);
     const [parseErrors, setParseErrors] = useState<string[]>([]);
-    const [importResult, setImportResult] = useState<{ success: number; failed: number; replaced: number }>({ success: 0, failed: 0, replaced: 0 });
+    const [importResult, setImportResult] = useState<{ success: number; failed: number; replaced: number; capitalUpdated: number | null }>({ success: 0, failed: 0, replaced: 0, capitalUpdated: null });
     const [replaceExisting, setReplaceExisting] = useState(false);
+    const [accountSummary, setAccountSummary] = useState<AccountSummary | null>(null);
     const [dragActive, setDragActive] = useState(false);
     const fileRef = useRef<HTMLInputElement>(null);
 
@@ -254,9 +290,10 @@ export function ImportHLCSV({ onClose, existingTickers = [] }: ImportHLCSVProps)
         const reader = new FileReader();
         reader.onload = (e) => {
             const text = e.target?.result as string;
-            const { holdings: parsed, errors } = parseHLCSV(text, existingSet);
+            const { holdings: parsed, errors, accountSummary: summary } = parseHLCSV(text, existingSet);
             setHoldings(parsed);
             setParseErrors(errors);
+            setAccountSummary(summary);
             if (parsed.length > 0) setStep('preview');
         };
         reader.readAsText(file);
@@ -374,7 +411,31 @@ export function ImportHLCSV({ onClose, existingTickers = [] }: ImportHLCSVProps)
             success = rows.length;
         }
 
-        setImportResult({ success, failed, replaced });
+        // Auto-update total capital from HL account summary
+        let capitalUpdated: number | null = null;
+        if (accountSummary && accountSummary.totalValue > 0) {
+            const { data: existing } = await supabase
+                .from('portfolio_config')
+                .select('id')
+                .limit(1)
+                .single();
+
+            const updateVal = Math.round(accountSummary.totalValue * 100) / 100;
+            if (existing?.id) {
+                const { error: capErr } = await supabase
+                    .from('portfolio_config')
+                    .update({ total_capital: updateVal })
+                    .eq('id', existing.id);
+                if (!capErr) capitalUpdated = updateVal;
+            } else {
+                const { error: capErr } = await supabase
+                    .from('portfolio_config')
+                    .insert({ total_capital: updateVal });
+                if (!capErr) capitalUpdated = updateVal;
+            }
+        }
+
+        setImportResult({ success, failed, replaced, capitalUpdated });
         setStep('done');
     };
 
@@ -485,6 +546,24 @@ export function ImportHLCSV({ onClose, existingTickers = [] }: ImportHLCSVProps)
                                             {replaceExisting ? 'Will replace duplicates' : 'Replace existing positions'}
                                         </button>
                                     )}
+                                </div>
+                            )}
+
+                            {accountSummary && (
+                                <div className="mb-3 flex items-center gap-4 px-1">
+                                    <div className="flex flex-col">
+                                        <span className="text-[9px] text-sentinel-600 uppercase tracking-wider">Stock Value</span>
+                                        <span className="text-xs font-mono text-sentinel-300">{formatPrice(accountSummary.stockValue)}</span>
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <span className="text-[9px] text-sentinel-600 uppercase tracking-wider">Cash</span>
+                                        <span className="text-xs font-mono text-sentinel-300">{formatPrice(accountSummary.totalCash)}</span>
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <span className="text-[9px] text-sentinel-600 uppercase tracking-wider">Total Value</span>
+                                        <span className="text-xs font-mono text-emerald-400 font-medium">{formatPrice(accountSummary.totalValue)}</span>
+                                    </div>
+                                    <span className="text-[9px] text-sentinel-600 ml-auto">Capital will be updated on import</span>
                                 </div>
                             )}
 
@@ -608,7 +687,7 @@ export function ImportHLCSV({ onClose, existingTickers = [] }: ImportHLCSVProps)
                             <p className="text-sm text-sentinel-200 font-medium mb-1">
                                 Import Complete
                             </p>
-                            <p className="text-xs text-sentinel-400 mb-4">
+                            <p className="text-xs text-sentinel-400 mb-2">
                                 {importResult.success} position{importResult.success !== 1 ? 's' : ''} imported successfully
                                 {importResult.replaced > 0 && (
                                     <span className="text-amber-400"> ({importResult.replaced} replaced)</span>
@@ -617,6 +696,11 @@ export function ImportHLCSV({ onClose, existingTickers = [] }: ImportHLCSVProps)
                                     <span className="text-red-400"> ({importResult.failed} failed)</span>
                                 )}
                             </p>
+                            {importResult.capitalUpdated !== null && (
+                                <p className="text-xs text-emerald-400 mb-4">
+                                    Total capital updated to {formatPrice(importResult.capitalUpdated)}
+                                </p>
+                            )}
                             <button
                                 onClick={onClose}
                                 className="px-5 py-2 bg-sentinel-800 hover:bg-sentinel-700 text-sentinel-100 rounded-lg text-sm font-medium transition-colors ring-1 ring-sentinel-700 border-none cursor-pointer"
