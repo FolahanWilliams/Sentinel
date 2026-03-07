@@ -17,8 +17,9 @@ import { EmptyState } from '@/components/shared/EmptyState';
 import { SkeletonSummaryCards, SkeletonTable } from '@/components/shared/SkeletonPrimitives';
 import {
     DollarSign, TrendingUp, TrendingDown, ShieldAlert, PieChart,
-    Plus, X, RefreshCw, Briefcase, ArrowUpRight, ArrowDownRight,
+    Plus, X, RefreshCw, Briefcase, ArrowUpRight, ArrowDownRight, FileUp,
 } from 'lucide-react';
+import { ImportHLCSV } from './ImportHLCSV';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Quote } from '@/types/market';
 import type { PortfolioSummary, SectorAllocation } from '@/types/dashboard';
@@ -48,6 +49,7 @@ export function UnifiedPortfolioView({ className = '' }: UnifiedPortfolioViewPro
     const [quotes, setQuotes] = useState<Record<string, Quote>>({});
     const [refreshing, setRefreshing] = useState(false);
     const [showTradeModal, setShowTradeModal] = useState(false);
+    const [showImportModal, setShowImportModal] = useState(false);
 
     // Fetch live quotes for open positions
     const fetchQuotes = useCallback(async () => {
@@ -257,13 +259,22 @@ export function UnifiedPortfolioView({ className = '' }: UnifiedPortfolioViewPro
                         <h3 className="text-sm font-semibold text-sentinel-200 flex items-center gap-2">
                             <Briefcase className="w-4 h-4 text-sentinel-400" /> Holdings
                         </h3>
-                        <button
-                            onClick={() => setShowTradeModal(true)}
-                            className="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 rounded-lg text-xs font-medium transition-colors ring-1 ring-emerald-500/30 flex items-center gap-1.5 border-none cursor-pointer"
-                            aria-label="Log a new trade"
-                        >
-                            <Plus className="w-3.5 h-3.5" /> Log New Trade
-                        </button>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => setShowImportModal(true)}
+                                className="px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 rounded-lg text-xs font-medium transition-colors ring-1 ring-blue-500/30 flex items-center gap-1.5 border-none cursor-pointer"
+                                aria-label="Import HL CSV"
+                            >
+                                <FileUp className="w-3.5 h-3.5" /> Import CSV
+                            </button>
+                            <button
+                                onClick={() => setShowTradeModal(true)}
+                                className="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 rounded-lg text-xs font-medium transition-colors ring-1 ring-emerald-500/30 flex items-center gap-1.5 border-none cursor-pointer"
+                                aria-label="Log a new trade"
+                            >
+                                <Plus className="w-3.5 h-3.5" /> Log New Trade
+                            </button>
+                        </div>
                     </div>
 
                     {openPositions.length === 0 ? (
@@ -342,6 +353,9 @@ export function UnifiedPortfolioView({ className = '' }: UnifiedPortfolioViewPro
                 <AnimatePresence>
                     {showTradeModal && (
                         <LogTradeModal onClose={() => setShowTradeModal(false)} />
+                    )}
+                    {showImportModal && (
+                        <ImportHLCSV onClose={() => setShowImportModal(false)} />
                     )}
                 </AnimatePresence>
             </div>
