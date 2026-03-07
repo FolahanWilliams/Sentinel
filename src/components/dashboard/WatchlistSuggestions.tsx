@@ -9,7 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
 import { useSentinel } from '@/hooks/useSentinel';
 import type { ProcessedArticle } from '@/types/sentinel';
-import { Plus, TrendingUp, Radar, Eye, Loader2 } from 'lucide-react';
+import { Plus, Radar, Eye, Loader2 } from 'lucide-react';
 
 interface TrendingTicker {
     ticker: string;
@@ -95,7 +95,7 @@ export function WatchlistSuggestions() {
         setAddingTicker(ticker);
         try {
             await supabase.from('watchlist').upsert(
-                { ticker, is_active: true, sector: 'Other' },
+                { ticker, is_active: true, sector: 'Other', company_name: ticker } as any,
                 { onConflict: 'ticker' }
             );
             setWatchlistTickers(prev => new Set([...prev, ticker]));
