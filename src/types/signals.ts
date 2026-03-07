@@ -128,6 +128,31 @@ export interface AgentOutputsJson {
         total_active: number;
         penalty: number;
     } | null;
+    options_flow?: {
+        has_unusual_activity: boolean;
+        sentiment: string;
+        put_call_ratio: number | null;
+        confidence_adjustment: number;
+        summary: string;
+    } | null;
+    peer_strength?: {
+        peer_avg_change: number;
+        relative_strength: number;
+        is_idiosyncratic: boolean;
+        confidence_adjustment: number;
+        peers: Array<{ ticker: string; change_pct: number }>;
+    } | null;
+    conflict_check?: {
+        has_conflicts: boolean;
+        conflict_count: number;
+        penalty: number;
+        summary: string;
+    } | null;
+    re_evaluation?: {
+        last_checked: string;
+        action: string;
+        ta_changes: Array<{ indicator: string; previous: string | number | null; current: string | number | null }>;
+    } | null;
     // Legacy fields for older signals
     event_detector?: Record<string, unknown>;
     bias_classifier?: Record<string, unknown>;

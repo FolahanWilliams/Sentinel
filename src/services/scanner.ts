@@ -34,6 +34,11 @@ import { MarketRegimeFilter } from './marketRegime';
 import { CorrelationGuard } from './correlationGuard';
 import { BacktestValidator } from './backtestValidator';
 import { SignalDecayEngine } from './signalDecay';
+import { OptionsFlowService } from './optionsFlowService';
+import { AutoLearningService } from './autoLearningService';
+import { SignalReEvaluator } from './signalReEvaluator';
+import { ConflictDetector } from './conflictDetector';
+import { PeerStrengthService } from './peerStrengthService';
 import type { MultiTimeframeResult } from './technicalAnalysis';
 
 export class ScannerService {
@@ -304,6 +309,27 @@ export class ScannerService {
                 }
             } catch (decayErr) {
                 console.warn('[Scanner] Signal decay processing failed (non-fatal):', decayErr);
+            }
+
+            // 3f. Signal Re-Evaluation — re-check active signals' TA
+            try {
+                const reEvalResult = await SignalReEvaluator.reEvaluateActiveSignals();
+                if (reEvalResult.processed > 0) {
+                    console.log(`[Scanner] Signal re-evaluation: ${reEvalResult.downgraded} downgraded, ${reEvalResult.closed} closed, ${reEvalResult.upgraded} upgraded out of ${reEvalResult.processed} checked.`);
+                }
+            } catch (reEvalErr) {
+                console.warn('[Scanner] Signal re-evaluation failed (non-fatal):', reEvalErr);
+            }
+
+            // 3g. Auto-Learning — load pipeline step weights from past outcomes
+            let autoLearnWeights: Record<string, number> = {};
+            try {
+                autoLearnWeights = await AutoLearningService.getWeights();
+                if (Object.keys(autoLearnWeights).length > 0) {
+                    console.log(`[Scanner] Auto-learning weights loaded: ${Object.entries(autoLearnWeights).map(([k, v]) => `${k}=${v}`).join(', ')}`);
+                }
+            } catch (alErr) {
+                console.warn('[Scanner] Auto-learning weights load failed (non-fatal):', alErr);
             }
 
             // 4. Find fresh unparsed articles from the cache
@@ -578,8 +604,30 @@ If there is genuinely no major news, return: {"events": []}`,
                                     }
                                 } catch { /* non-fatal */ }
 
-                                // Combine TA + divergence + gap + earnings + fundamentals + regime into unified context
-                                const enrichedTaContext = earlyTaContext + divergenceCtx + gapCtx + earningsCtx + fundamentalsCtx + regimeCtx;
+                                // 6g. Options Flow / Unusual Activity
+                                let optionsFlowCtx = '';
+                                let optionsFlowResult: import('./optionsFlowService').OptionsFlowResult | null = null;
+                                try {
+                                    optionsFlowResult = await OptionsFlowService.analyze(ev.ticker);
+                                    optionsFlowCtx = OptionsFlowService.formatForPrompt(optionsFlowResult);
+                                    if (optionsFlowResult.hasUnusualActivity) {
+                                        console.log(`[Scanner] Options flow for ${ev.ticker}: ${optionsFlowResult.sentiment} (adj=${optionsFlowResult.confidenceAdjustment})`);
+                                    }
+                                } catch { /* non-fatal */ }
+
+                                // 6h. Peer Relative Strength
+                                let peerStrengthCtx = '';
+                                let peerStrengthResult: import('./peerStrengthService').PeerStrengthResult | null = null;
+                                try {
+                                    peerStrengthResult = await PeerStrengthService.analyze(ev.ticker, priceDrop);
+                                    peerStrengthCtx = PeerStrengthService.formatForPrompt(peerStrengthResult);
+                                    if (peerStrengthResult.peers.length > 0) {
+                                        console.log(`[Scanner] Peer strength for ${ev.ticker}: relative=${peerStrengthResult.relativeStrength.toFixed(1)}%, idiosyncratic=${peerStrengthResult.isIdiosyncratic}`);
+                                    }
+                                } catch { /* non-fatal */ }
+
+                                // Combine TA + divergence + gap + earnings + fundamentals + regime + options + peers into unified context
+                                const enrichedTaContext = earlyTaContext + divergenceCtx + gapCtx + earningsCtx + fundamentalsCtx + regimeCtx + optionsFlowCtx + peerStrengthCtx;
 
                                 // Pipeline A: Overreaction Analysis
                                 const analysis = await AgentService.evaluateOverreaction(
@@ -683,10 +731,11 @@ If there is genuinely no major news, return: {"events": []}`,
                                         // 7.6. SENTIMENT DIVERGENCE BOOST — adjust confidence based on narrative-price divergence
                                         if (divergenceResult && divergenceResult.confidenceBoost !== 0) {
                                             const before = analysis.data.confidence_score;
+                                            const weightedDivBoost = AutoLearningService.applyWeight('sentiment_divergence', divergenceResult.confidenceBoost, autoLearnWeights);
                                             analysis.data.confidence_score = Math.min(100, Math.max(30,
-                                                analysis.data.confidence_score + divergenceResult.confidenceBoost
+                                                analysis.data.confidence_score + weightedDivBoost
                                             ));
-                                            console.log(`[Scanner] Divergence ${divergenceResult.divergenceType} adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${divergenceResult.confidenceBoost > 0 ? '+' : ''}${divergenceResult.confidenceBoost})`);
+                                            console.log(`[Scanner] Divergence ${divergenceResult.divergenceType} adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${weightedDivBoost > 0 ? '+' : ''}${weightedDivBoost})`);
                                         }
 
                                         // 7.7. EARNINGS CALENDAR PENALTY — reduce confidence near earnings
@@ -780,6 +829,47 @@ If there is genuinely no major news, return: {"events": []}`,
                                             if (hasFresh) {
                                                 console.log(`[Scanner] Skipping ${ev.ticker} — fresh active signal already exists for this type.`);
                                                 continue;
+                                            }
+                                        } catch { /* non-fatal */ }
+
+                                        // 7.14. OPTIONS FLOW — adjust confidence based on institutional positioning
+                                        if (optionsFlowResult && optionsFlowResult.confidenceAdjustment !== 0) {
+                                            const before = analysis.data.confidence_score;
+                                            analysis.data.confidence_score = Math.min(100, Math.max(30,
+                                                analysis.data.confidence_score + optionsFlowResult.confidenceAdjustment
+                                            ));
+                                            console.log(`[Scanner] Options flow (${optionsFlowResult.sentiment}) adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${optionsFlowResult.confidenceAdjustment > 0 ? '+' : ''}${optionsFlowResult.confidenceAdjustment})`);
+                                        }
+
+                                        // 7.15. PEER RELATIVE STRENGTH — adjust based on idiosyncratic vs sector-wide move
+                                        if (peerStrengthResult && peerStrengthResult.confidenceAdjustment !== 0) {
+                                            const before = analysis.data.confidence_score;
+                                            analysis.data.confidence_score = Math.min(100, Math.max(30,
+                                                analysis.data.confidence_score + peerStrengthResult.confidenceAdjustment
+                                            ));
+                                            console.log(`[Scanner] Peer strength (${peerStrengthResult.isIdiosyncratic ? 'idiosyncratic' : 'sector-wide'}) adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${peerStrengthResult.confidenceAdjustment > 0 ? '+' : ''}${peerStrengthResult.confidenceAdjustment})`);
+                                        }
+
+                                        // 7.16. THESIS CONFLICT DETECTION — check for contradictions with active signals
+                                        const tickerSectorForConflict = tickersToScan.find(t => t.ticker === ev.ticker)?.sector || 'Unknown';
+                                        let conflictResult: import('./conflictDetector').ConflictResult | null = null;
+                                        try {
+                                            conflictResult = await ConflictDetector.checkConflicts(
+                                                ev.ticker,
+                                                'long', // overreaction signals are long plays
+                                                analysis.data.thesis,
+                                                tickerSectorForConflict
+                                            );
+                                            if (conflictResult.shouldBlock) {
+                                                console.warn(`[Scanner] CONFLICT DETECTOR blocked ${ev.ticker}: ${conflictResult.summary}`);
+                                                continue;
+                                            }
+                                            if (conflictResult.confidencePenalty !== 0) {
+                                                const before = analysis.data.confidence_score;
+                                                analysis.data.confidence_score = Math.max(30,
+                                                    analysis.data.confidence_score + conflictResult.confidencePenalty
+                                                );
+                                                console.log(`[Scanner] Conflict detection adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${conflictResult.confidencePenalty})`);
                                             }
                                         } catch { /* non-fatal */ }
 
@@ -932,6 +1022,26 @@ If there is genuinely no major news, return: {"events": []}`,
                                                     total_active: correlationResult.totalActiveSignals,
                                                     penalty: correlationResult.confidencePenalty,
                                                 } : null,
+                                                options_flow: optionsFlowResult?.hasUnusualActivity ? {
+                                                    has_unusual_activity: true,
+                                                    sentiment: optionsFlowResult.sentiment,
+                                                    put_call_ratio: optionsFlowResult.putCallRatio,
+                                                    confidence_adjustment: optionsFlowResult.confidenceAdjustment,
+                                                    summary: optionsFlowResult.summary,
+                                                } : null,
+                                                peer_strength: peerStrengthResult && peerStrengthResult.peers.length > 0 ? {
+                                                    peer_avg_change: peerStrengthResult.peerAvgChange,
+                                                    relative_strength: peerStrengthResult.relativeStrength,
+                                                    is_idiosyncratic: peerStrengthResult.isIdiosyncratic,
+                                                    confidence_adjustment: peerStrengthResult.confidenceAdjustment,
+                                                    peers: peerStrengthResult.peers.map(p => ({ ticker: p.ticker, change_pct: p.changePercent })),
+                                                } : null,
+                                                conflict_check: conflictResult?.hasConflicts ? {
+                                                    has_conflicts: true,
+                                                    conflict_count: conflictResult.conflicts.length,
+                                                    penalty: conflictResult.confidencePenalty,
+                                                    summary: conflictResult.summary,
+                                                } : null,
                                             },
                                             status: 'active',
                                             secondary_biases: [],
@@ -941,8 +1051,9 @@ If there is genuinely no major news, return: {"events": []}`,
 
                                         // 8b. Seed outcome tracking row so OutcomeTracker can follow this signal
                                         if (savedSignal) {
-                                            // Invalidate correlation cache so next signal check uses fresh data
+                                            // Invalidate correlation + conflict caches
                                             CorrelationGuard.invalidateCache();
+                                            ConflictDetector.invalidateCache();
 
                                             // Dispatch alert rules
                                             NotificationService.checkAndDispatchAlerts(savedSignal);
@@ -1126,6 +1237,23 @@ If there is genuinely no major news, return: {"events": []}`,
                 await OutcomeTracker.updatePendingOutcomes();
             } catch (outcomeErr: any) {
                 console.warn('[Scanner] Outcome tracker error:', outcomeErr.message);
+            }
+
+            // 11b. Auto-Learning — periodically re-analyze pipeline weights
+            try {
+                const { count: completedCount } = await supabase
+                    .from('signal_outcomes')
+                    .select('*', { count: 'exact', head: true })
+                    .neq('outcome', 'pending');
+
+                // Trigger auto-learning every 20 completed outcomes
+                if (completedCount && completedCount >= 10 && completedCount % 20 < signalsGenerated + 1) {
+                    console.log(`[Scanner] Triggering auto-learning analysis (${completedCount} completed outcomes)...`);
+                    void AutoLearningService.analyzeAndUpdateWeights().catch(e =>
+                        console.warn('[Scanner] Auto-learning failed (non-fatal):', e)
+                    );
+                }
+            } catch { /* non-fatal */
             }
 
             // 12. Update Scan Log
