@@ -28,7 +28,7 @@ import {
 
 const NAV_ITEMS = [
     { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
-    { to: '/intelligence', icon: Newspaper, label: 'Intelligence' },
+    { to: '/?tab=intelligence', icon: Newspaper, label: 'Intelligence' },
     { to: '/watchlist', icon: List, label: 'Watchlist' },
     { to: '/positions', icon: Briefcase, label: 'Positions' },
     { to: '/scanner', icon: Radar, label: 'Scanner' },
@@ -82,7 +82,11 @@ export function Sidebar() {
             {/* Navigation */}
             <nav className="flex-1 py-6 px-3 space-y-1.5 overflow-y-auto overflow-x-hidden">
                 {NAV_ITEMS.map(({ to, icon: Icon, label }) => {
-                    const isActive = location.pathname === to || (to !== '/' && location.pathname.startsWith(to));
+                    // Handle query-param routes like /?tab=intelligence
+                    const isTabRoute = to.includes('?tab=');
+                    const isActive = isTabRoute
+                        ? location.pathname === '/' && location.search === to.slice(1) // Match /?tab=intelligence
+                        : location.pathname === to || (to !== '/' && location.pathname.startsWith(to));
 
                     return (
                         <NavLink

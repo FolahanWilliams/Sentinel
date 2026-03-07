@@ -19,7 +19,6 @@ import { Backtest } from '@/pages/Backtest';
 import { Scanner } from '@/pages/Scanner';
 import { Settings } from '@/pages/Settings';
 import { Journal } from '@/pages/Journal';
-import { Intelligence } from '@/pages/Intelligence';
 import { StockAnalysis } from '@/pages/StockAnalysis';
 import { Positions } from '@/pages/Positions';
 import { NotFound } from '@/pages/NotFound';
@@ -78,7 +77,7 @@ export default function App() {
                             <Route path="/scanner" element={<Scanner />} />
                             <Route path="/research" element={<StockAnalysis />} />
                             <Route path="/research/:ticker" element={<StockAnalysis />} />
-                            <Route path="/intelligence" element={<Intelligence />} />
+                            <Route path="/intelligence" element={<Navigate to="/?tab=intelligence" replace />} />
                             <Route path="/settings" element={<Settings />} />
                             <Route path="/journal" element={<Journal />} />
                             <Route path="/positions" element={<Positions />} />

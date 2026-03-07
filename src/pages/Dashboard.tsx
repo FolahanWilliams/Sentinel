@@ -13,6 +13,8 @@ import { PortfolioOverview } from '@/components/dashboard/PortfolioOverview';
 import { PortfolioSimulator } from '@/components/dashboard/PortfolioSimulator';
 import { SectorHeatMap } from '@/components/dashboard/SectorHeatMap';
 import { NewsFeed } from '@/components/dashboard/NewsFeed';
+import { DashboardConvergence } from '@/components/dashboard/DashboardConvergence';
+import { WatchlistSuggestions } from '@/components/dashboard/WatchlistSuggestions';
 import { GlassMaterialize } from '@/components/shared/GlassMaterialize';
 import { useScannerLogs } from '@/hooks/useScannerLogs';
 import { SkeletonSignalFeed } from '@/components/shared/SkeletonPrimitives';
@@ -326,13 +328,15 @@ export function Dashboard() {
                     </div>
                 </div>
 
-                {/* RIGHT COLUMN: Trends, Sector Heat Map & Events*/}
+                {/* RIGHT COLUMN: Convergence, Trends, Sector Heat Map & Events */}
                 <div className="xl:col-span-1 space-y-6 flex flex-col min-h-[600px]">
-                    <GlassMaterialize delay={50}><SectorHeatMap /></GlassMaterialize>
-                    <GlassMaterialize delay={100}><MarketTrends /></GlassMaterialize>
-                    <GlassMaterialize delay={150}><PotentialSignals /></GlassMaterialize>
-                    <GlassMaterialize delay={200}><NewsFeed limit={8} /></GlassMaterialize>
-                    <GlassMaterialize delay={250}><UpcomingEvents /></GlassMaterialize>
+                    <GlassMaterialize delay={50}><DashboardConvergence /></GlassMaterialize>
+                    <GlassMaterialize delay={75}><WatchlistSuggestions /></GlassMaterialize>
+                    <GlassMaterialize delay={100}><SectorHeatMap /></GlassMaterialize>
+                    <GlassMaterialize delay={150}><MarketTrends /></GlassMaterialize>
+                    <GlassMaterialize delay={200}><PotentialSignals /></GlassMaterialize>
+                    <GlassMaterialize delay={250}><NewsFeed limit={8} /></GlassMaterialize>
+                    <GlassMaterialize delay={300}><UpcomingEvents /></GlassMaterialize>
                 </div>
             </div>
         </div>
