@@ -98,7 +98,7 @@ export function EarningsCalendar() {
 
             batchResults.forEach((res, j) => {
                 const idx = i + j;
-                const prev = results[idx];
+                const prev = results[idx]!;
                 if (res.status === 'fulfilled') {
                     results[idx] = { ticker: prev.ticker, companyName: prev.companyName, source: prev.source, result: res.value, loading: false, error: null };
                 } else {
@@ -127,9 +127,9 @@ export function EarningsCalendar() {
 
     // Filter entries
     const filteredEntries = useMemo(() => {
+        if (filter === 'all') return entries;
         return entries.filter(e => {
-            if (filter === 'all') return true;
-            if (!e.result) return filter === 'all';
+            if (!e.result) return false;
             if (filter === 'upcoming') return e.result.hasUpcomingEarnings;
             if (filter === 'imminent') return e.result.hasUpcomingEarnings && (e.result.daysUntilEarnings ?? 999) <= 7;
             if (filter === 'clear') return !e.result.hasUpcomingEarnings;

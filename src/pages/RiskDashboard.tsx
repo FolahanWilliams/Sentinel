@@ -13,7 +13,7 @@ import { MarketDataService } from '@/services/marketData';
 import {
     Shield, AlertTriangle, TrendingDown, PieChart,
     Activity, Loader2, Flame, Target,
-    ArrowDownRight, ArrowUpRight, BarChart3, Zap,
+    ArrowDownRight, ArrowUpRight,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { EmptyState } from '@/components/shared/EmptyState';
@@ -137,7 +137,7 @@ export function RiskDashboard() {
                 exposure,
                 pct: totalCapital > 0 ? (exposure / totalCapital) * 100 : 0,
                 positions: count,
-                color: SECTOR_COLORS[sector] || SECTOR_COLORS.Other,
+                color: SECTOR_COLORS[sector] ?? '#6B7280',
             }))
             .sort((a, b) => b.pct - a.pct);
     }, [positionRisks, totalCapital]);
