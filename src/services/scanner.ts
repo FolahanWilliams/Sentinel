@@ -1044,7 +1044,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                             }
                                         } catch { /* non-fatal */ }
 
-                                        const { data: savedSignal } = await supabase.from('signals').insert({
+                                        const { data: savedSignal, error: signalInsertErr } = await supabase.from('signals').insert({
                                             ticker: ev.ticker,
                                             signal_type: 'long_overreaction',
                                             confidence_score: analysis.data.confidence_score,
@@ -1164,6 +1164,10 @@ If there is genuinely no major news, return: {"events": []}`,
                                             sources: [],
                                             is_paper: false
                                         }).select().single();
+
+                                        if (signalInsertErr) {
+                                            console.error(`[Scanner] Failed to save signal for ${ev.ticker}:`, signalInsertErr.message);
+                                        }
 
                                         // 8b. Seed outcome tracking row so OutcomeTracker can follow this signal
                                         if (savedSignal) {
@@ -1305,7 +1309,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                                                 satSnapshot, 'long', contagion.data.confidence_score
                                                             );
 
-                                                            const { data: savedContagionSignal } = await supabase.from('signals').insert({
+                                                            const { data: savedContagionSignal, error: contagionInsertErr } = await supabase.from('signals').insert({
                                                                 ticker: sat.ticker,
                                                                 signal_type: 'sector_contagion',
                                                                 confidence_score: contagion.data.confidence_score,
@@ -1346,6 +1350,10 @@ If there is genuinely no major news, return: {"events": []}`,
                                                                 sources: [],
                                                                 is_paper: false
                                                             }).select().single();
+
+                                                            if (contagionInsertErr) {
+                                                                console.error(`[Scanner] Failed to save contagion signal for ${sat.ticker}:`, contagionInsertErr.message);
+                                                            }
 
                                                             // Seed outcome tracking
                                                             if (savedContagionSignal) {
@@ -1612,7 +1620,7 @@ If there is genuinely no major news, return: {"events": []}`,
                             singleTaSnapshot, 'long', singleConfidence
                         );
 
-                        const { data: savedSignal } = await supabase.from('signals').insert({
+                        const { data: savedSignal, error: discSignalErr } = await supabase.from('signals').insert({
                             ticker: ticker,
                             signal_type: 'long_overreaction',
                             confidence_score: singleConfidence,
@@ -1647,6 +1655,10 @@ If there is genuinely no major news, return: {"events": []}`,
                             sources: [],
                             is_paper: isPaper
                         } as any).select().single();
+
+                        if (discSignalErr) {
+                            console.error(`[Scanner] Failed to save discovery signal for ${ticker}:`, discSignalErr.message);
+                        }
 
                         if (savedSignal) {
                             NotificationService.checkAndDispatchAlerts(savedSignal);
