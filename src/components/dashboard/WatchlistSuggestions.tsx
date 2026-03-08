@@ -96,7 +96,7 @@ export function WatchlistSuggestions() {
         try {
             await supabase.from('watchlist').upsert(
                 { ticker, is_active: true, sector: 'Other', company_name: ticker } as any,
-                { onConflict: 'ticker' }
+                { onConflict: 'ticker,user_id' }
             );
             setWatchlistTickers(prev => new Set([...prev, ticker]));
         } catch (err) {

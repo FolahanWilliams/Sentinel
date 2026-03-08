@@ -1176,7 +1176,7 @@ function AnalystChatInner() {
                 const watchTicker = watchMatch[1].toUpperCase();
                 await supabase.from('watchlist').upsert(
                     { ticker: watchTicker, is_active: true, sector: 'Other', company_name: watchTicker } as any,
-                    { onConflict: 'ticker' }
+                    { onConflict: 'ticker,user_id' }
                 );
                 setMessages(prev => [...prev, {
                     role: 'system',

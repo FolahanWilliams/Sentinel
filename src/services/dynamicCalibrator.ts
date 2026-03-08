@@ -162,7 +162,7 @@ export class DynamicCalibrator {
           value: curve as any,
           updated_at: new Date().toISOString(),
         },
-        { onConflict: 'key' }
+        { onConflict: 'key,user_id' }
       );
 
     // Refresh in-memory cache

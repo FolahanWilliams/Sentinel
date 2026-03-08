@@ -5,9 +5,10 @@
  * Secondary routes are lazy-loaded to reduce the initial bundle size.
  */
 
-import { useState, useEffect, lazy, Suspense } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
+import { clearUserIdCache } from '@/utils/getUserId';
 import { AuthGate } from '@/components/auth/AuthGate';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { ChatProvider } from '@/contexts/ChatContext';
@@ -43,13 +44,27 @@ function RouteLoader() {
     );
 }
 
+/** Clear all Sentinel-prefixed localStorage & sessionStorage caches */
+function clearSentinelCaches() {
+    for (const store of [localStorage, sessionStorage]) {
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < store.length; i++) {
+            const key = store.key(i);
+            if (key?.startsWith('sentinel_')) keysToRemove.push(key);
+        }
+        keysToRemove.forEach(k => store.removeItem(k));
+    }
+}
+
 export default function App() {
     const [session, setSession] = useState<Session | null>(null);
     const [loading, setLoading] = useState(true);
+    const prevUserIdRef = useRef<string | null>(null);
 
     useEffect(() => {
         // 1. Check for an existing session on mount
         supabase.auth.getSession().then(({ data: { session: s } }) => {
+            prevUserIdRef.current = s?.user?.id ?? null;
             setSession(s);
             setLoading(false);
         }).catch(() => {
@@ -58,7 +73,17 @@ export default function App() {
 
         // 2. Listen for auth state changes (login, logout, token refresh)
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
-            (_event, s) => {
+            (event, s) => {
+                const newUserId = s?.user?.id ?? null;
+                const prevUserId = prevUserIdRef.current;
+
+                // Clear caches when user changes or signs out
+                if (event === 'SIGNED_OUT' || (newUserId && prevUserId && newUserId !== prevUserId)) {
+                    clearSentinelCaches();
+                    clearUserIdCache();
+                }
+
+                prevUserIdRef.current = newUserId;
                 setSession(s);
                 setLoading(false);
             }

@@ -25,6 +25,7 @@ export type Database = {
           sector: string
           severity: string
           updated_at: string
+          user_id: string | null
           win_rate: number
         }
         Insert: {
@@ -37,6 +38,7 @@ export type Database = {
           sector?: string
           severity?: string
           updated_at?: string
+          user_id?: string | null
           win_rate: number
         }
         Update: {
@@ -49,6 +51,7 @@ export type Database = {
           sector?: string
           severity?: string
           updated_at?: string
+          user_id?: string | null
           win_rate?: number
         }
         Relationships: []
@@ -103,18 +106,24 @@ export type Database = {
       }
       app_settings: {
         Row: {
+          id: string
           key: string
           updated_at: string
+          user_id: string | null
           value: Json
         }
         Insert: {
+          id?: string
           key: string
           updated_at?: string
+          user_id?: string | null
           value: Json
         }
         Update: {
+          id?: string
           key?: string
           updated_at?: string
+          user_id?: string | null
           value?: Json
         }
         Relationships: []
@@ -125,6 +134,7 @@ export type Database = {
           ticker: string
           messages: Json
           summary: string | null
+          user_id: string | null
           created_at: string
           updated_at: string
         }
@@ -133,6 +143,7 @@ export type Database = {
           ticker?: string
           messages?: Json
           summary?: string | null
+          user_id?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -141,6 +152,7 @@ export type Database = {
           ticker?: string
           messages?: Json
           summary?: string | null
+          user_id?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -156,6 +168,7 @@ export type Database = {
           signal_id: string | null
           tags: string[]
           ticker: string | null
+          user_id: string | null
         }
         Insert: {
           content: string
@@ -166,6 +179,7 @@ export type Database = {
           signal_id?: string | null
           tags?: string[]
           ticker?: string | null
+          user_id?: string | null
         }
         Update: {
           content?: string
@@ -176,6 +190,7 @@ export type Database = {
           signal_id?: string | null
           tags?: string[]
           ticker?: string | null
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -260,6 +275,7 @@ export type Database = {
           risk_per_trade_pct: number
           total_capital: number
           updated_at: string
+          user_id: string | null
         }
         Insert: {
           id?: string
@@ -271,6 +287,7 @@ export type Database = {
           risk_per_trade_pct?: number
           total_capital?: number
           updated_at?: string
+          user_id?: string | null
         }
         Update: {
           id?: string
@@ -282,6 +299,7 @@ export type Database = {
           risk_per_trade_pct?: number
           total_capital?: number
           updated_at?: string
+          user_id?: string | null
         }
         Relationships: []
       }
@@ -304,6 +322,7 @@ export type Database = {
           signal_id: string | null
           status: string
           ticker: string
+          user_id: string | null
         }
         Insert: {
           close_reason?: string | null
@@ -323,6 +342,7 @@ export type Database = {
           signal_id?: string | null
           status?: string
           ticker: string
+          user_id?: string | null
         }
         Update: {
           close_reason?: string | null
@@ -342,6 +362,7 @@ export type Database = {
           signal_id?: string | null
           status?: string
           ticker?: string
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -413,6 +434,7 @@ export type Database = {
           signals_generated: number
           status: string
           tickers_scanned: number
+          user_id: string | null
         }
         Insert: {
           created_at?: string
@@ -425,6 +447,7 @@ export type Database = {
           signals_generated?: number
           status: string
           tickers_scanned?: number
+          user_id?: string | null
         }
         Update: {
           created_at?: string
@@ -437,6 +460,7 @@ export type Database = {
           signals_generated?: number
           status?: string
           tickers_scanned?: number
+          user_id?: string | null
         }
         Relationships: []
       }
@@ -537,6 +561,7 @@ export type Database = {
           signal_id: string | null
           ticker: string | null
           trade_return_pct: number | null
+          user_id: string | null
         }
         Insert: {
           category: string
@@ -550,6 +575,7 @@ export type Database = {
           signal_id?: string | null
           ticker?: string | null
           trade_return_pct?: number | null
+          user_id?: string | null
         }
         Update: {
           category?: string
@@ -563,6 +589,7 @@ export type Database = {
           signal_id?: string | null
           ticker?: string | null
           trade_return_pct?: number | null
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -595,6 +622,7 @@ export type Database = {
           signal_id: string
           ticker: string
           tracked_at: string
+          user_id: string | null
         }
         Insert: {
           completed_at?: string | null
@@ -616,6 +644,7 @@ export type Database = {
           signal_id: string
           ticker: string
           tracked_at?: string
+          user_id?: string | null
         }
         Update: {
           completed_at?: string | null
@@ -637,6 +666,7 @@ export type Database = {
           signal_id?: string
           ticker?: string
           tracked_at?: string
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -654,18 +684,21 @@ export type Database = {
           rated_at: string
           rating: string
           signal_id: string
+          user_id: string | null
         }
         Insert: {
           id?: string
           rated_at?: string
           rating: string
           signal_id: string
+          user_id?: string | null
         }
         Update: {
           id?: string
           rated_at?: string
           rating?: string
           signal_id?: string
+          user_id?: string | null
         }
         Relationships: [
           {
@@ -719,6 +752,7 @@ export type Database = {
           trailing_stop_rule: string | null
           updated_at: string
           user_notes: string | null
+          user_id: string | null
           why_high_conviction: string | null
         }
         Insert: {
@@ -762,6 +796,7 @@ export type Database = {
           trailing_stop_rule?: string | null
           updated_at?: string
           user_notes?: string | null
+          user_id?: string | null
           why_high_conviction?: string | null
         }
         Update: {
@@ -805,6 +840,7 @@ export type Database = {
           trailing_stop_rule?: string | null
           updated_at?: string
           user_notes?: string | null
+          user_id?: string | null
           why_high_conviction?: string | null
         }
         Relationships: [
@@ -827,6 +863,7 @@ export type Database = {
           sector: string
           ticker: string
           updated_at: string
+          user_id: string | null
         }
         Insert: {
           added_at?: string
@@ -837,6 +874,7 @@ export type Database = {
           sector: string
           ticker: string
           updated_at?: string
+          user_id?: string | null
         }
         Update: {
           added_at?: string
@@ -847,6 +885,7 @@ export type Database = {
           sector?: string
           ticker?: string
           updated_at?: string
+          user_id?: string | null
         }
         Relationships: []
       }
