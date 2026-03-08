@@ -46,7 +46,7 @@ const SECTOR_COLORS: Record<string, string> = {
 
 export function UnifiedPortfolioView({ className = '' }: UnifiedPortfolioViewProps) {
     const navigate = useNavigate();
-    const { config, openPositions, closedPositions, loading: portfolioLoading } = usePortfolio();
+    const { config, openPositions, closedPositions, loading: portfolioLoading, refetch } = usePortfolio();
     const [quotes, setQuotes] = useState<Record<string, Quote>>({});
     const [sectorMap, setSectorMap] = useState<Record<string, string>>({});
     const [refreshing, setRefreshing] = useState(false);
@@ -369,11 +369,11 @@ export function UnifiedPortfolioView({ className = '' }: UnifiedPortfolioViewPro
                 {/* Log Trade Modal */}
                 <AnimatePresence>
                     {showTradeModal && (
-                        <LogTradeModal onClose={() => setShowTradeModal(false)} />
+                        <LogTradeModal onClose={() => { setShowTradeModal(false); refetch(); }} />
                     )}
                     {showImportModal && (
                         <ImportPortfolio
-                            onClose={() => setShowImportModal(false)}
+                            onClose={() => { setShowImportModal(false); refetch(); }}
                             existingTickers={openPositions.map(p => p.ticker)}
                             existingPositions={openPositions}
                         />

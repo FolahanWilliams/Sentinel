@@ -44,6 +44,7 @@ export interface PortfolioData {
     closedPositions: Position[];
     loading: boolean;
     error: string | null;
+    refetch: () => Promise<void>;
 }
 
 const DEFAULT_CONFIG: PortfolioConfig = {
@@ -116,5 +117,5 @@ export function usePortfolio(): PortfolioData {
     const openPositions = useMemo(() => positions.filter(p => p.status === 'open'), [positions]);
     const closedPositions = useMemo(() => positions.filter(p => p.status === 'closed'), [positions]);
 
-    return { config, positions, openPositions, closedPositions, loading, error };
+    return { config, positions, openPositions, closedPositions, loading, error, refetch: fetchAll };
 }
