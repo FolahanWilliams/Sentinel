@@ -19,7 +19,7 @@ import {
     DollarSign, TrendingUp, TrendingDown, ShieldAlert, PieChart,
     Plus, X, RefreshCw, Briefcase, ArrowUpRight, ArrowDownRight, FileUp,
 } from 'lucide-react';
-import { ImportHLCSV } from './ImportHLCSV';
+import { ImportPortfolio } from './ImportPortfolio';
 import { calcUnrealizedPnl, calcUnrealizedPnlPct, getPositionPrice, getPositionExposure, inferCurrency } from '@/utils/portfolio';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Quote } from '@/types/market';
@@ -372,7 +372,7 @@ export function UnifiedPortfolioView({ className = '' }: UnifiedPortfolioViewPro
                         <LogTradeModal onClose={() => setShowTradeModal(false)} />
                     )}
                     {showImportModal && (
-                        <ImportHLCSV
+                        <ImportPortfolio
                             onClose={() => setShowImportModal(false)}
                             existingTickers={openPositions.map(p => p.ticker)}
                             existingPositions={openPositions}
