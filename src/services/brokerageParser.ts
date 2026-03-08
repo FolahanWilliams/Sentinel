@@ -286,6 +286,126 @@ export function parseHLCSV(text: string, existingTickers: Set<string>): ParseRes
 /* ─── Wells Fargo PDF parser ─── */
 
 /**
+ * Cost basis record extracted from WF Activity Detail section.
+ * Tracks purchase transactions (REINVEST DIV, BUY, etc.) per ticker.
+ */
+interface WFCostBasisEntry {
+    ticker: string;
+    totalCost: number;    // Total dollars spent purchasing
+    totalShares: number;  // Total shares acquired
+}
+
+/**
+ * Parse the Activity Detail section of a WF PDF to extract cost basis.
+ *
+ * Activity detail format:
+ *   DATE | ACCOUNT TYPE | TRANSACTION | QUANTITY | DESCRIPTION | PRICE | AMOUNT | CASH AND SWEEP BALANCES
+ *
+ * Example rows:
+ *   02/12  Cash  REINVEST DIV  0.00200  APPLE INC  REINVEST AT 275.337  -0.54  -100.00
+ *   02/12  Cash  DIVIDEND                APPLE INC  021226  2.05900     0.54
+ *
+ * We look for REINVEST DIV / BUY transactions to compute actual cost basis.
+ */
+function parseWFActivityDetail(lines: string[]): Map<string, WFCostBasisEntry> {
+    const costMap = new Map<string, WFCostBasisEntry>();
+
+    let inActivitySection = false;
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]!;
+
+        // Detect Activity detail section
+        if (/^activity\s+detail/i.test(line)) {
+            inActivitySection = true;
+            continue;
+        }
+
+        if (!inActivitySection) continue;
+
+        // Stop at next major section or page break
+        if (/^(portfolio detail|account summary|page \d|--- PAGE BREAK ---)/i.test(line)) {
+            // Could be a new page continuing activity — only stop at non-activity sections
+            if (/^(portfolio detail|account summary)/i.test(line)) {
+                inActivitySection = false;
+                continue;
+            }
+            continue;
+        }
+
+        // Look for purchase-type transactions
+        const isReinvest = /reinvest\s+div/i.test(line);
+        const isBuy = /\bbuy\b/i.test(line) && !/\bsell\b/i.test(line);
+
+        if (!isReinvest && !isBuy) continue;
+
+        // Extract quantity and price from this line and nearby lines
+        // Pattern: "REINVEST DIV  0.00200  APPLE INC  REINVEST AT 275.337"
+        const numbers = extractNumbersFromWFLine(line);
+
+        // For REINVEST DIV: look for "REINVEST AT <price>" pattern
+        const reinvestMatch = line.match(/reinvest\s+at\s+([\d,.]+)/i);
+        let reinvestPrice = reinvestMatch ? parseFloat(reinvestMatch[1]!.replace(/,/g, '')) : 0;
+
+        // Find the ticker — look at nearby lines for a standalone ticker
+        let ticker = '';
+
+        // Check current line for stock name, then look for ticker below
+        // WF pattern: transaction line has the stock name, ticker might be on next line
+        // Or the ticker is embedded: "APPLE INC" -> need to find "AAPL" nearby
+        for (let j = i - 2; j <= i + 3 && j < lines.length; j++) {
+            if (j < 0) continue;
+            const candidate = lines[j]!.trim();
+            if (isLikelyTicker(candidate)) {
+                ticker = candidate;
+                break;
+            }
+        }
+
+        if (!ticker) continue;
+
+        // Determine quantity and cost for this transaction
+        let qty = 0;
+        let cost = 0;
+
+        if (numbers.length >= 1) {
+            // For reinvest: first small number is usually quantity
+            for (const num of numbers) {
+                if (num > 0 && num < 1000 && qty === 0) {
+                    // Could be quantity (small) or amount
+                    if (reinvestPrice > 0 && num < reinvestPrice) {
+                        qty = num;
+                    } else if (num < 10) {
+                        qty = num; // Likely fractional share quantity
+                    }
+                }
+            }
+
+            if (qty > 0 && reinvestPrice > 0) {
+                cost = qty * reinvestPrice;
+            } else {
+                // Look for AMOUNT column (negative = cash outflow = purchase)
+                for (const num of numbers) {
+                    if (num < 0 && Math.abs(num) > 0.01) {
+                        cost = Math.abs(num);
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (qty > 0 || cost > 0) {
+            const existing = costMap.get(ticker) ?? { ticker, totalCost: 0, totalShares: 0 };
+            existing.totalCost += cost;
+            existing.totalShares += qty;
+            costMap.set(ticker, existing);
+        }
+    }
+
+    return costMap;
+}
+
+/**
  * Parse Wells Fargo Advisors PDF statement text.
  *
  * WF PDF structure (from text extraction):
@@ -298,7 +418,7 @@ export function parseHLCSV(text: string, existingTickers: Set<string>): ParseRes
  *     AAPL
  *   (Ticker appears on the next line under the name)
  * - "Total Stocks and ETFs" summary line
- * - "Activity detail" section (ignored)
+ * - "Activity detail" section with purchase/dividend/reinvest transactions
  */
 export function parseWellsFargoPDF(text: string, existingTickers: Set<string>): ParseResult {
     const errors: string[] = [];
@@ -306,6 +426,9 @@ export function parseWellsFargoPDF(text: string, existingTickers: Set<string>): 
     let accountSummary: AccountSummary | null = null;
 
     const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+
+    // Extract cost basis from Activity Detail section
+    const costBasis = parseWFActivityDetail(lines);
 
     // Extract account summary — look for total values
     let totalStocksValue = 0;
@@ -345,12 +468,6 @@ export function parseWellsFargoPDF(text: string, existingTickers: Set<string>): 
     }
 
     // Find the stocks section and parse holdings
-    // WF PDF text layout: stock name on one line, ticker on the next, numbers in between or around
-    // We look for patterns like:
-    //   "APPLE INC" followed by numbers (qty, price, value) and then "AAPL" on next line
-    //   OR the numbers may follow on the ticker line
-
-    // Strategy: Find the "Stocks and ETFs" table region, then parse line-by-line
     let inStocksSection = false;
     let i = 0;
 
@@ -406,6 +523,24 @@ export function parseWellsFargoPDF(text: string, existingTickers: Set<string>): 
         } else {
             errors.push('No holdings found in Wells Fargo PDF. Make sure the PDF contains a "Portfolio detail" or "Stocks and ETFs" section.');
         }
+    }
+
+    // Apply cost basis from Activity Detail to holdings
+    let costBasisApplied = 0;
+    for (const h of holdings) {
+        const cb = costBasis.get(h.ticker);
+        if (cb && cb.totalCost > 0) {
+            // Activity detail has actual purchase cost — use it instead of market value
+            h.cost = cb.totalCost;
+            h.price = cb.totalShares > 0 ? cb.totalCost / cb.totalShares : h.price;
+            h.pnl = h.value - h.cost;
+            h.pnlPct = h.cost > 0 ? ((h.value - h.cost) / h.cost) * 100 : 0;
+            costBasisApplied++;
+        }
+    }
+
+    if (costBasisApplied > 0) {
+        errors.push(`Cost basis extracted from Activity Detail for ${costBasisApplied} holding${costBasisApplied > 1 ? 's' : ''}.`);
     }
 
     const dupeCount = holdings.filter(h => h.isDuplicate).length;
@@ -878,6 +1013,191 @@ export async function parseBrokerageDocument(
     }
 
     return parseGenericCSV(text, existingTickers);
+}
+
+/* ─── Multi-file merge ─── */
+
+/** Metadata about a parsed file for the UI */
+export interface ParsedFileInfo {
+    fileName: string;
+    brokerage: BrokerageType;
+    holdingsCount: number;
+    status: 'pending' | 'parsing' | 'done' | 'error';
+    error?: string;
+}
+
+/**
+ * Parse multiple brokerage documents and merge holdings.
+ *
+ * Deduplication strategy:
+ * - If the same ticker appears in multiple files, keep the one with the most
+ *   recent/largest quantity (assumes newer statements are more current).
+ * - Merge cost basis: if one file has cost basis data and another doesn't,
+ *   prefer the one with real cost basis.
+ * - Account summaries are summed across files from different accounts,
+ *   or use the latest for same-account files.
+ *
+ * @param files Array of files to parse
+ * @param existingTickers Tickers already in the portfolio
+ * @param onProgress Callback for per-file progress updates
+ */
+export async function parseMultipleBrokerageDocuments(
+    files: File[],
+    existingTickers: Set<string>,
+    onProgress?: (fileInfos: ParsedFileInfo[]) => void,
+): Promise<ParseResult> {
+    const fileInfos: ParsedFileInfo[] = files.map(f => ({
+        fileName: f.name,
+        brokerage: 'unknown' as BrokerageType,
+        holdingsCount: 0,
+        status: 'pending' as const,
+    }));
+
+    const allResults: ParseResult[] = [];
+    const allErrors: string[] = [];
+
+    // Parse each file sequentially (PDF parsing is memory-intensive)
+    for (let i = 0; i < files.length; i++) {
+        fileInfos[i]!.status = 'parsing';
+        onProgress?.(fileInfos);
+
+        try {
+            const result = await parseBrokerageDocument(files[i]!, existingTickers);
+            allResults.push(result);
+            fileInfos[i]!.brokerage = result.brokerage;
+            fileInfos[i]!.holdingsCount = result.holdings.length;
+            fileInfos[i]!.status = 'done';
+
+            if (result.errors.length > 0) {
+                allErrors.push(`[${files[i]!.name}] ${result.errors.join('; ')}`);
+            }
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : 'Unknown error';
+            fileInfos[i]!.status = 'error';
+            fileInfos[i]!.error = msg;
+            allErrors.push(`[${files[i]!.name}] Failed to parse: ${msg}`);
+        }
+
+        onProgress?.(fileInfos);
+    }
+
+    if (allResults.length === 0) {
+        return {
+            holdings: [],
+            errors: allErrors.length > 0 ? allErrors : ['No files could be parsed.'],
+            accountSummary: null,
+            exchangeRate: null,
+            isGBPSource: false,
+            brokerage: 'unknown',
+        };
+    }
+
+    // Merge holdings across files — deduplicate by ticker
+    const holdingMap = new Map<string, ParsedHolding>();
+
+    for (const result of allResults) {
+        for (const h of result.holdings) {
+            const key = h.ticker.toUpperCase();
+            const existing = holdingMap.get(key);
+
+            if (!existing) {
+                holdingMap.set(key, { ...h });
+            } else {
+                // Prefer the entry with actual cost basis (cost !== value means real cost data)
+                const existingHasRealCost = Math.abs(existing.cost - existing.value) > 0.01;
+                const newHasRealCost = Math.abs(h.cost - h.value) > 0.01;
+
+                if (newHasRealCost && !existingHasRealCost) {
+                    // New file has real cost basis — use its cost but keep latest quantity/value
+                    holdingMap.set(key, {
+                        ...h,
+                        quantity: Math.max(h.quantity, existing.quantity),
+                        value: Math.max(h.value, existing.value),
+                    });
+                } else if (h.quantity > existing.quantity || h.value > existing.value) {
+                    // New file has more shares or higher value — likely more current
+                    // But preserve cost basis if existing had it
+                    holdingMap.set(key, {
+                        ...h,
+                        cost: existingHasRealCost ? existing.cost : h.cost,
+                        price: existingHasRealCost ? existing.price : h.price,
+                    });
+                }
+                // Otherwise keep existing (first occurrence with better data)
+            }
+        }
+    }
+
+    // Recalculate P&L for merged holdings
+    const mergedHoldings = Array.from(holdingMap.values()).map(h => {
+        const pnl = h.value - h.cost;
+        const pnlPct = h.cost > 0 ? (pnl / h.cost) * 100 : 0;
+        return { ...h, pnl, pnlPct };
+    });
+
+    // Merge account summaries — sum across all parsed files
+    let mergedSummary: AccountSummary | null = null;
+    for (const result of allResults) {
+        if (result.accountSummary) {
+            if (!mergedSummary) {
+                mergedSummary = { ...result.accountSummary };
+            } else {
+                // Use the highest total value (most current statement)
+                if (result.accountSummary.totalValue > mergedSummary.totalValue) {
+                    mergedSummary = { ...result.accountSummary };
+                }
+            }
+        }
+    }
+
+    // Use the most common brokerage type, or the first non-unknown
+    const brokerageCounts = new Map<BrokerageType, number>();
+    for (const r of allResults) {
+        brokerageCounts.set(r.brokerage, (brokerageCounts.get(r.brokerage) ?? 0) + 1);
+    }
+    let primaryBrokerage: BrokerageType = 'unknown';
+    let maxCount = 0;
+    for (const [b, c] of brokerageCounts) {
+        if (b !== 'unknown' && c > maxCount) {
+            primaryBrokerage = b;
+            maxCount = c;
+        }
+    }
+
+    // Collect exchange rate and GBP flag from first HL result
+    const hlResult = allResults.find(r => r.brokerage === 'hargreaves-lansdown');
+    const exchangeRate = hlResult?.exchangeRate ?? null;
+    const isGBPSource = hlResult?.isGBPSource ?? false;
+
+    // Add merge summary info
+    if (files.length > 1) {
+        const totalParsed = allResults.reduce((s, r) => s + r.holdings.length, 0);
+        const deduped = totalParsed - mergedHoldings.length;
+        if (deduped > 0) {
+            allErrors.unshift(`Merged ${totalParsed} holdings from ${files.length} files — ${deduped} duplicate${deduped > 1 ? 's' : ''} consolidated.`);
+        } else {
+            allErrors.unshift(`Merged ${totalParsed} holdings from ${files.length} files.`);
+        }
+    }
+
+    // Re-check duplicates against existing portfolio
+    const dupeErrors = allErrors.filter(e => e.includes('already exist'));
+    const nonDupeErrors = allErrors.filter(e => !e.includes('already exist'));
+    const dupeCount = mergedHoldings.filter(h => h.isDuplicate).length;
+    // Remove old per-file dupe messages, add one consolidated one
+    const finalErrors = nonDupeErrors;
+    if (dupeCount > 0 && dupeErrors.length === 0) {
+        finalErrors.push(`${dupeCount} holding${dupeCount > 1 ? 's' : ''} already exist in your portfolio (deselected by default).`);
+    }
+
+    return {
+        holdings: mergedHoldings,
+        errors: finalErrors,
+        accountSummary: mergedSummary,
+        exchangeRate,
+        isGBPSource,
+        brokerage: primaryBrokerage,
+    };
 }
 
 /**
