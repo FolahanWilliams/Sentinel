@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/config/supabase';
-import { TrendingUp, TrendingDown, Target, ShieldAlert, ChevronRight, RefreshCw, Zap } from 'lucide-react';
+import { TrendingUp, TrendingDown, Target, ShieldAlert, ChevronRight, RefreshCw, Zap, Shield, AlertTriangle, BarChart3 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { TABadge } from '@/components/shared/TABadge';
+import { SignalQualityBadge } from '@/components/shared/SignalQualityBadge';
+import type { AgentOutputsJson, TASnapshot } from '@/types/signals';
 
 interface RecentSignal {
     id: string;
@@ -16,6 +19,11 @@ interface RecentSignal {
     confluence_level: string | null;
     ta_alignment: string | null;
     risk_level: string;
+    projected_roi: number | null;
+    conviction_score: number | null;
+    why_high_conviction: string | null;
+    agent_outputs: AgentOutputsJson | null;
+    ta_snapshot: TASnapshot | null;
     created_at: string;
 }
 
@@ -169,6 +177,10 @@ export const ScanResults: React.FC = () => {
                                     {confluenceBadge(sig.confluence_level)}
                                 </div>
                                 <div className="flex items-center gap-3">
+                                    {sig.ta_alignment && (
+                                        <TABadge taAlignment={sig.ta_alignment as any} taSnapshot={sig.ta_snapshot} compact />
+                                    )}
+                                    <SignalQualityBadge agentOutputs={sig.agent_outputs} compact />
                                     <span className={`text-sm font-semibold px-2 py-0.5 rounded border ${confidenceBg(sig.confidence_score)} ${confidenceColor(sig.confidence_score)}`}>
                                         {sig.confidence_score}%
                                     </span>
@@ -178,6 +190,47 @@ export const ScanResults: React.FC = () => {
 
                             {/* Thesis */}
                             <p className="text-sm text-gray-300 mb-2 line-clamp-2">{sig.thesis}</p>
+
+                            {/* Intelligence badges row */}
+                            <div className="flex items-center gap-2 flex-wrap mb-2">
+                                {sig.projected_roi != null && (
+                                    <span className={`px-2 py-0.5 text-[10px] font-bold font-mono rounded ring-1 ${
+                                        sig.projected_roi > 0
+                                            ? 'bg-emerald-500/10 text-emerald-400 ring-emerald-500/20'
+                                            : 'bg-red-500/10 text-red-400 ring-red-500/20'
+                                    }`}>
+                                        ROI {sig.projected_roi > 0 ? '+' : ''}{sig.projected_roi}%
+                                    </span>
+                                )}
+                                {sig.conviction_score != null && sig.conviction_score > 0 && (
+                                    <span className={`px-2 py-0.5 text-[10px] font-bold font-mono rounded ring-1 ${
+                                        sig.conviction_score >= 85
+                                            ? 'bg-amber-500/15 text-amber-400 ring-amber-500/30'
+                                            : sig.conviction_score >= 70
+                                                ? 'bg-blue-500/10 text-blue-400 ring-blue-500/20'
+                                                : 'bg-gray-800 text-gray-400 ring-gray-700'
+                                    }`} title={sig.why_high_conviction || `Conviction: ${sig.conviction_score}/100`}>
+                                        <Shield className="w-2.5 h-2.5 inline mr-0.5" />CV {sig.conviction_score}
+                                    </span>
+                                )}
+                                {sig.agent_outputs?.market_regime && (
+                                    <span className={`px-2 py-0.5 text-[10px] font-bold rounded ring-1 ${
+                                        sig.agent_outputs.market_regime.regime === 'risk_on'
+                                            ? 'bg-emerald-500/10 text-emerald-400 ring-emerald-500/20'
+                                            : sig.agent_outputs.market_regime.regime === 'risk_off'
+                                                ? 'bg-red-500/10 text-red-400 ring-red-500/20'
+                                                : 'bg-gray-800 text-gray-400 ring-gray-700'
+                                    }`} title={`VIX: ${sig.agent_outputs.market_regime.vix ?? '?'}`}>
+                                        <BarChart3 className="w-2.5 h-2.5 inline mr-0.5" />{sig.agent_outputs.market_regime.regime.replace('_', ' ')}
+                                    </span>
+                                )}
+                                {sig.agent_outputs?.earnings_guard?.days_until != null && sig.agent_outputs.earnings_guard.days_until <= 14 && (
+                                    <span className="px-2 py-0.5 text-[10px] font-bold rounded ring-1 bg-amber-500/10 text-amber-400 ring-amber-500/20"
+                                        title={`Earnings on ${sig.agent_outputs.earnings_guard.earnings_date}`}>
+                                        <AlertTriangle className="w-2.5 h-2.5 inline mr-0.5" />ER {sig.agent_outputs.earnings_guard.days_until}d
+                                    </span>
+                                )}
+                            </div>
 
                             {/* Price levels */}
                             <div className="flex items-center gap-4 text-xs text-gray-400">
