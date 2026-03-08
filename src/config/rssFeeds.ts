@@ -72,8 +72,7 @@ export const RSS_FEEDS: RSSFeedConfig[] = [
     { name: 'Techmeme', url: 'https://www.techmeme.com/feed.xml', category: 'social', priority: 'medium' },
 
     // === SEC & Regulatory ===
-    // SEC press.xml returns 403 — replaced with SEC EDGAR RSS feed for recent filings
-    { name: 'SEC EDGAR Filings', url: 'https://efts.sec.gov/LATEST/search-index?q=%228-K%22&dateRange=custom&startdt=2025-01-01&forms=8-K&from=0&size=20', category: 'regulatory', priority: 'high' },
+    { name: 'SEC EDGAR Filings', url: 'https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=8-K&dateb=&owner=include&count=20&search_text=&action=getcurrent&output=atom', category: 'regulatory', priority: 'high' },
     { name: 'Politico', url: 'https://rss.politico.com/politics-news.xml', category: 'regulatory', priority: 'medium' },
 
     // === Earnings & Data ===

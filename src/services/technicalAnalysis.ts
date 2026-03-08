@@ -191,6 +191,7 @@ function computeGap(bars: OHLCV[]): { gapPct: number; gapType: GapType } {
     if (bars.length < 2) return { gapPct: 0, gapType: 'none' };
     const today = bars[bars.length - 1]!;
     const yesterday = bars[bars.length - 2]!;
+    if (yesterday.close === 0) return { gapPct: 0, gapType: 'none' };
     const gapPct = ((today.open - yesterday.close) / yesterday.close) * 100;
 
     if (Math.abs(gapPct) < 1.0) return { gapPct, gapType: 'none' };
