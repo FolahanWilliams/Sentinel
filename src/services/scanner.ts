@@ -299,6 +299,18 @@ export class ScannerService {
                 console.warn('[Scanner] Failed to load reflection lessons (non-fatal):', reflErr);
             }
 
+            // 3c-2. Calibration Feedback Loop — inject accuracy data into agent prompts
+            try {
+                const calibCurve = await ConfidenceCalibrator.getCachedCurve();
+                const calibCtx = ConfidenceCalibrator.formatForPrompt(calibCurve);
+                perfContext += calibCtx;
+                if (calibCurve.totalOutcomes >= 10) {
+                    console.log(`[Scanner] Calibration feedback injected (${calibCurve.totalOutcomes} outcomes, ${calibCurve.overallWinRate}% win rate).`);
+                }
+            } catch (calibErr) {
+                console.warn('[Scanner] Failed to load calibration feedback (non-fatal):', calibErr);
+            }
+
             // 3d. Market Regime Detection — detect bull/bear/crisis environment
             let regimeResult: import('./marketRegime').MarketRegimeResult | null = null;
             let regimeCtx = '';
@@ -558,23 +570,46 @@ If there is genuinely no major news, return: {"events": []}`,
                                     continue;
                                 }
 
-                                // 6a. Pre-fetch TA snapshot for agent context
-                                let earlyTaSnapshot = null;
-                                let earlyTaContext = '';
-                                try {
-                                    earlyTaSnapshot = await TechnicalAnalysisService.getSnapshot(ev.ticker);
-                                    earlyTaContext = TechnicalAnalysisService.formatForPrompt(earlyTaSnapshot);
-                                } catch { /* non-fatal — TA context optional */ }
-
-                                // 6b. Fetch historical context for this ticker
-                                let historicalCtx = '';
-                                try {
-                                    const { data: pastSignals } = await supabase
-                                        .from('signals')
+                                // 6a-6h. PARALLEL DATA ENRICHMENT
+                                // Fire all independent data fetches concurrently instead of sequentially.
+                                // This cuts per-event pre-fetch time from ~5-8s to ~1-2s.
+                                const [
+                                    taResult,
+                                    histResult,
+                                    earningsResult,
+                                    fundResult,
+                                    optionsResult,
+                                    peerResult,
+                                ] = await Promise.allSettled([
+                                    // 6a. TA snapshot
+                                    TechnicalAnalysisService.getSnapshot(ev.ticker),
+                                    // 6b. Historical context
+                                    supabase.from('signals')
                                         .select('signal_type, confidence_score, thesis, created_at, signal_outcomes(outcome, return_at_5d)')
                                         .eq('ticker', ev.ticker)
                                         .order('created_at', { ascending: false })
-                                        .limit(5);
+                                        .limit(5),
+                                    // 6e. Earnings guard
+                                    EarningsGuard.check(ev.ticker),
+                                    // 6f. Fundamentals
+                                    MarketDataService.getFundamentals(ev.ticker),
+                                    // 6g. Options flow
+                                    OptionsFlowService.analyze(ev.ticker),
+                                    // 6h. Peer strength
+                                    PeerStrengthService.analyze(ev.ticker, priceDrop),
+                                ]);
+
+                                // Unpack TA (6a)
+                                let earlyTaSnapshot = taResult.status === 'fulfilled' ? taResult.value : null;
+                                let earlyTaContext = '';
+                                if (earlyTaSnapshot) {
+                                    try { earlyTaContext = TechnicalAnalysisService.formatForPrompt(earlyTaSnapshot); } catch { /* non-fatal */ }
+                                }
+
+                                // Unpack historical context (6b)
+                                let historicalCtx = '';
+                                if (histResult.status === 'fulfilled') {
+                                    const pastSignals = histResult.value.data;
                                     if (pastSignals && pastSignals.length > 0) {
                                         const lines = pastSignals.map((s: any) => {
                                             const outcome = s.signal_outcomes?.[0];
@@ -583,9 +618,9 @@ If there is genuinely no major news, return: {"events": []}`,
                                         });
                                         historicalCtx = `\n\nHISTORICAL SIGNALS FOR ${ev.ticker} (last ${pastSignals.length}):\n${lines.join('\n')}\nUse this history to calibrate — if past signals for this ticker failed, be MORE skeptical.`;
                                     }
-                                } catch { /* non-fatal */ }
+                                }
 
-                                // 6c. Sentiment-Price Divergence Analysis
+                                // 6c. Sentiment divergence (depends on TA zScore)
                                 let divergenceCtx = '';
                                 let divergenceResult = null;
                                 try {
@@ -597,7 +632,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                     }
                                 } catch { /* non-fatal */ }
 
-                                // 6d. Gap-Fill Detection
+                                // 6d. Gap-Fill Detection (depends on TA snapshot)
                                 let gapCtx = '';
                                 const gapFill = TechnicalAnalysisService.evaluateGapFill(earlyTaSnapshot, quote.previousClose ?? 0);
                                 if (gapFill.isCandidate) {
@@ -605,59 +640,63 @@ If there is genuinely no major news, return: {"events": []}`,
                                     console.log(`[Scanner] Gap detected for ${ev.ticker}: ${gapFill.gapType} gap ${gapFill.gapPct.toFixed(1)}%`);
                                 }
 
-                                // 6e. Earnings Calendar Guard — block/penalize signals near earnings
+                                // Unpack earnings guard (6e) — can block signal
                                 let earningsCtx = '';
                                 let earningsGuardResult = null;
-                                try {
-                                    earningsGuardResult = await EarningsGuard.check(ev.ticker);
+                                if (earningsResult.status === 'fulfilled') {
+                                    earningsGuardResult = earningsResult.value;
                                     if (earningsGuardResult.shouldBlock) {
                                         console.warn(`[Scanner] EARNINGS GUARD blocked ${ev.ticker}: ${earningsGuardResult.reason}`);
                                         continue;
                                     }
                                     earningsCtx = EarningsGuard.formatForPrompt(earningsGuardResult);
-                                } catch { /* non-fatal */ }
+                                }
 
-                                // 6f. Fundamental Data Enrichment — fetch P/E, debt/equity, etc.
+                                // Unpack fundamentals (6f)
                                 let fundamentalsCtx = '';
                                 let fundamentalsData = null;
-                                try {
-                                    fundamentalsData = await MarketDataService.getFundamentals(ev.ticker);
-                                    fundamentalsCtx = MarketDataService.formatFundamentalsForPrompt(fundamentalsData);
-
-                                    // Fundamental red flags: auto-penalize confidence later
-                                    if (fundamentalsData) {
-                                        const de = fundamentalsData.debt_to_equity;
-                                        const pm = fundamentalsData.profit_margin;
-                                        if (de !== null && de > 3) {
-                                            console.log(`[Scanner] Fundamental warning for ${ev.ticker}: debt/equity=${de} (high leverage)`);
+                                if (fundResult.status === 'fulfilled') {
+                                    fundamentalsData = fundResult.value;
+                                    try {
+                                        fundamentalsCtx = MarketDataService.formatFundamentalsForPrompt(fundamentalsData);
+                                        if (fundamentalsData) {
+                                            const de = fundamentalsData.debt_to_equity;
+                                            const pm = fundamentalsData.profit_margin;
+                                            if (de !== null && de > 3) {
+                                                console.log(`[Scanner] Fundamental warning for ${ev.ticker}: debt/equity=${de} (high leverage)`);
+                                            }
+                                            if (pm !== null && pm < -0.1) {
+                                                console.log(`[Scanner] Fundamental warning for ${ev.ticker}: profit_margin=${(pm * 100).toFixed(1)}% (negative)`);
+                                            }
                                         }
-                                        if (pm !== null && pm < -0.1) {
-                                            console.log(`[Scanner] Fundamental warning for ${ev.ticker}: profit_margin=${(pm * 100).toFixed(1)}% (negative)`);
-                                        }
-                                    }
-                                } catch { /* non-fatal */ }
+                                    } catch { /* non-fatal */ }
+                                }
 
-                                // 6g. Options Flow / Unusual Activity
+                                // Unpack options flow (6g)
                                 let optionsFlowCtx = '';
                                 let optionsFlowResult: import('./optionsFlowService').OptionsFlowResult | null = null;
-                                try {
-                                    optionsFlowResult = await OptionsFlowService.analyze(ev.ticker);
-                                    optionsFlowCtx = OptionsFlowService.formatForPrompt(optionsFlowResult);
-                                    if (optionsFlowResult.hasUnusualActivity) {
-                                        console.log(`[Scanner] Options flow for ${ev.ticker}: ${optionsFlowResult.sentiment} (adj=${optionsFlowResult.confidenceAdjustment})`);
-                                    }
-                                } catch { /* non-fatal */ }
+                                if (optionsResult.status === 'fulfilled') {
+                                    optionsFlowResult = optionsResult.value;
+                                    try {
+                                        optionsFlowCtx = OptionsFlowService.formatForPrompt(optionsFlowResult);
+                                        if (optionsFlowResult.hasUnusualActivity) {
+                                            console.log(`[Scanner] Options flow for ${ev.ticker}: ${optionsFlowResult.sentiment} (adj=${optionsFlowResult.confidenceAdjustment})`);
+                                        }
+                                    } catch { /* non-fatal */ }
+                                }
 
-                                // 6h. Peer Relative Strength
+                                // Unpack peer strength (6h)
                                 let peerStrengthCtx = '';
                                 let peerStrengthResult: import('./peerStrengthService').PeerStrengthResult | null = null;
-                                try {
-                                    peerStrengthResult = await PeerStrengthService.analyze(ev.ticker, priceDrop);
-                                    peerStrengthCtx = PeerStrengthService.formatForPrompt(peerStrengthResult);
-                                    if (peerStrengthResult.peers.length > 0) {
-                                        console.log(`[Scanner] Peer strength for ${ev.ticker}: relative=${peerStrengthResult.relativeStrength.toFixed(1)}%, idiosyncratic=${peerStrengthResult.isIdiosyncratic}`);
-                                    }
-                                } catch { /* non-fatal */ }
+                                if (peerResult.status === 'fulfilled') {
+                                    peerStrengthResult = peerResult.value;
+                                    try {
+                                        peerStrengthCtx = PeerStrengthService.formatForPrompt(peerStrengthResult);
+                                        if (peerStrengthResult.peers.length > 0) {
+                                            console.log(`[Scanner] Peer strength for ${ev.ticker}: relative=${peerStrengthResult.relativeStrength.toFixed(1)}%, idiosyncratic=${peerStrengthResult.isIdiosyncratic}`);
+                                        }
+                                    } catch { /* non-fatal */ }
+                                }
 
                                 // Combine TA + divergence + gap + earnings + fundamentals + regime + options + peers into unified context
                                 const enrichedTaContext = earlyTaContext + divergenceCtx + gapCtx + earningsCtx + fundamentalsCtx + regimeCtx + sectorRotationCtx + optionsFlowCtx + peerStrengthCtx;

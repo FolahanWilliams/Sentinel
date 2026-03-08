@@ -28,6 +28,7 @@ import { LoadingState } from '@/components/shared/LoadingState';
 import { useTickerAnalysis } from '@/hooks/useTickerAnalysis';
 import { TickerNewsFeed } from '@/components/analysis/TickerNewsFeed';
 import { MultiTimeframeChart } from '@/components/analysis/MultiTimeframeChart';
+import { SourceCitations } from '@/components/shared/SourceCitations';
 
 export function Analysis() {
     const { ticker: urlTicker } = useParams<{ ticker?: string }>();
@@ -384,6 +385,9 @@ export function Analysis() {
                                                     aiEvents={tickerAnalysis?.events}
                                                     aiEventsLoading={isLoadingAnalysis}
                                                 />
+                                                {tickerAnalysis?.groundingSources && tickerAnalysis.groundingSources.length > 0 && (
+                                                    <SourceCitations sources={tickerAnalysis.groundingSources} />
+                                                )}
 
                                                 <HistoricalPrecedent
                                                     matches={agentOutputs.historical_matcher?.matches}

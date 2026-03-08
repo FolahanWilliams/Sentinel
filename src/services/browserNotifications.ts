@@ -14,7 +14,9 @@ export type NotificationTrigger =
     | 'price_target_hit'
     | 'convergence_detected'
     | 'exposure_breach'
-    | 'scanner_high_confidence';
+    | 'scanner_high_confidence'
+    | 'drawdown_alert'
+    | 'sector_drift';
 
 interface BrowserNotificationOptions {
     title: string;
@@ -35,6 +37,8 @@ export interface NotificationPreferences {
     convergence_detected: boolean;
     exposure_breach: boolean;
     scanner_high_confidence: boolean;
+    drawdown_alert: boolean;
+    sector_drift: boolean;
     sound: boolean;
 }
 
@@ -46,6 +50,8 @@ const DEFAULT_PREFERENCES: NotificationPreferences = {
     convergence_detected: true,
     exposure_breach: true,
     scanner_high_confidence: true,
+    drawdown_alert: true,
+    sector_drift: true,
     sound: true,
 };
 
@@ -252,6 +258,27 @@ export class BrowserNotificationService {
             ticker,
             url: `/analysis/${ticker}`,
             tag: `high-conf-${ticker}`,
+        });
+    }
+
+    static async notifyDrawdown(drawdownPct: number, scalingFactor: number) {
+        const severity = drawdownPct >= 20 ? 'SEVERE' : drawdownPct >= 10 ? 'ELEVATED' : 'MODERATE';
+        return this.send({
+            title: `${severity} Drawdown: ${drawdownPct.toFixed(1)}%`,
+            body: `Portfolio is in ${drawdownPct.toFixed(1)}% drawdown. Position sizes reduced to ${Math.round(scalingFactor * 100)}% of normal.`,
+            trigger: 'drawdown_alert',
+            url: '/risk',
+            tag: 'drawdown-alert',
+        });
+    }
+
+    static async notifySectorDrift(sector: string, currentPct: number, limitPct: number) {
+        return this.send({
+            title: `Sector Drift: ${sector}`,
+            body: `${sector} exposure drifted to ${currentPct.toFixed(1)}% (limit: ${limitPct}%). Consider rebalancing.`,
+            trigger: 'sector_drift',
+            url: '/risk',
+            tag: `sector-drift-${sector}`,
         });
     }
 }

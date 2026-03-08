@@ -2,32 +2,46 @@
  * Sentinel — App Root
  *
  * Wraps the app in Supabase Auth (Google Sign-In) and sets up React Router routes.
+ * Secondary routes are lazy-loaded to reduce the initial bundle size.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
 import { AuthGate } from '@/components/auth/AuthGate';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { ChatProvider } from '@/contexts/ChatContext';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
-import { Dashboard } from '@/pages/Dashboard';
-import { UnifiedDashboard } from '@/components/UnifiedDashboard';
-import { Analysis } from '@/pages/Analysis';
-import { Watchlist } from '@/pages/Watchlist';
-import { Backtest } from '@/pages/Backtest';
-import { Scanner } from '@/pages/Scanner';
-import { Settings } from '@/pages/Settings';
-import { Journal } from '@/pages/Journal';
-import { StockAnalysis } from '@/pages/StockAnalysis';
-import { Positions } from '@/pages/Positions';
-import { Performance } from '@/pages/Performance';
-import { Alerts } from '@/pages/Alerts';
-import { RiskDashboard } from '@/pages/RiskDashboard';
-import { Leaderboard } from '@/pages/Leaderboard';
-import { EarningsCalendar } from '@/pages/EarningsCalendar';
-import { NotFound } from '@/pages/NotFound';
 import type { Session } from '@supabase/supabase-js';
+
+// ── Eagerly loaded (home page) ──────────────────────────────────────
+import { UnifiedDashboard } from '@/components/UnifiedDashboard';
+
+// ── Lazy-loaded routes ──────────────────────────────────────────────
+const Dashboard = lazy(() => import('@/pages/Dashboard').then(m => ({ default: m.Dashboard })));
+const Analysis = lazy(() => import('@/pages/Analysis').then(m => ({ default: m.Analysis })));
+const Watchlist = lazy(() => import('@/pages/Watchlist').then(m => ({ default: m.Watchlist })));
+const Backtest = lazy(() => import('@/pages/Backtest').then(m => ({ default: m.Backtest })));
+const Scanner = lazy(() => import('@/pages/Scanner').then(m => ({ default: m.Scanner })));
+const Settings = lazy(() => import('@/pages/Settings').then(m => ({ default: m.Settings })));
+const Journal = lazy(() => import('@/pages/Journal').then(m => ({ default: m.Journal })));
+const StockAnalysis = lazy(() => import('@/pages/StockAnalysis').then(m => ({ default: m.StockAnalysis })));
+const Positions = lazy(() => import('@/pages/Positions').then(m => ({ default: m.Positions })));
+const Performance = lazy(() => import('@/pages/Performance').then(m => ({ default: m.Performance })));
+const Alerts = lazy(() => import('@/pages/Alerts').then(m => ({ default: m.Alerts })));
+const RiskDashboard = lazy(() => import('@/pages/RiskDashboard').then(m => ({ default: m.RiskDashboard })));
+const Leaderboard = lazy(() => import('@/pages/Leaderboard').then(m => ({ default: m.Leaderboard })));
+const EarningsCalendar = lazy(() => import('@/pages/EarningsCalendar').then(m => ({ default: m.EarningsCalendar })));
+const NotFound = lazy(() => import('@/pages/NotFound').then(m => ({ default: m.NotFound })));
+
+/** Minimal loading spinner shown while a lazy chunk loads */
+function RouteLoader() {
+    return (
+        <div className="flex items-center justify-center py-32">
+            <div className="w-6 h-6 border-2 border-sentinel-600 border-t-sentinel-300 rounded-full animate-spin" />
+        </div>
+    );
+}
 
 export default function App() {
     const [session, setSession] = useState<Session | null>(null);
@@ -72,31 +86,33 @@ export default function App() {
         <ErrorBoundary>
             <ChatProvider>
                 <BrowserRouter>
-                    <Routes>
-                        <Route element={<AppLayout />}>
-                            <Route path="/" element={<UnifiedDashboard />} />
-                            <Route path="/legacy" element={<Dashboard />} />
-                            {/* Phase 3 fix (Audit C16): /analysis base route redirects to dashboard */}
-                            <Route path="/analysis" element={<Navigate to="/" replace />} />
-                            <Route path="/analysis/:ticker" element={<Analysis />} />
-                            <Route path="/watchlist" element={<Watchlist />} />
-                            <Route path="/backtest" element={<Backtest />} />
-                            <Route path="/scanner" element={<Scanner />} />
-                            <Route path="/research" element={<StockAnalysis />} />
-                            <Route path="/research/:ticker" element={<StockAnalysis />} />
-                            <Route path="/intelligence" element={<Navigate to="/?tab=intelligence" replace />} />
-                            <Route path="/settings" element={<Settings />} />
-                            <Route path="/journal" element={<Journal />} />
-                            <Route path="/positions" element={<Positions />} />
-                            <Route path="/performance" element={<Performance />} />
-                            <Route path="/alerts" element={<Alerts />} />
-                            <Route path="/risk" element={<RiskDashboard />} />
-                            <Route path="/leaderboard" element={<Leaderboard />} />
-                            <Route path="/earnings" element={<EarningsCalendar />} />
-                            {/* Phase 3 fix (Audit C15): 404 catch-all route */}
-                            <Route path="*" element={<NotFound />} />
-                        </Route>
-                    </Routes>
+                    <Suspense fallback={<RouteLoader />}>
+                        <Routes>
+                            <Route element={<AppLayout />}>
+                                <Route path="/" element={<UnifiedDashboard />} />
+                                <Route path="/legacy" element={<Dashboard />} />
+                                {/* Phase 3 fix (Audit C16): /analysis base route redirects to dashboard */}
+                                <Route path="/analysis" element={<Navigate to="/" replace />} />
+                                <Route path="/analysis/:ticker" element={<Analysis />} />
+                                <Route path="/watchlist" element={<Watchlist />} />
+                                <Route path="/backtest" element={<Backtest />} />
+                                <Route path="/scanner" element={<Scanner />} />
+                                <Route path="/research" element={<StockAnalysis />} />
+                                <Route path="/research/:ticker" element={<StockAnalysis />} />
+                                <Route path="/intelligence" element={<Navigate to="/?tab=intelligence" replace />} />
+                                <Route path="/settings" element={<Settings />} />
+                                <Route path="/journal" element={<Journal />} />
+                                <Route path="/positions" element={<Positions />} />
+                                <Route path="/performance" element={<Performance />} />
+                                <Route path="/alerts" element={<Alerts />} />
+                                <Route path="/risk" element={<RiskDashboard />} />
+                                <Route path="/leaderboard" element={<Leaderboard />} />
+                                <Route path="/earnings" element={<EarningsCalendar />} />
+                                {/* Phase 3 fix (Audit C15): 404 catch-all route */}
+                                <Route path="*" element={<NotFound />} />
+                            </Route>
+                        </Routes>
+                    </Suspense>
                 </BrowserRouter>
             </ChatProvider>
         </ErrorBoundary>

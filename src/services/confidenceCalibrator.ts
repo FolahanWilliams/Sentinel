@@ -159,6 +159,42 @@ export class ConfidenceCalibrator {
         return curve.overallWinRate;
     }
 
+    /**
+     * Generate a prompt-injection context string that tells the AI about its own
+     * historical accuracy, so it can self-correct overconfident/underconfident scoring.
+     *
+     * This closes the feedback loop: outcomes → calibration curve → prompt context → better scores.
+     */
+    static formatForPrompt(curve: CalibrationCurve): string {
+        if (curve.totalOutcomes < 10) {
+            return '\nCALIBRATION DATA: Insufficient outcome history (<10 tracked). Default 20% haircut applied to your confidence scores. Be conservative.';
+        }
+
+        const lines = curve.buckets
+            .filter(b => b.sampleSize >= 3)
+            .sort((a, b) => a.predicted - b.predicted)
+            .map(b => {
+                const gap = b.actualWinRate - b.predicted;
+                const direction = gap > 5 ? '(underconfident — raise scores)'
+                    : gap < -5 ? '(overconfident — lower scores)'
+                    : '(well-calibrated)';
+                return `  ${b.range}: AI predicted ~${b.predicted}% → actual ${b.actualWinRate}% win rate (n=${b.sampleSize}) ${direction}`;
+            });
+
+        const overallGap = curve.overallWinRate - 50;
+        const overallNote = overallGap > 10
+            ? 'Your signals are profitable overall — maintain selectivity.'
+            : overallGap < -10
+            ? 'Your signals have been unprofitable — be MORE skeptical and raise confidence thresholds.'
+            : 'Your signals are near break-even — focus on high-conviction setups only.';
+
+        return `\nCALIBRATION FEEDBACK (${curve.totalOutcomes} tracked outcomes, overall win rate: ${curve.overallWinRate}%):
+${overallNote}
+Accuracy by confidence bucket:
+${lines.join('\n')}
+Use this data to adjust your confidence_score output — if you historically overpredict in the 70-80 range, score lower.`;
+    }
+
     private static emptyCurve(): CalibrationCurve {
         return {
             buckets: [],

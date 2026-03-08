@@ -12,6 +12,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { CACHE_TTL_TICKER_ANALYSIS } from '@/config/constants';
 import { supabase } from '@/config/supabase';
+import type { GroundingSource } from '@/types/agents';
 
 export interface BiasWeight {
     factor: string;
@@ -48,6 +49,7 @@ export interface TickerAnalysis {
     biasWeights: BiasWeight[];
     events: AIEvent[];
     fundamentals: FundamentalMetrics | null;
+    groundingSources: GroundingSource[];
 }
 
 interface CacheEntry {
@@ -131,10 +133,19 @@ export function useTickerAnalysis() {
                 fetchFundamentals(ticker),
             ]);
 
+            // Collect grounding sources from all fulfilled responses
+            const allSources: GroundingSource[] = [];
+            for (const res of [biasRes, eventsRes, fundRes]) {
+                if (res.status === 'fulfilled' && Array.isArray((res.value as any)?._groundingSources)) {
+                    allSources.push(...(res.value as any)._groundingSources);
+                }
+            }
+
             const result: TickerAnalysis = {
                 biasWeights: biasRes.status === 'fulfilled' ? biasRes.value : [],
                 events: eventsRes.status === 'fulfilled' ? eventsRes.value : [],
                 fundamentals: fundRes.status === 'fulfilled' ? fundRes.value : null,
+                groundingSources: allSources,
             };
 
             analysisCache.set(ticker, { timestamp: Date.now(), data: result });
@@ -207,7 +218,12 @@ async function fetchEvents(ticker: string): Promise<AIEvent[]> {
 
     if (error) throw error;
     if (!data?.text) throw new Error('Empty response from Gemini');
-    return JSON.parse(data.text);
+    const events = JSON.parse(data.text);
+    // Attach grounding sources for aggregation
+    if (data.groundingSources) {
+        (events as any)._groundingSources = data.groundingSources;
+    }
+    return events;
 }
 
 async function fetchFundamentals(ticker: string): Promise<FundamentalMetrics> {

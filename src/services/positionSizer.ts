@@ -9,6 +9,7 @@
 import { supabase } from '@/config/supabase';
 import type { TASnapshot } from '@/types/signals';
 import { ConfidenceCalibrator } from './confidenceCalibrator';
+import { BrowserNotificationService } from './browserNotifications';
 
 export interface PositionSizeResult {
     recommendedPct: number;
@@ -276,6 +277,8 @@ export class PositionSizer {
 
                     if (scalingFactor < 1.0) {
                         recommendedPct *= scalingFactor;
+                        // Fire drawdown alert notification when scaling kicks in
+                        BrowserNotificationService.notifyDrawdown(drawdownPct, scalingFactor).catch(() => {});
                     }
                 }
             }

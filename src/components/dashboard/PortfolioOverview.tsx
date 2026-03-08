@@ -5,7 +5,6 @@
 
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { DEFAULT_STARTING_CAPITAL, DEFAULT_MAX_CONCURRENT_POSITIONS, DEFAULT_MAX_EXPOSURE_PCT } from '@/config/constants';
-import { MarketDataService } from '@/services/marketData';
 import { formatPrice, formatPercent } from '@/utils/formatters';
 import { TrendingUp, TrendingDown, Briefcase, PieChart, ArrowRight } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
@@ -14,6 +13,7 @@ import { motion } from 'framer-motion';
 import { DonutChart } from '@/components/shared/DonutChart';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { useNavigate } from 'react-router-dom';
+import { useQuoteWorker } from '@/hooks/useQuoteWorker';
 
 // Sector colours for the visual breakdown
 const SECTOR_COLORS: Record<string, string> = {
@@ -50,40 +50,21 @@ export function PortfolioOverview() {
         fetchSectors();
     }, []);
 
-    // Fetch live quotes for open positions to compute unrealized P&L
-    const [liveQuotes, setLiveQuotes] = useState<Record<string, number>>({});
-
-    // Stabilize the ticker list to prevent interval accumulation when openPositions reference changes
-    const openTickers = useMemo(
-        () => openPositions.map(p => p.ticker).sort().join(','),
+    // Fetch live quotes via shared web worker — offloads polling from the main thread
+    const openTickerList = useMemo(
+        () => openPositions.map(p => p.ticker).filter(Boolean),
         [openPositions]
     );
+    const workerQuotes = useQuoteWorker(openTickerList, 60_000);
 
-    useEffect(() => {
-        if (!openTickers) return;
-        const tickers = openTickers.split(',');
-        let cancelled = false;
-
-        async function fetchQuotes() {
-            const quotes: Record<string, number> = {};
-            await Promise.all(
-                tickers.map(async (ticker) => {
-                    try {
-                        const q = await MarketDataService.getQuote(ticker);
-                        if (q?.price) quotes[ticker] = q.price;
-                    } catch { /* keep previous */ }
-                })
-            );
-            if (!cancelled) setLiveQuotes(prev => ({ ...prev, ...quotes }));
+    // Map worker QuoteData to simple price lookup for backward compat
+    const liveQuotes = useMemo(() => {
+        const prices: Record<string, number> = {};
+        for (const [ticker, q] of Object.entries(workerQuotes)) {
+            if (q?.price) prices[ticker] = q.price;
         }
-
-        fetchQuotes();
-        const interval = setInterval(fetchQuotes, 60_000);
-        return () => {
-            cancelled = true;
-            clearInterval(interval);
-        };
-    }, [openTickers]);
+        return prices;
+    }, [workerQuotes]);
 
     if (loading) {
         return (
