@@ -5,18 +5,26 @@
  * (indices, commodities, crypto, bonds), and key market observations.
  */
 
-import { useState } from 'react';
-import { RefreshCw, TrendingUp, TrendingDown, Minus, BarChart3, Gauge, ChevronDown, ArrowRight } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { RefreshCw, TrendingUp, TrendingDown, Minus, BarChart3, Gauge, ChevronDown, ArrowRight, Layers, Megaphone } from 'lucide-react';
 import { useMarketSnapshot } from '@/hooks/useMarketSnapshot';
 import { useFearGreed } from '@/hooks/useFearGreed';
 import { FEAR_GREED_INDICATOR_LABELS } from '@/types/fearGreed';
 import type { FearGreedData, FearGreedIndicator } from '@/types/fearGreed';
 import { Sparkline } from '@/components/shared/Sparkline';
+import { SectorRotationService, type SectorRotationSnapshot } from '@/services/sectorRotation';
 
 export function MarketSnapshot() {
     const { data, loading, refetch } = useMarketSnapshot();
     const { data: fgData } = useFearGreed();
     const [showIndicators, setShowIndicators] = useState(false);
+    const [rotationSnapshot, setRotationSnapshot] = useState<SectorRotationSnapshot | null>(null);
+
+    useEffect(() => {
+        SectorRotationService.getRotationSnapshot()
+            .then(setRotationSnapshot)
+            .catch(() => { /* non-fatal */ });
+    }, []);
 
     if (loading || !data) {
         return <MarketSnapshotSkeleton />;
@@ -252,8 +260,64 @@ export function MarketSnapshot() {
                                 <span>F&G <span className={fgColor}>{fearGreedValue}</span></span>
                             </div>
                         </div>
+
+                        {/* Sector Rotation Regime */}
+                        {rotationSnapshot && rotationSnapshot.sectorRankings.length > 0 && (
+                            <SectorRotationPanel snapshot={rotationSnapshot} />
+                        )}
                     </div>
                 </div>
+            </div>
+        </div>
+    );
+}
+
+/** Sector Rotation mini-panel */
+function SectorRotationPanel({ snapshot }: { snapshot: SectorRotationSnapshot }) {
+    const regimeColors: Record<string, { text: string; bg: string; border: string }> = {
+        risk_on: { text: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20' },
+        risk_off: { text: 'text-red-400', bg: 'bg-red-500/10', border: 'border-red-500/20' },
+        rotation: { text: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/20' },
+        neutral: { text: 'text-sentinel-400', bg: 'bg-sentinel-800/40', border: 'border-sentinel-700/30' },
+    };
+
+    const rc = regimeColors[snapshot.regime] ?? regimeColors['neutral']!;
+
+    return (
+        <div className={`mt-3 rounded-lg px-3 py-2.5 border ${rc.border} ${rc.bg}`}>
+            <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-1.5">
+                    <Layers className="w-3 h-3 text-sentinel-400" />
+                    <span className="text-[10px] font-bold text-sentinel-400 uppercase tracking-widest">Sector Rotation</span>
+                </div>
+                <span className={`text-[10px] font-bold uppercase ${rc.text}`}>
+                    {snapshot.regime.replace('_', ' ')}
+                </span>
+            </div>
+            <p className="text-[10px] text-sentinel-400 mb-2">{snapshot.regimeReason}</p>
+            <div className="grid grid-cols-3 gap-2 text-center">
+                <div>
+                    <div className="text-[9px] text-sentinel-600 uppercase">Growth</div>
+                    <div className={`text-[11px] font-bold font-mono ${snapshot.growthAvg >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {snapshot.growthAvg >= 0 ? '+' : ''}{snapshot.growthAvg.toFixed(2)}%
+                    </div>
+                </div>
+                <div>
+                    <div className="text-[9px] text-sentinel-600 uppercase">Defensive</div>
+                    <div className={`text-[11px] font-bold font-mono ${snapshot.defensiveAvg >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {snapshot.defensiveAvg >= 0 ? '+' : ''}{snapshot.defensiveAvg.toFixed(2)}%
+                    </div>
+                </div>
+                <div>
+                    <div className="text-[9px] text-sentinel-600 uppercase">Cyclical</div>
+                    <div className={`text-[11px] font-bold font-mono ${snapshot.cyclicalAvg >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {snapshot.cyclicalAvg >= 0 ? '+' : ''}{snapshot.cyclicalAvg.toFixed(2)}%
+                    </div>
+                </div>
+            </div>
+            <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-sentinel-800/30 text-[9px] text-sentinel-500 font-mono">
+                <span>Inflows: {snapshot.topInflows.map(s => s.ticker).join(', ')}</span>
+                <span>Outflows: {snapshot.topOutflows.map(s => s.ticker).join(', ')}</span>
             </div>
         </div>
     );

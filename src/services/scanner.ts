@@ -46,6 +46,8 @@ import { PortfolioAwareSizer } from './portfolioAwareSizer';
 import { ConvictionGuardrails } from './convictionGuardrails';
 import { SectorRotationService } from './sectorRotation';
 import { MultiTimeframeService } from './multiTimeframe';
+import { CrossSourceValidator } from './crossSourceValidator';
+import { RetailVsNewsSentimentDetector } from './retailVsNewsSentiment';
 import { DEFAULT_MIN_CONFIDENCE, DEFAULT_MIN_PRICE_DROP_PCT, CONFIDENCE_GATE_OVERREACTION, CONFIDENCE_GATE_CONTAGION, CONFIDENCE_GATE_CRITIQUE, CONFIDENCE_FLOOR, SEVERITY_THRESHOLD } from '@/config/constants';
 import type { MultiTimeframeResult } from './technicalAnalysis';
 import type { AgentOutputsJson, LynchCategory } from '@/types/signals';
@@ -495,6 +497,48 @@ If there is genuinely no major news, return: {"events": []}`,
                     } catch (gsErr) {
                         console.warn(`[Scanner] Grounded search failed for ${ticker} (non-fatal):`, gsErr);
                     }
+                }
+
+                // 5c. SENTINEL INTELLIGENCE BRIDGE — promote high-impact sentinel article signals to scanner events
+                // This closes the gap between the news intelligence pipeline and the scanner pipeline.
+                try {
+                    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+                    const { data: sentinelSignals } = await supabase
+                        .from('sentinel_articles' as any)
+                        .select('title, summary, impact, signals, affected_tickers')
+                        .eq('impact', 'high')
+                        .gte('processed_at', oneDayAgo)
+                        .limit(20) as any;
+
+                    if (sentinelSignals && sentinelSignals.length > 0) {
+                        let injectedCount = 0;
+                        for (const article of sentinelSignals) {
+                            const articleSignals = Array.isArray(article.signals) ? article.signals : [];
+                            for (const sig of articleSignals as Array<{ ticker?: string; type?: string; direction?: string; confidence?: number }>) {
+                                if (!sig.ticker || !tickers.includes(sig.ticker.toUpperCase())) continue;
+                                // Check if this ticker already has an event from RSS/grounded search
+                                const alreadyHasEvent = extraction.data?.events?.some(
+                                    (e: any) => e.ticker === sig.ticker?.toUpperCase()
+                                );
+                                if (alreadyHasEvent) continue;
+
+                                if (!extraction.data) extraction.data = { events: [] };
+                                if (!extraction.data.events) extraction.data.events = [];
+                                extraction.data.events.push({
+                                    ticker: sig.ticker.toUpperCase(),
+                                    event_type: sig.type || 'other',
+                                    headline: `[Intel] ${article.title?.slice(0, 120) || 'High-impact intelligence signal'}`,
+                                    severity: 5, // High-impact articles default to moderate-high severity
+                                });
+                                injectedCount++;
+                            }
+                        }
+                        if (injectedCount > 0) {
+                            console.log(`[Scanner] Sentinel bridge injected ${injectedCount} events from ${sentinelSignals.length} high-impact articles.`);
+                        }
+                    }
+                } catch (sentinelBridgeErr) {
+                    console.warn('[Scanner] Sentinel bridge failed (non-fatal):', sentinelBridgeErr);
                 }
 
                 // Build a lookup of article descriptions by ticker for full context
@@ -1012,6 +1056,43 @@ If there is genuinely no major news, return: {"events": []}`,
                                             }
                                         }
 
+                                        // 7.16c. RETAIL vs NEWS SENTIMENT GAP — detect contrarian retail/institutional divergence
+                                        let retailVsNewsResult: import('./retailVsNewsSentiment').RetailVsNewsResult | null = null;
+                                        try {
+                                            retailVsNewsResult = await RetailVsNewsSentimentDetector.analyze(ev.ticker);
+                                            if (retailVsNewsResult.confidenceAdjustment !== 0) {
+                                                const before = analysis.data.confidence_score;
+                                                analysis.data.confidence_score = Math.min(100, Math.max(CONFIDENCE_FLOOR,
+                                                    analysis.data.confidence_score + retailVsNewsResult.confidenceAdjustment
+                                                ));
+                                                console.log(`[Scanner] Retail vs News (${retailVsNewsResult.gapType}) adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${retailVsNewsResult.confidenceAdjustment > 0 ? '+' : ''}${retailVsNewsResult.confidenceAdjustment})`);
+                                            }
+                                        } catch { /* non-fatal */ }
+
+                                        // 7.16d. CROSS-SOURCE VALIDATION — composite quality score from all independent sources
+                                        let crossSourceResult: import('./crossSourceValidator').CrossSourceResult | null = null;
+                                        try {
+                                            const tickerSectorForCross = tickersToScan.find(t => t.ticker === ev.ticker)?.sector || 'Unknown';
+                                            crossSourceResult = await CrossSourceValidator.validate(
+                                                ev.ticker,
+                                                'long',
+                                                tickerSectorForCross,
+                                                taAlignment,
+                                                null, // confluence computed after cross-source check
+                                                optionsFlowResult?.sentiment ?? null,
+                                                peerStrengthResult?.isIdiosyncratic ?? null,
+                                                divergenceResult,
+                                                null, // rotationSnapshot — injected at scan level, not stored in local var for signal scope
+                                            );
+                                            if (crossSourceResult.confidenceAdjustment !== 0) {
+                                                const before = analysis.data.confidence_score;
+                                                analysis.data.confidence_score = Math.min(100, Math.max(CONFIDENCE_FLOOR,
+                                                    analysis.data.confidence_score + crossSourceResult.confidenceAdjustment
+                                                ));
+                                                console.log(`[Scanner] Cross-source (${crossSourceResult.qualityTier}, ${crossSourceResult.confirmedSources}/${crossSourceResult.totalSources}) adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${crossSourceResult.confidenceAdjustment > 0 ? '+' : ''}${crossSourceResult.confidenceAdjustment})`);
+                                            }
+                                        } catch { /* non-fatal */ }
+
                                         // Drop signal if all adjustments brought it below threshold (adaptive)
                                         if (analysis.data.confidence_score < adaptiveMinConfidence) {
                                             console.warn(`[Scanner] Signal for ${ev.ticker} dropped — confidence ${analysis.data.confidence_score} below ${adaptiveMinConfidence} after all adjustments`);
@@ -1234,6 +1315,33 @@ If there is genuinely no major news, return: {"events": []}`,
                                                     lynch_category: analysis.data.lynch_category as LynchCategory,
                                                     why_high_conviction: analysis.data.why_high_conviction,
                                                     margin_of_safety_pct: marginOfSafetyPct,
+                                                } : null,
+                                                sector_rotation: regimeResult ? {
+                                                    regime: regimeResult.regime,
+                                                    regime_reason: regimeResult.reason ?? '',
+                                                    ticker_sector_category: tickerSector || 'Unknown',
+                                                    growth_avg: 0,
+                                                    defensive_avg: 0,
+                                                    cyclical_avg: 0,
+                                                } : null,
+                                                cross_source: crossSourceResult ? {
+                                                    quality_tier: crossSourceResult.qualityTier,
+                                                    quality_score: crossSourceResult.qualityScore,
+                                                    confirmed_sources: crossSourceResult.confirmedSources,
+                                                    total_sources: crossSourceResult.totalSources,
+                                                    confidence_adjustment: crossSourceResult.confidenceAdjustment,
+                                                    sources: crossSourceResult.sources.map(s => ({
+                                                        source: s.source,
+                                                        confirmed: s.confirmed,
+                                                        detail: s.detail,
+                                                    })),
+                                                } : null,
+                                                retail_vs_news: retailVsNewsResult && retailVsNewsResult.gapType !== 'insufficient_data' ? {
+                                                    gap_type: retailVsNewsResult.gapType,
+                                                    retail_sentiment: retailVsNewsResult.retailSentiment,
+                                                    news_sentiment: retailVsNewsResult.newsSentiment,
+                                                    sentiment_gap: retailVsNewsResult.sentimentGap,
+                                                    confidence_adjustment: retailVsNewsResult.confidenceAdjustment,
                                                 } : null,
                                             } as unknown as Json,
                                             margin_of_safety_pct: marginOfSafetyPct,

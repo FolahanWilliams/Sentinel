@@ -198,6 +198,34 @@ export interface AgentOutputsJson {
         why_high_conviction: string;
         passed: boolean;
     } | null;
+    fear_greed?: {
+        score: number;
+        rating: string | undefined;
+        confidence_adjustment: number;
+    } | null;
+    sector_rotation?: {
+        regime: string;
+        regime_reason: string;
+        ticker_sector_category: string;
+        growth_avg: number;
+        defensive_avg: number;
+        cyclical_avg: number;
+    } | null;
+    cross_source?: {
+        quality_tier: string;
+        quality_score: number;
+        confirmed_sources: number;
+        total_sources: number;
+        confidence_adjustment: number;
+        sources: Array<{ source: string; confirmed: boolean; detail: string }>;
+    } | null;
+    retail_vs_news?: {
+        gap_type: string;
+        retail_sentiment: number;
+        news_sentiment: number;
+        sentiment_gap: number;
+        confidence_adjustment: number;
+    } | null;
     // Legacy fields for older signals
     event_detector?: any;
     bias_classifier?: any;
