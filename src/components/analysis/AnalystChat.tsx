@@ -760,6 +760,7 @@ INSTRUCTIONS:
 5. Keep responses concise but detailed (2-5 paragraphs). Be direct with numbers and specific tickers. When suggesting trades, include entry/target/stop from scanner data.
 6. AVAILABLE ACTIONS — If the user requests any of these, include the action tag in your response:
    - Log a trade: [ACTION:ADD_POSITION] TICKER @PRICE xSHARES SIDE (e.g., [ACTION:ADD_POSITION] AAPL @150.00 x100 LONG)
+   - Delete/remove a position: [ACTION:DELETE_POSITION] TICKER (e.g., [ACTION:DELETE_POSITION] AZN.L)
    - Add to watchlist: [ACTION:ADD_WATCHLIST] TICKER (e.g., [ACTION:ADD_WATCHLIST] TSLA)
    - Run scanner on a ticker: [ACTION:RUN_SCAN] TICKER (e.g., [ACTION:RUN_SCAN] NVDA)
 7. If the user asks about something not in the provided context, use your knowledge and grounded search to answer.
@@ -817,6 +818,32 @@ INSTRUCTIONS:
                             content: `Position added: ${(actionTicker || ticker).toUpperCase()}`,
                             timestamp: new Date(),
                         }]);
+                    }
+                }
+
+                // ACTION: Delete Position
+                if (messageText.includes('[ACTION:DELETE_POSITION]')) {
+                    const deleteMatch = messageText.match(/\[ACTION:DELETE_POSITION\]\s*(\w+(?:\.\w+)?)/i);
+                    if (deleteMatch?.[1]) {
+                        const deleteTicker = deleteMatch[1].toUpperCase();
+                        const { error } = await supabase
+                            .from('positions')
+                            .delete()
+                            .eq('ticker', deleteTicker)
+                            .eq('status', 'open');
+                        if (!error) {
+                            setMessages(prev => [...prev, {
+                                role: 'system',
+                                content: `Position removed: ${deleteTicker}`,
+                                timestamp: new Date(),
+                            }]);
+                        } else {
+                            setMessages(prev => [...prev, {
+                                role: 'system',
+                                content: `Failed to remove ${deleteTicker}: ${error.message}`,
+                                timestamp: new Date(),
+                            }]);
+                        }
                     }
                 }
 
