@@ -345,7 +345,7 @@ function parseWFActivityDetail(lines: string[]): Map<string, WFCostBasisEntry> {
 
         // For REINVEST DIV: look for "REINVEST AT <price>" pattern
         const reinvestMatch = line.match(/reinvest\s+at\s+([\d,.]+)/i);
-        let reinvestPrice = reinvestMatch ? parseFloat(reinvestMatch[1]!.replace(/,/g, '')) : 0;
+        const reinvestPrice = reinvestMatch ? parseFloat(reinvestMatch[1]!.replace(/,/g, '')) : 0;
 
         // Find the ticker — look at nearby lines for a standalone ticker
         let ticker = '';
