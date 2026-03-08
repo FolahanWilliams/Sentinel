@@ -343,9 +343,9 @@ export function UnifiedPortfolioView({ className = '' }: UnifiedPortfolioViewPro
                                                     <span className="ml-2 text-[10px] text-sentinel-500 uppercase">{pos.side}</span>
                                                 </td>
                                                 <td className="text-right px-3 py-3 font-mono text-sentinel-300">{shares}</td>
-                                                <td className="text-right px-3 py-3 font-mono text-sentinel-300">{formatPrice(entryPrice, pos.currency)}</td>
+                                                <td className="text-right px-3 py-3 font-mono text-sentinel-300">{formatPrice(entryPrice, pos.currency || inferCurrency(pos.ticker))}</td>
                                                 <td className="text-right px-3 py-3 font-mono text-sentinel-200">
-                                                    {formatPrice(currentPrice, pos.currency)}
+                                                    {formatPrice(currentPrice, pos.currency || inferCurrency(pos.ticker))}
                                                     {quote && (
                                                         <span className={`ml-1 text-[10px] ${quote.changePercent >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                                                             {formatPercent(quote.changePercent)}
@@ -353,10 +353,10 @@ export function UnifiedPortfolioView({ className = '' }: UnifiedPortfolioViewPro
                                                     )}
                                                 </td>
                                                 <td className={`text-right px-3 py-3 font-mono font-bold ${pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                                    {formatPrice(pnl, pos.currency)} ({formatPercent(pnlPct)})
+                                                    {formatPrice(pnl, pos.currency || inferCurrency(pos.ticker))} ({formatPercent(pnlPct)})
                                                 </td>
                                                 <td className="text-right px-3 py-3 font-mono text-sentinel-400">{portfolioPct.toFixed(1)}%</td>
-                                                <td className="text-right px-5 py-3 font-mono text-sentinel-400">{formatPrice(pos.position_size_usd ?? 0, pos.currency)}</td>
+                                                <td className="text-right px-5 py-3 font-mono text-sentinel-400">{formatPrice(pos.position_size_usd ?? 0, pos.currency || inferCurrency(pos.ticker))}</td>
                                             </tr>
                                         );
                                     })}
