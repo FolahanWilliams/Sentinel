@@ -49,9 +49,9 @@ export const ManualScanForm: React.FC<ManualScanFormProps> = ({ initialTicker })
     };
 
     return (
-        <div className="bg-[#111] border border-gray-800 rounded-xl p-6 h-full flex flex-col justify-center">
-            <h2 className="text-xl font-bold text-white mb-2">Manual Ticker Scan</h2>
-            <p className="text-sm text-gray-400 mb-6">
+        <div className="glass-panel rounded-xl p-6 h-full flex flex-col justify-center">
+            <h2 className="text-xl font-bold text-sentinel-100 mb-2">Manual Ticker Scan</h2>
+            <p className="text-sm text-sentinel-400 mb-6">
                 Directly run the analysis pipeline on a specific ticker, bypassing watchlist filters.
             </p>
 
@@ -64,16 +64,16 @@ export const ManualScanForm: React.FC<ManualScanFormProps> = ({ initialTicker })
                         type="text"
                         value={ticker}
                         onChange={(e) => setTicker(e.target.value)}
-                        className="block w-full pl-10 pr-3 py-3 border border-gray-700 rounded-lg bg-[#1a1a1a] text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 uppercase font-medium"
+                        className="block w-full pl-10 pr-3 py-3 border border-sentinel-700 rounded-lg bg-sentinel-900 text-sentinel-100 placeholder-sentinel-500 focus:outline-none focus:ring-1 focus:ring-sentinel-500 uppercase font-medium"
                         placeholder="e.g. AAPL"
-                        maxLength={5}
+                        maxLength={10}
                         disabled={isScanning}
                     />
                 </div>
                 <button
                     type="submit"
                     disabled={isScanning || !ticker.trim()}
-                    className="flex items-center justify-center px-6 py-3 border border-transparent text-sm font-medium rounded-lg text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                    className="flex items-center justify-center px-6 py-3 border border-transparent text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-500 disabled:opacity-50 transition-colors"
                 >
                     {isScanning ? (
                         <Loader2 className="w-5 h-5 animate-spin" />

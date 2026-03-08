@@ -94,6 +94,11 @@ export function Header() {
             ? `Research — ${location.pathname.split('/')[2]?.toUpperCase() ?? ''}`
             : PAGE_TITLES[location.pathname] ?? 'Sentinel';
 
+    // Sync document.title with current page
+    useEffect(() => {
+        document.title = pageTitle === 'Sentinel' ? 'Sentinel' : `${pageTitle} | Sentinel`;
+    }, [pageTitle]);
+
     const handleLock = () => {
         destroySession();
         window.location.reload();

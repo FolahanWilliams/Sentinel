@@ -6,7 +6,7 @@
  * confidence, and a "View" link to the analysis page.
  */
 
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Zap, X, TrendingUp, Shield, ArrowRight } from 'lucide-react';
@@ -16,13 +16,18 @@ export function SignalToast() {
     const { pendingSignals, dismissSignal } = useRealtimeSignals();
     const navigate = useNavigate();
 
-    // Auto-dismiss after 8 seconds
+    // Auto-dismiss after 8 seconds — only start timer for newly added signals
+    const dismissedRef = useRef(new Set<string>());
     useEffect(() => {
         if (pendingSignals.length === 0) return;
 
-        const timers = pendingSignals.map(signal =>
-            setTimeout(() => dismissSignal(signal.id), 8000)
-        );
+        const timers: ReturnType<typeof setTimeout>[] = [];
+        for (const signal of pendingSignals) {
+            if (!dismissedRef.current.has(signal.id)) {
+                dismissedRef.current.add(signal.id);
+                timers.push(setTimeout(() => dismissSignal(signal.id), 8000));
+            }
+        }
 
         return () => timers.forEach(clearTimeout);
     }, [pendingSignals, dismissSignal]);

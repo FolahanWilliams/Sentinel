@@ -92,22 +92,23 @@ export function RiskDashboard() {
         let cancelled = false;
         setLoadingQuotes(true);
         const tickers = tickerList.split(',');
-        Promise.all(
-            tickers.map(async t => {
-                try {
-                    const q = await MarketDataService.getQuote(t);
-                    return { ticker: t, price: q?.price ?? 0 };
-                } catch {
-                    return { ticker: t, price: 0 };
-                }
+        MarketDataService.getQuotesBulk(tickers)
+            .then(bulkQuotes => {
+                return tickers.map(t => ({
+                    ticker: t,
+                    price: bulkQuotes[t]?.price ?? 0,
+                }));
             })
-        ).then(results => {
-            if (cancelled) return;
-            const quotes: Record<string, number> = {};
-            results.forEach(r => { if (r.price > 0) quotes[r.ticker] = r.price; });
-            setLiveQuotes(quotes);
-            setLoadingQuotes(false);
-        });
+            .catch(() => {
+                return tickers.map(t => ({ ticker: t, price: 0 }));
+            })
+            .then(results => {
+                if (cancelled) return;
+                const quotes: Record<string, number> = {};
+                results.forEach(r => { if (r.price > 0) quotes[r.ticker] = r.price; });
+                setLiveQuotes(quotes);
+                setLoadingQuotes(false);
+            });
         return () => { cancelled = true; };
     }, [tickerList]);
 
@@ -419,9 +420,9 @@ export function RiskDashboard() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {positionRisks.map(p => (
+                                    {positionRisks.map((p, idx) => (
                                         <tr
-                                            key={p.ticker}
+                                            key={`${p.ticker}-${p.side}-${idx}`}
                                             className="border-b border-sentinel-800/50 hover:bg-sentinel-800/30 cursor-pointer transition-colors"
                                             onClick={() => navigate(`/analysis/${p.ticker}`)}
                                         >

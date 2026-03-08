@@ -57,7 +57,7 @@ export function exportSignalsToCSV(signals: Signal[]): string {
         s.thesis,
         s.target_price,
         s.stop_loss,
-        s.suggested_entry_low,
+        s.suggested_entry_low ?? '',
         s.status,
         s.created_at,
     ]);

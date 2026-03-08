@@ -12,8 +12,9 @@ import type { QuoteData } from '@/workers/quotePoller';
 // Singleton worker — shared across all components that use this hook
 let sharedWorker: Worker | null = null;
 let subscriberCount = 0;
+let authSubscription: { unsubscribe: () => void } | null = null;
 const allListeners = new Set<(data: Record<string, QuoteData>) => void>();
-const currentTickers = new Set<string>();
+const tickerRefCounts = new Map<string, number>();
 
 function getOrCreateWorker(): Worker {
     if (!sharedWorker) {
@@ -45,8 +46,8 @@ function getOrCreateWorker(): Worker {
             }
         });
 
-        // Keep the worker's auth token fresh
-        supabase.auth.onAuthStateChange((_event, session) => {
+        // Keep the worker's auth token fresh — store subscription to clean up later
+        const { data } = supabase.auth.onAuthStateChange((_event, session) => {
             if (session?.access_token) {
                 sharedWorker?.postMessage({
                     type: 'updateToken',
@@ -54,15 +55,17 @@ function getOrCreateWorker(): Worker {
                 });
             }
         });
+        authSubscription = data.subscription;
     }
     return sharedWorker;
 }
 
 function syncWorkerTickers() {
-    if (sharedWorker && currentTickers.size > 0) {
+    const tickers = Array.from(tickerRefCounts.keys());
+    if (sharedWorker && tickers.length > 0) {
         sharedWorker.postMessage({
             type: 'subscribe',
-            tickers: Array.from(currentTickers),
+            tickers,
         });
     }
 }
@@ -83,10 +86,10 @@ export function useQuoteWorker(tickers: string[], intervalMs = 60_000) {
         subscriberCount++;
         allListeners.add(handleQuotes);
 
-        // Register this component's tickers
+        // Register this component's tickers with ref counting
         const newTickers = tickerKey.split(',');
         for (const t of newTickers) {
-            currentTickers.add(t);
+            tickerRefCounts.set(t, (tickerRefCounts.get(t) ?? 0) + 1);
         }
 
         // Update worker if tickers changed
@@ -100,9 +103,14 @@ export function useQuoteWorker(tickers: string[], intervalMs = 60_000) {
             allListeners.delete(handleQuotes);
             subscriberCount--;
 
-            // Remove this component's tickers
+            // Decrement ref counts; only remove ticker when no subscribers remain
             for (const t of newTickers) {
-                currentTickers.delete(t);
+                const count = (tickerRefCounts.get(t) ?? 1) - 1;
+                if (count <= 0) {
+                    tickerRefCounts.delete(t);
+                } else {
+                    tickerRefCounts.set(t, count);
+                }
             }
 
             if (subscriberCount <= 0 && sharedWorker) {
@@ -110,6 +118,11 @@ export function useQuoteWorker(tickers: string[], intervalMs = 60_000) {
                 sharedWorker.terminate();
                 sharedWorker = null;
                 subscriberCount = 0;
+                // Clean up auth listener to prevent leak
+                if (authSubscription) {
+                    authSubscription.unsubscribe();
+                    authSubscription = null;
+                }
             } else {
                 syncWorkerTickers();
             }

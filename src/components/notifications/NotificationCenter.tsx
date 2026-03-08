@@ -28,11 +28,12 @@ export function NotificationCenter({ isOpen, onClose }: NotificationCenterProps)
     const [prefs, setPrefs] = useState<NotificationPreferences>(BrowserNotificationService.getPreferences());
     const [permission, setPermission] = useState<NotificationPermission>(BrowserNotificationService.getPermission());
     const [showSettings, setShowSettings] = useState(false);
-    const [history] = useState(() => BrowserNotificationService.getHistory());
+    const [history, setHistory] = useState(() => BrowserNotificationService.getHistory());
 
     useEffect(() => {
         if (isOpen) {
             setPermission(BrowserNotificationService.getPermission());
+            setHistory(BrowserNotificationService.getHistory());
             BrowserNotificationService.markAllRead();
         }
     }, [isOpen]);
@@ -105,6 +106,9 @@ export function NotificationCenter({ isOpen, onClose }: NotificationCenterProps)
                         <span className="text-sm text-sentinel-200 font-medium">All Notifications</span>
                         <button
                             onClick={() => togglePref('enabled')}
+                            role="switch"
+                            aria-checked={prefs.enabled}
+                            aria-label="Toggle all notifications"
                             className={`w-10 h-5 rounded-full transition-colors relative ${prefs.enabled ? 'bg-blue-600' : 'bg-sentinel-700'}`}
                         >
                             <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${prefs.enabled ? 'left-5.5 translate-x-0' : 'left-0.5'}`} style={{ left: prefs.enabled ? '22px' : '2px' }} />

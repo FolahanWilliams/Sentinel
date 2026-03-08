@@ -191,7 +191,9 @@ export function CommandPalette() {
         return Array.from(map.entries());
     }, [filteredItems]);
 
-    let flatIndex = -1;
+    // flatIndex is calculated inside the render via a ref to avoid stale closures
+    const flatIndexRef = useRef(0);
+    flatIndexRef.current = -1;
 
     return (
         <AnimatePresence>
@@ -244,8 +246,8 @@ export function CommandPalette() {
                                             {groupName}
                                         </div>
                                         {items.map(item => {
-                                            flatIndex++;
-                                            const currentIndex = flatIndex;
+                                            flatIndexRef.current++;
+                                            const currentIndex = flatIndexRef.current;
                                             const isSelected = selectedIndex === currentIndex;
 
                                             return (
