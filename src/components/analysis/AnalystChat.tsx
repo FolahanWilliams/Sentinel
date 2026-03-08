@@ -885,10 +885,11 @@ function AnalystChatInner() {
                         .eq('id', openPos.id);
 
                     if (!error) {
-                        const pnlStr = `${realizedPnl >= 0 ? '+' : ''}$${realizedPnl.toFixed(2)} (${realizedPnlPct >= 0 ? '+' : ''}${realizedPnlPct.toFixed(1)}%)`;
+                        const cur = openPos.currency || inferCurrency(closeTicker);
+                        const pnlStr = `${realizedPnl >= 0 ? '+' : ''}${formatPrice(realizedPnl, cur)} (${realizedPnlPct >= 0 ? '+' : ''}${realizedPnlPct.toFixed(1)}%)`;
                         setMessages(prev => [...prev, {
                             role: 'system',
-                            content: `Position closed: ${closeTicker} @ $${exitPrice.toFixed(2)} | P&L: ${pnlStr}`,
+                            content: `Position closed: ${closeTicker} @ ${formatPrice(exitPrice, cur)} | P&L: ${pnlStr}`,
                             timestamp: new Date(),
                         }]);
 

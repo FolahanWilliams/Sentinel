@@ -19,6 +19,8 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { SkeletonTable } from '@/components/shared/SkeletonPrimitives';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { formatPrice } from '@/utils/formatters';
+import { inferCurrency } from '@/utils/portfolio';
 
 interface Position {
     id: string;
@@ -37,11 +39,17 @@ interface Position {
     close_reason: string | null;
     notes: string | null;
     signal_id: string | null;
+    currency: string | null;
 }
 
 interface LiveQuote {
     price: number;
     changePercent: number;
+}
+
+/** Get the currency for a position — uses stored currency or infers from ticker suffix */
+function posCurrency(pos: { ticker: string; currency?: string | null }): string {
+    return pos.currency || inferCurrency(pos.ticker);
 }
 
 export function Positions() {
@@ -177,6 +185,7 @@ export function Positions() {
             shares,
             entry_price: entryPrice,
             position_size_usd: entryPrice * shares,
+            currency: inferCurrency(ticker),
             status: 'open',
             opened_at: new Date().toISOString(),
             notes: formNotes || null
@@ -294,6 +303,7 @@ export function Positions() {
                     <p className={`text-2xl font-bold font-mono ${summaryStats.totalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                         {summaryStats.totalPnl >= 0 ? '+' : ''}{summaryStats.totalPnl.toFixed(2)}
                     </p>
+                    <p className="text-[10px] text-sentinel-500 mt-0.5">Mixed currencies</p>
                 </motion.div>
                 <motion.div
                     className="glass-panel p-4 rounded-xl"
@@ -318,7 +328,7 @@ export function Positions() {
                         <ArrowUpRight className="w-3.5 h-3.5 text-emerald-400" /> Best Position
                     </div>
                     <p className="text-2xl font-bold font-mono text-emerald-400">
-                        {summaryStats.biggestWin > 0 ? `+$${summaryStats.biggestWin.toFixed(0)}` : '—'}
+                        {summaryStats.biggestWin > 0 ? `+${summaryStats.biggestWin.toFixed(2)}` : '—'}
                     </p>
                 </motion.div>
                 <motion.div
@@ -332,7 +342,7 @@ export function Positions() {
                         <ArrowDownRight className="w-3.5 h-3.5 text-red-400" /> Worst Position
                     </div>
                     <p className="text-2xl font-bold font-mono text-red-400">
-                        {summaryStats.biggestLoss < 0 ? `-$${Math.abs(summaryStats.biggestLoss).toFixed(0)}` : '—'}
+                        {summaryStats.biggestLoss < 0 ? `-${Math.abs(summaryStats.biggestLoss).toFixed(2)}` : '—'}
                     </p>
                 </motion.div>
             </div>
@@ -400,12 +410,12 @@ export function Positions() {
                                                 </span>
                                             </td>
                                             <td className="px-5 py-3 text-right font-mono text-sentinel-200">{pos.shares}</td>
-                                            <td className="px-5 py-3 text-right font-mono text-sentinel-200">${pos.entry_price?.toFixed(2)}</td>
+                                            <td className="px-5 py-3 text-right font-mono text-sentinel-200">{pos.entry_price != null ? formatPrice(pos.entry_price, posCurrency(pos)) : '—'}</td>
                                             <td className="px-5 py-3 text-right font-mono text-sentinel-200">
-                                                {pnl ? `$${pnl.livePrice.toFixed(2)}` : <Loader2 className="w-3 h-3 animate-spin inline" />}
+                                                {pnl ? formatPrice(pnl.livePrice, posCurrency(pos)) : <Loader2 className="w-3 h-3 animate-spin inline" />}
                                             </td>
                                             <td className={`px-5 py-3 text-right font-mono font-bold ${isProfit ? 'text-emerald-400' : 'text-red-400'}`}>
-                                                {pnl ? `${isProfit ? '+' : ''}$${pnl.pnlUsd.toFixed(2)}` : '—'}
+                                                {pnl ? `${isProfit ? '+' : ''}${formatPrice(pnl.pnlUsd, posCurrency(pos))}` : '—'}
                                             </td>
                                             <td className={`px-5 py-3 text-right font-mono font-bold ${isProfit ? 'text-emerald-400' : 'text-red-400'}`}>
                                                 {pnl ? `${isProfit ? '+' : ''}${pnl.pnlPct.toFixed(2)}%` : '—'}
@@ -482,10 +492,10 @@ export function Positions() {
                                                 <tr className="border-b border-white/5 hover:bg-white/5 transition-colors">
                                                     <td className="px-5 py-3 font-mono font-bold text-sentinel-300">{pos.ticker}</td>
                                                     <td className="px-5 py-3 text-xs text-sentinel-400">{pos.side?.toUpperCase()}</td>
-                                                    <td className="px-5 py-3 text-right font-mono text-sentinel-400">${pos.entry_price?.toFixed(2)}</td>
-                                                    <td className="px-5 py-3 text-right font-mono text-sentinel-400">${pos.exit_price?.toFixed(2)}</td>
+                                                    <td className="px-5 py-3 text-right font-mono text-sentinel-400">{pos.entry_price != null ? formatPrice(pos.entry_price, posCurrency(pos)) : '—'}</td>
+                                                    <td className="px-5 py-3 text-right font-mono text-sentinel-400">{pos.exit_price != null ? formatPrice(pos.exit_price, posCurrency(pos)) : '—'}</td>
                                                     <td className={`px-5 py-3 text-right font-mono font-bold ${isProfit ? 'text-emerald-400' : 'text-red-400'}`}>
-                                                        {isProfit ? '+' : ''}${(pos.realized_pnl || 0).toFixed(2)}
+                                                        {isProfit ? '+' : ''}{formatPrice(pos.realized_pnl || 0, posCurrency(pos))}
                                                     </td>
                                                     <td className={`px-5 py-3 text-right font-mono ${isProfit ? 'text-emerald-400' : 'text-red-400'}`}>
                                                         {isProfit ? '+' : ''}{(pos.realized_pnl_pct || 0).toFixed(2)}%
