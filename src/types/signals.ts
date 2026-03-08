@@ -77,6 +77,7 @@ export interface Signal {
 }
 
 import type { OverreactionResult, SanityCheckResult, ContagionResult } from './agents';
+export type { OverreactionResult, SanityCheckResult, ContagionResult };
 
 export interface AgentOutputsJson {
     overreaction?: OverreactionResult;

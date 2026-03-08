@@ -48,7 +48,7 @@ import { SectorRotationService } from './sectorRotation';
 import { MultiTimeframeService } from './multiTimeframe';
 import { DEFAULT_MIN_CONFIDENCE, DEFAULT_MIN_PRICE_DROP_PCT, CONFIDENCE_GATE_OVERREACTION, CONFIDENCE_GATE_CONTAGION, CONFIDENCE_GATE_CRITIQUE, CONFIDENCE_FLOOR, SEVERITY_THRESHOLD } from '@/config/constants';
 import type { MultiTimeframeResult } from './technicalAnalysis';
-import type { AgentOutputsJson, SignalType, LynchCategory } from '@/types/signals';
+import type { AgentOutputsJson, LynchCategory } from '@/types/signals';
 import type { Json } from '@/types/database';
 import type { Quote } from '@/types/market';
 
@@ -1329,13 +1329,14 @@ If there is genuinely no major news, return: {"events": []}`,
                                                                 calibrated_confidence: await (async () => {
                                                                     try {
                                                                         const curve = await ConfidenceCalibrator.getCachedCurve();
-                                                                        return ConfidenceCalibrator.getCalibratedWinRate(contagion.data.confidence_score, curve);
-                                                                    } catch { return contagion.data.confidence_score; }
+                                                                        const score = contagion.data?.confidence_score ?? 0;
+                                                                        return ConfidenceCalibrator.getCalibratedWinRate(score, curve);
+                                                                    } catch { return contagion.data?.confidence_score ?? 0; }
                                                                 })(),
                                                                 margin_of_safety_pct: contagionMarginPct,
-                                                                conviction_score: typeof contagion.data.conviction_score === 'number'
+                                                                conviction_score: typeof contagion.data?.conviction_score === 'number'
                                                                     ? Math.max(0, Math.min(100, Math.round(contagion.data.conviction_score))) : null,
-                                                                moat_rating: typeof contagion.data.moat_rating === 'number'
+                                                                moat_rating: typeof contagion.data?.moat_rating === 'number'
                                                                     ? Math.max(1, Math.min(10, Math.round(contagion.data.moat_rating))) : null,
                                                                 lynch_category: ['fast_grower', 'stalwart', 'turnaround', 'asset_play', 'cyclical', 'slow_grower']
                                                                     .includes(contagion.data.lynch_category) ? contagion.data.lynch_category : null,

@@ -4,7 +4,7 @@
 
 export interface AgentResult<T> {
     success: boolean;
-    data: T; // Change from T | null to T, as data is expected to be present on success
+    data: T | null;
     error: string | null;
     duration_ms: number;
     tokens_used: number;
