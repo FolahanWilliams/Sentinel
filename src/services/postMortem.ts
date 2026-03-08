@@ -74,18 +74,19 @@ export class PostMortemService {
         created_at: string;
     }>> {
         try {
-            const { data, error } = await supabase
-                .from('signal_lessons')
+            // signal_lessons table is created via migration but not in generated Supabase types yet
+            const { data, error } = await (supabase
+                .from('signal_lessons' as any)
                 .select('*')
                 .order('created_at', { ascending: false })
-                .limit(limit);
+                .limit(limit) as any);
 
             if (error || !data) {
                 console.warn('[PostMortem] Failed to fetch lessons:', error?.message);
                 return [];
             }
 
-            return data;
+            return data as any[];
         } catch {
             return [];
         }
