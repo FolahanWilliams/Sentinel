@@ -38,6 +38,8 @@ export default function App() {
         supabase.auth.getSession().then(({ data: { session: s } }) => {
             setSession(s);
             setLoading(false);
+        }).catch(() => {
+            setLoading(false);
         });
 
         // 2. Listen for auth state changes (login, logout, token refresh)

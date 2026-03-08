@@ -110,7 +110,7 @@ export class RSSReaderService {
                 }
             });
 
-            await Promise.all(promises);
+            await Promise.allSettled(promises);
         }
 
         console.log(`[RSSReader] Sync complete. Processed ~${totalAdded} items.`);
