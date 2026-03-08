@@ -43,7 +43,7 @@ export function Settings() {
             key: 'email_alerts_enabled',
             value: newValue,
             updated_at: new Date().toISOString(),
-        } as any, { onConflict: 'key' });
+        } as any, { onConflict: 'key,user_id' });
     }
 
     async function handleSave(e: React.FormEvent) {

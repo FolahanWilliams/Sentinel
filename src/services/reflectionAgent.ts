@@ -183,7 +183,7 @@ Analyze this data and generate the Lessons Learned rules.`;
                 key: 'reflection_lessons',
                 value: reflectionResult as any,
                 updated_at: new Date().toISOString(),
-            }, { onConflict: 'key' });
+            }, { onConflict: 'key,user_id' });
 
         if (upsertError) {
             console.error('[ReflectionAgent] Failed to save lessons:', upsertError);

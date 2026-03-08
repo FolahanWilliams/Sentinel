@@ -55,7 +55,7 @@ import type { Quote } from '@/types/market';
 export class ScannerService {
 
     /**
-     * Ensure a ticker exists in the watchlist table so FK constraints on market_events are satisfied.
+     * Ensure a ticker exists in the watchlist table for this user.
      * Uses upsert with ignoreDuplicates so it's safe to call multiple times.
      */
     private static async ensureWatchlistEntry(ticker: string): Promise<void> {
@@ -65,7 +65,7 @@ export class ScannerService {
             sector: 'Unknown',
             is_active: true,
             notes: 'Auto-added by AI discovery scan'
-        }, { onConflict: 'ticker', ignoreDuplicates: true });
+        }, { onConflict: 'ticker,user_id', ignoreDuplicates: true });
         if (error) {
             console.warn(`[Scanner] Failed to ensure watchlist entry for ${ticker}:`, error.message);
         }

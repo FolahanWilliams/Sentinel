@@ -36,7 +36,7 @@ export function SignalRating({ signalId, existingRating = null }: SignalRatingPr
                         signal_id: signalId,
                         rating: newRating,
                         rated_at: new Date().toISOString(),
-                    } as any, { onConflict: 'signal_id' });
+                    } as any, { onConflict: 'signal_id,user_id' });
             }
             setRating(newRating);
         } catch (err) {

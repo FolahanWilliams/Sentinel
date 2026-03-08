@@ -200,7 +200,7 @@ Generate weight adjustments for each pipeline step. Focus on steps with enough d
             key: 'auto_learning_weights',
             value: learningResult as any,
             updated_at: new Date().toISOString(),
-        }, { onConflict: 'key' });
+        }, { onConflict: 'key,user_id' });
 
         console.log(`[AutoLearning] Generated ${weights.length} weight adjustments from ${condensed.length} outcomes.`);
         return learningResult;

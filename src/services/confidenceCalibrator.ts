@@ -93,7 +93,7 @@ export class ConfidenceCalibrator {
             key: APP_SETTINGS_KEY,
             value: curve as any,
             updated_at: new Date().toISOString(),
-        }, { onConflict: 'key' });
+        }, { onConflict: 'key,user_id' });
 
         return curve;
     }

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/config/supabase';
+import { getUserId } from '@/utils/getUserId';
 import type { Database } from '@/types/database';
 import type { Json } from '@/types/database';
 import {
@@ -38,6 +39,7 @@ export function useAppSettings() {
     const fetchSettings = useCallback(async () => {
         try {
             setLoading(true);
+            // RLS auto-filters by user_id = auth.uid()
             const { data, error: fetchError } = await supabase
                 .from('app_settings')
                 .select('*')
@@ -65,12 +67,15 @@ export function useAppSettings() {
     const saveSettings = async (newSettings: ScannerSettings) => {
         try {
             setError(null);
+            const userId = await getUserId();
+            // Upsert with composite unique key (key, user_id)
             const { error: upsertError } = await supabase
                 .from('app_settings')
                 .upsert({
                     key: 'scanner_config',
-                    value: newSettings as unknown as Json
-                });
+                    value: newSettings as unknown as Json,
+                    user_id: userId,
+                }, { onConflict: 'key,user_id' });
 
             if (upsertError) throw upsertError;
             setSettings(newSettings);
