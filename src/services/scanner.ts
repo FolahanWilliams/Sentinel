@@ -326,8 +326,9 @@ export class ScannerService {
 
             // 3d-1b. Sector Rotation — detect money flow between sectors
             let sectorRotationCtx = '';
+            let rotationSnapshot: import('./sectorRotation').SectorRotationSnapshot | null = null;
             try {
-                const rotationSnapshot = await SectorRotationService.getRotationSnapshot();
+                rotationSnapshot = await SectorRotationService.getRotationSnapshot();
                 sectorRotationCtx = SectorRotationService.formatForPrompt(rotationSnapshot);
                 if (rotationSnapshot.regime !== 'neutral') {
                     console.log(`[Scanner] Sector rotation: ${rotationSnapshot.regime.toUpperCase()} — ${rotationSnapshot.regimeReason}`);
@@ -391,6 +392,10 @@ export class ScannerService {
                 .limit(30);
 
             // 5. Extract Events via Gemini Fast-Pass
+            // Always initialize extraction so grounded search + earnings calendar can inject events
+            const extraction: { success: boolean; data: { events: any[] } | null } = { success: true, data: { events: [] } };
+            let actionableArticles: any[] = [];
+
             if (freshArticles && freshArticles.length > 0) {
                 // A. Semantic Deduplication (TF-IDF cosine similarity — replaces Jaccard)
                 const articlesWithDefaults = freshArticles.map(a => ({
@@ -423,10 +428,17 @@ export class ScannerService {
                 }
 
                 const combinedText = actionableArticles.map(a => `${a.title}. ${a.description}`).join(' | ');
-                const extraction = actionableArticles.length > 0
-                    ? await AgentService.extractEventsFromText(combinedText)
-                    : { success: true, data: { events: [] } };
+                if (actionableArticles.length > 0) {
+                    const extractResult = await AgentService.extractEventsFromText(combinedText);
+                    if (extractResult.success && extractResult.data?.events) {
+                        extraction.data!.events.push(...extractResult.data.events);
+                    }
+                }
+            } // end if (freshArticles)
 
+            // From here on, grounded search + earnings calendar + event processing run
+            // regardless of whether RSS articles were available.
+            {
                 // 5b. Per-Ticker Grounded Search — supplement RSS with Gemini Google Search
                 // This ensures we always have fresh context, even when RSS lacks ticker-specific news.
                 console.log(`[Scanner] Running per-ticker grounded search for ${tickers.length} tickers...`);
@@ -578,6 +590,73 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                     }
                 } catch (earningsCalErr) {
                     console.warn('[Scanner] Earnings calendar scan failed (non-fatal):', earningsCalErr);
+                }
+
+                // 5e. SECTOR ROTATION EVENT INJECTION — when rotation is active,
+                // inject synthetic events for watchlist tickers in favored sectors
+                if (rotationSnapshot && rotationSnapshot.regime !== 'neutral') {
+                    const SECTOR_KEYWORD_MAP: Record<string, string[]> = {
+                        Technology: ['tech', 'software', 'saas', 'cloud', 'ai'],
+                        Semiconductors: ['semi', 'chip', 'semiconductor'],
+                        Biotech: ['bio', 'pharma', 'drug', 'therapeutics'],
+                        Healthcare: ['health', 'medical', 'hospital'],
+                        Energy: ['energy', 'oil', 'gas', 'solar', 'wind'],
+                        Financials: ['bank', 'fintech', 'insurance', 'finance'],
+                    };
+
+                    // Determine which sector categories are favored
+                    const favoredCategories: string[] = [];
+                    if (rotationSnapshot.regime === 'risk_on') {
+                        favoredCategories.push('Growth');
+                    } else if (rotationSnapshot.regime === 'risk_off') {
+                        favoredCategories.push('Defensive');
+                    } else if (rotationSnapshot.regime === 'rotation') {
+                        // Identify which category is leading
+                        const avgs = [
+                            { cat: 'Growth', avg: rotationSnapshot.growthAvg },
+                            { cat: 'Defensive', avg: rotationSnapshot.defensiveAvg },
+                            { cat: 'Cyclical', avg: rotationSnapshot.cyclicalAvg },
+                        ].sort((a, b) => b.avg - a.avg);
+                        if (avgs[0] && avgs[0].avg > 0.3) {
+                            favoredCategories.push(avgs[0].cat);
+                        }
+                    }
+
+                    if (favoredCategories.length > 0) {
+                        // Map favored ETF categories to watchlist ticker sectors
+                        const favoredSectorNames = rotationSnapshot.topInflows.map(s => s.name);
+                        let rotationInjected = 0;
+                        for (const t of tickersToScan) {
+                            // Check if this ticker's sector matches a favored sector
+                            const tickerSectorLower = (t.sector || '').toLowerCase();
+                            const isFavored = favoredSectorNames.some(sectorName => {
+                                const keywords = SECTOR_KEYWORD_MAP[sectorName] || [sectorName.toLowerCase()];
+                                return keywords.some(kw => tickerSectorLower.includes(kw));
+                            });
+
+                            if (!isFavored) continue;
+
+                            // Don't duplicate if we already have an event for this ticker
+                            const alreadyHas = extraction.data?.events?.some(
+                                (e: any) => e.ticker === t.ticker
+                            );
+                            if (alreadyHas) continue;
+
+                            if (!extraction.data) extraction.data = { events: [] };
+                            if (!extraction.data.events) extraction.data.events = [];
+                            extraction.data.events.push({
+                                ticker: t.ticker,
+                                event_type: 'sector_tailwind',
+                                headline: `[Rotation] ${rotationSnapshot.regime.replace('_', ' ').toUpperCase()}: Money flowing into ${favoredSectorNames.join(', ')}. ${t.ticker} in favored sector.`,
+                                severity: 4, // Moderate — rotation is a slow signal
+                            });
+                            rotationInjected++;
+                            if (rotationInjected >= 5) break; // Cap to avoid flooding
+                        }
+                        if (rotationInjected > 0) {
+                            console.log(`[Scanner] Sector rotation injected ${rotationInjected} events (${rotationSnapshot.regime}, favoring ${favoredSectorNames.join(', ')})`);
+                        }
+                    }
                 }
 
                 // Build a lookup of article descriptions by ticker for full context
@@ -802,7 +881,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
 
                                 // Pipeline A: Overreaction Analysis (negative events)
                                 // Pipeline B: Bullish Catalyst Analysis (positive events)
-                                const isPositiveEvent = priceDrop >= 0 || ['analyst_upgrade', 'product_launch', 'fda_approval', 'partnership', 'guidance_raise', 'contract_win'].includes(ev.event_type);
+                                const isPositiveEvent = priceDrop >= 0 || ['analyst_upgrade', 'product_launch', 'fda_approval', 'partnership', 'guidance_raise', 'contract_win', 'sector_tailwind', 'upcoming_earnings'].includes(ev.event_type);
 
                                 let analysis: import('@/types/agents').AgentResult<import('@/types/agents').OverreactionResult>;
                                 let signalType: import('@/types/signals').SignalType = 'long_overreaction';
@@ -1026,15 +1105,22 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                         } catch { /* non-fatal */ }
 
                                         // 7.11b. GEMINI MULTI-TIMEFRAME — deeper 3-timeframe trend confirmation via AI
+                                        // For bullish catalysts, full MTF alignment gets a bonus multiplier
                                         try {
                                             const signalBias = analysis.data.bias_type || 'bullish';
                                             const geminiMtf = await MultiTimeframeService.analyze(ev.ticker, signalBias);
                                             if (geminiMtf.confidenceBonus !== 0) {
+                                                // Bullish catalyst + 3/3 alignment = extra +5 bonus (momentum confirmation)
+                                                let mtfBonus = geminiMtf.confidenceBonus;
+                                                if (catalystAgentUsed && geminiMtf.alignedCount === geminiMtf.totalChecked && geminiMtf.totalChecked === 3) {
+                                                    mtfBonus += 5;
+                                                    console.log(`[Scanner] MTF catalyst boost for ${ev.ticker}: +5 extra (3/3 alignment with bullish catalyst)`);
+                                                }
                                                 const before = analysis.data.confidence_score;
                                                 analysis.data.confidence_score = Math.min(100, Math.max(CONFIDENCE_FLOOR,
-                                                    analysis.data.confidence_score + geminiMtf.confidenceBonus
+                                                    analysis.data.confidence_score + mtfBonus
                                                 ));
-                                                console.log(`[Scanner] Gemini MTF (${geminiMtf.alignedCount}/${geminiMtf.totalChecked} aligned) adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${geminiMtf.confidenceBonus > 0 ? '+' : ''}${geminiMtf.confidenceBonus})`);
+                                                console.log(`[Scanner] Gemini MTF (${geminiMtf.alignedCount}/${geminiMtf.totalChecked} aligned) adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${mtfBonus > 0 ? '+' : ''}${mtfBonus})`);
                                             }
                                         } catch { /* non-fatal */ }
 
