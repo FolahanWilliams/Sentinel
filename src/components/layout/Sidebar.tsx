@@ -22,6 +22,10 @@ import {
     Newspaper,
     Briefcase,
     BarChart3,
+    Bell,
+    Shield,
+    Trophy,
+    Calendar,
     ChevronLeft,
     ChevronRight,
     LogOut,
@@ -37,6 +41,10 @@ const NAV_ITEMS = [
     { to: '/backtest', icon: FlaskConical, label: 'Backtest' },
     { to: '/performance', icon: BarChart3, label: 'Performance' },
     { to: '/journal', icon: BookOpen, label: 'Journal' },
+    { to: '/alerts', icon: Bell, label: 'Alerts' },
+    { to: '/risk', icon: Shield, label: 'Risk' },
+    { to: '/leaderboard', icon: Trophy, label: 'Leaderboard' },
+    { to: '/earnings', icon: Calendar, label: 'Earnings' },
     { to: '/settings', icon: Settings, label: 'Settings' },
 ] as const;
 

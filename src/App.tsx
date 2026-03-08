@@ -22,6 +22,10 @@ import { Journal } from '@/pages/Journal';
 import { StockAnalysis } from '@/pages/StockAnalysis';
 import { Positions } from '@/pages/Positions';
 import { Performance } from '@/pages/Performance';
+import { Alerts } from '@/pages/Alerts';
+import { RiskDashboard } from '@/pages/RiskDashboard';
+import { Leaderboard } from '@/pages/Leaderboard';
+import { EarningsCalendar } from '@/pages/EarningsCalendar';
 import { NotFound } from '@/pages/NotFound';
 import type { Session } from '@supabase/supabase-js';
 
@@ -83,6 +87,10 @@ export default function App() {
                             <Route path="/journal" element={<Journal />} />
                             <Route path="/positions" element={<Positions />} />
                             <Route path="/performance" element={<Performance />} />
+                            <Route path="/alerts" element={<Alerts />} />
+                            <Route path="/risk" element={<RiskDashboard />} />
+                            <Route path="/leaderboard" element={<Leaderboard />} />
+                            <Route path="/earnings" element={<EarningsCalendar />} />
                             {/* Phase 3 fix (Audit C15): 404 catch-all route */}
                             <Route path="*" element={<NotFound />} />
                         </Route>
