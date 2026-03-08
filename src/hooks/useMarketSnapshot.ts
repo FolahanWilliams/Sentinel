@@ -101,11 +101,10 @@ export function useMarketSnapshot() {
                 tickerResults[t.key] = { ...EMPTY_TICKER };
             }
 
-            // Fire quotes and CNN Fear & Greed fetch in parallel
-            const [quoteResults, fgResult] = await Promise.all([
-                Promise.allSettled(tickerMap.map(t => MarketDataService.getQuote(t.symbol))),
-                supabase.functions.invoke('proxy-fear-greed').catch(() => ({ data: null, error: { message: 'Failed' } })),
-            ]);
+            // Fetch ticker quotes (F&G is now handled by useFearGreed hook separately)
+            const quoteResults = await Promise.allSettled(
+                tickerMap.map(t => MarketDataService.getQuote(t.symbol))
+            );
 
             quoteResults.forEach((result, i) => {
                 if (result.status === 'fulfilled') {
@@ -130,14 +129,19 @@ export function useMarketSnapshot() {
             const oil = tickerResults.oil ?? EMPTY_TICKER;
             const tnx = tickerResults.tnx ?? EMPTY_TICKER;
 
-            // --- 2. Extract Fear & Greed from CNN proxy (real data, no AI hallucination) ---
+            // --- 2. Read Fear & Greed from useFearGreed's cache (avoids duplicate API call) ---
             let fearGreedValue = 50;
             let fearGreedLabel = 'Neutral';
-            const fgData = (fgResult as any)?.data;
-            if (fgData && typeof fgData.score === 'number') {
-                fearGreedValue = Math.round(fgData.score);
-                fearGreedLabel = fgData.rating || 'Neutral';
-            }
+            try {
+                const fgCacheRaw = sessionStorage.getItem('sentinel_fear_greed_v1');
+                if (fgCacheRaw) {
+                    const { data: fgCached } = JSON.parse(fgCacheRaw);
+                    if (fgCached && typeof fgCached.score === 'number') {
+                        fearGreedValue = Math.round(fgCached.score);
+                        fearGreedLabel = fgCached.rating || 'Neutral';
+                    }
+                }
+            } catch { /* ignore */ }
 
             // --- 3. Generate AI headline + summary (no longer needs grounded search for F&G) ---
             let headline = 'Markets in Motion';
