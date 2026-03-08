@@ -18,22 +18,43 @@ import type { Session } from '@supabase/supabase-js';
 // ── Eagerly loaded (home page) ──────────────────────────────────────
 import { UnifiedDashboard } from '@/components/UnifiedDashboard';
 
+// ── Lazy-load with auto-reload on stale chunks after deploy ─────────
+function lazyWithRetry<T extends Record<string, unknown>>(
+    loader: () => Promise<T>,
+    pick: keyof T,
+): React.LazyExoticComponent<React.ComponentType> {
+    return lazy(() =>
+        loader()
+            .then(m => ({ default: m[pick] as React.ComponentType }))
+            .catch(() => {
+                // Chunk hash changed after a new deploy — reload once to get fresh assets.
+                const key = 'sentinel_chunk_retry';
+                if (!sessionStorage.getItem(key)) {
+                    sessionStorage.setItem(key, '1');
+                    window.location.reload();
+                }
+                // If we already retried, surface the error to the ErrorBoundary.
+                return Promise.reject(new Error('Failed to load page after retry'));
+            }),
+    );
+}
+
 // ── Lazy-loaded routes ──────────────────────────────────────────────
-const Dashboard = lazy(() => import('@/pages/Dashboard').then(m => ({ default: m.Dashboard })));
-const Analysis = lazy(() => import('@/pages/Analysis').then(m => ({ default: m.Analysis })));
-const Watchlist = lazy(() => import('@/pages/Watchlist').then(m => ({ default: m.Watchlist })));
-const Backtest = lazy(() => import('@/pages/Backtest').then(m => ({ default: m.Backtest })));
-const Scanner = lazy(() => import('@/pages/Scanner').then(m => ({ default: m.Scanner })));
-const Settings = lazy(() => import('@/pages/Settings').then(m => ({ default: m.Settings })));
-const Journal = lazy(() => import('@/pages/Journal').then(m => ({ default: m.Journal })));
-const StockAnalysis = lazy(() => import('@/pages/StockAnalysis').then(m => ({ default: m.StockAnalysis })));
-const Positions = lazy(() => import('@/pages/Positions').then(m => ({ default: m.Positions })));
-const Performance = lazy(() => import('@/pages/Performance').then(m => ({ default: m.Performance })));
-const Alerts = lazy(() => import('@/pages/Alerts').then(m => ({ default: m.Alerts })));
-const RiskDashboard = lazy(() => import('@/pages/RiskDashboard').then(m => ({ default: m.RiskDashboard })));
-const Leaderboard = lazy(() => import('@/pages/Leaderboard').then(m => ({ default: m.Leaderboard })));
-const EarningsCalendar = lazy(() => import('@/pages/EarningsCalendar').then(m => ({ default: m.EarningsCalendar })));
-const NotFound = lazy(() => import('@/pages/NotFound').then(m => ({ default: m.NotFound })));
+const Dashboard = lazyWithRetry(() => import('@/pages/Dashboard'), 'Dashboard');
+const Analysis = lazyWithRetry(() => import('@/pages/Analysis'), 'Analysis');
+const Watchlist = lazyWithRetry(() => import('@/pages/Watchlist'), 'Watchlist');
+const Backtest = lazyWithRetry(() => import('@/pages/Backtest'), 'Backtest');
+const Scanner = lazyWithRetry(() => import('@/pages/Scanner'), 'Scanner');
+const Settings = lazyWithRetry(() => import('@/pages/Settings'), 'Settings');
+const Journal = lazyWithRetry(() => import('@/pages/Journal'), 'Journal');
+const StockAnalysis = lazyWithRetry(() => import('@/pages/StockAnalysis'), 'StockAnalysis');
+const Positions = lazyWithRetry(() => import('@/pages/Positions'), 'Positions');
+const Performance = lazyWithRetry(() => import('@/pages/Performance'), 'Performance');
+const Alerts = lazyWithRetry(() => import('@/pages/Alerts'), 'Alerts');
+const RiskDashboard = lazyWithRetry(() => import('@/pages/RiskDashboard'), 'RiskDashboard');
+const Leaderboard = lazyWithRetry(() => import('@/pages/Leaderboard'), 'Leaderboard');
+const EarningsCalendar = lazyWithRetry(() => import('@/pages/EarningsCalendar'), 'EarningsCalendar');
+const NotFound = lazyWithRetry(() => import('@/pages/NotFound'), 'NotFound');
 
 /** Minimal loading spinner shown while a lazy chunk loads */
 function RouteLoader() {
