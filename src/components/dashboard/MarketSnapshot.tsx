@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { RefreshCw, TrendingUp, TrendingDown, Minus, BarChart3, Gauge, ChevronDown, ArrowRight, Layers, Megaphone } from 'lucide-react';
+import { RefreshCw, TrendingUp, TrendingDown, Minus, BarChart3, Gauge, ChevronDown, ArrowRight, Layers } from 'lucide-react';
 import { useMarketSnapshot } from '@/hooks/useMarketSnapshot';
 import { useFearGreed } from '@/hooks/useFearGreed';
 import { FEAR_GREED_INDICATOR_LABELS } from '@/types/fearGreed';
