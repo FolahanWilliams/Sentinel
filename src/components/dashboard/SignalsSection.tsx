@@ -13,6 +13,7 @@ import { MarketDataService } from '@/services/marketData';
 import { ScannerService } from '@/services/scanner';
 import { formatPrice, formatPercent, timeAgo } from '@/utils/formatters';
 import { TABadge } from '@/components/shared/TABadge';
+import { SignalQualityBadge } from '@/components/shared/SignalQualityBadge';
 import { SkeletonSignalFeed } from '@/components/shared/SkeletonPrimitives';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
@@ -558,6 +559,7 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                                 {signal.ta_alignment && (
                                                     <TABadge taAlignment={signal.ta_alignment} taSnapshot={signal.ta_snapshot} compact />
                                                 )}
+                                                <SignalQualityBadge agentOutputs={signal.agent_outputs} compact />
                                                 <span className="text-xs text-sentinel-500 flex items-center gap-1 font-mono">
                                                     <Clock className="w-3 h-3" />
                                                     {timeAgo(signal.created_at)}
