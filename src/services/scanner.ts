@@ -600,7 +600,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                 ]);
 
                                 // Unpack TA (6a)
-                                let earlyTaSnapshot = taResult.status === 'fulfilled' ? taResult.value : null;
+                                const earlyTaSnapshot = taResult.status === 'fulfilled' ? taResult.value : null;
                                 let earlyTaContext = '';
                                 if (earlyTaSnapshot) {
                                     try { earlyTaContext = TechnicalAnalysisService.formatForPrompt(earlyTaSnapshot); } catch { /* non-fatal */ }
