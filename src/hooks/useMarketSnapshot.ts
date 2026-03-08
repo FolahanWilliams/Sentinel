@@ -29,7 +29,7 @@ export interface MarketSnapshotData {
 }
 
 const CACHE_KEY = 'sentinel_market_snapshot_v2';
-const AI_CACHE_KEY = 'sentinel_market_ai_v1';
+const AI_CACHE_KEY = 'sentinel_market_ai_v2';
 const CACHE_TTL_MS = CACHE_TTL_MARKET_SNAPSHOT;
 const AI_CACHE_TTL_MS = CACHE_TTL_AI_CONTENT;
 
@@ -49,13 +49,10 @@ function setCache(data: MarketSnapshotData) {
     } catch { /* ignore */ }
 }
 
-// Separate cache for AI-generated content (headline, Fear & Greed, bullets)
-// to prevent hallucination flicker — these change less often than quotes
+// Separate cache for AI-generated content (headline + bullets only — F&G now from CNN)
 interface AiContent {
     headline: string;
     description: string;
-    fearGreedValue: number;
-    fearGreedLabel: string;
     summaryBullets: { color: string; text: string }[];
 }
 
@@ -87,10 +84,7 @@ export function useMarketSnapshot() {
         setError(null);
 
         try {
-            let fearGreedValue = 50;
-            let fearGreedLabel = 'Neutral';
-
-            // --- 1. Fetch ticker quotes via existing proxy ---
+            // --- 1. Fetch ticker quotes + CNN Fear & Greed in parallel ---
             const tickerMap = [
                 { key: 'vix', symbol: '^VIX' },
                 { key: 'sp500', symbol: '^GSPC' },
@@ -107,9 +101,11 @@ export function useMarketSnapshot() {
                 tickerResults[t.key] = { ...EMPTY_TICKER };
             }
 
-            const quoteResults = await Promise.allSettled(
-                tickerMap.map(t => MarketDataService.getQuote(t.symbol))
-            );
+            // Fire quotes and CNN Fear & Greed fetch in parallel
+            const [quoteResults, fgResult] = await Promise.all([
+                Promise.allSettled(tickerMap.map(t => MarketDataService.getQuote(t.symbol))),
+                supabase.functions.invoke('proxy-fear-greed').catch(() => ({ data: null, error: { message: 'Failed' } })),
+            ]);
 
             quoteResults.forEach((result, i) => {
                 if (result.status === 'fulfilled') {
@@ -134,8 +130,16 @@ export function useMarketSnapshot() {
             const oil = tickerResults.oil ?? EMPTY_TICKER;
             const tnx = tickerResults.tnx ?? EMPTY_TICKER;
 
-            // --- 2. Generate AI headline, summary, and get CNN Fear & Greed via Gemini ---
-            // Use cached AI content if available (30-min TTL) to prevent hallucination flicker
+            // --- 2. Extract Fear & Greed from CNN proxy (real data, no AI hallucination) ---
+            let fearGreedValue = 50;
+            let fearGreedLabel = 'Neutral';
+            const fgData = (fgResult as any)?.data;
+            if (fgData && typeof fgData.score === 'number') {
+                fearGreedValue = Math.round(fgData.score);
+                fearGreedLabel = fgData.rating || 'Neutral';
+            }
+
+            // --- 3. Generate AI headline + summary (no longer needs grounded search for F&G) ---
             let headline = 'Markets in Motion';
             let description = 'Loading market intelligence...';
             let summaryBullets: { color: string; text: string }[] = [];
@@ -144,29 +148,22 @@ export function useMarketSnapshot() {
             if (cachedAi) {
                 headline = cachedAi.headline;
                 description = cachedAi.description;
-                fearGreedValue = cachedAi.fearGreedValue;
-                fearGreedLabel = cachedAi.fearGreedLabel;
                 summaryBullets = cachedAi.summaryBullets;
             }
 
             // Only call Gemini if no cached AI content
             if (!cachedAi) {
                 try {
-                    // Timeout protection: abort if Gemini takes longer than 50s
-                    const geminiController = new AbortController();
-                    const geminiTimeout = setTimeout(() => geminiController.abort(), 50_000);
+                    const geminiTimeout = setTimeout(() => {}, 50_000);
                     const { data: geminiRes, error: geminiErr } = await supabase.functions.invoke('proxy-gemini', {
                         body: {
-                            systemInstruction: `You are a concise financial market analyst. Today is ${new Date().toISOString().split('T')[0]}. The current market data is: VIX=${Number(vix.price).toFixed(2)} (${vix.changePercent > 0 ? '+' : ''}${Number(vix.changePercent).toFixed(2)}%), S&P 500=${Number(sp500.price).toFixed(2)} (${sp500.changePercent > 0 ? '+' : ''}${Number(sp500.changePercent).toFixed(2)}%), NASDAQ=${Number(nasdaq.price).toFixed(2)} (${nasdaq.changePercent > 0 ? '+' : ''}${Number(nasdaq.changePercent).toFixed(2)}%), DJI=${Number(dji.price).toFixed(2)} (${dji.changePercent > 0 ? '+' : ''}${Number(dji.changePercent).toFixed(2)}%), Bitcoin=${Number(btc.price).toFixed(0)} (${btc.changePercent > 0 ? '+' : ''}${Number(btc.changePercent).toFixed(2)}%), Gold=${Number(gold.price).toFixed(2)} (${gold.changePercent > 0 ? '+' : ''}${Number(gold.changePercent).toFixed(2)}%), Oil=${Number(oil.price).toFixed(2)} (${oil.changePercent > 0 ? '+' : ''}${Number(oil.changePercent).toFixed(2)}%), 10Y Yield=${Number(tnx.price).toFixed(2)}%.`,
-                            prompt: 'Generate a market snapshot for a trading intelligence dashboard. Look up the current CNN stock market Fear & Greed Index value (0-100) and classification (e.g. Extreme Greed, Neutral). Return JSON only.',
-                            requireGroundedSearch: true,
+                            systemInstruction: `You are a concise financial market analyst. Today is ${new Date().toISOString().split('T')[0]}. The current market data is: VIX=${Number(vix.price).toFixed(2)} (${vix.changePercent > 0 ? '+' : ''}${Number(vix.changePercent).toFixed(2)}%), S&P 500=${Number(sp500.price).toFixed(2)} (${sp500.changePercent > 0 ? '+' : ''}${Number(sp500.changePercent).toFixed(2)}%), NASDAQ=${Number(nasdaq.price).toFixed(2)} (${nasdaq.changePercent > 0 ? '+' : ''}${Number(nasdaq.changePercent).toFixed(2)}%), DJI=${Number(dji.price).toFixed(2)} (${dji.changePercent > 0 ? '+' : ''}${Number(dji.changePercent).toFixed(2)}%), Bitcoin=${Number(btc.price).toFixed(0)} (${btc.changePercent > 0 ? '+' : ''}${Number(btc.changePercent).toFixed(2)}%), Gold=${Number(gold.price).toFixed(2)} (${gold.changePercent > 0 ? '+' : ''}${Number(gold.changePercent).toFixed(2)}%), Oil=${Number(oil.price).toFixed(2)} (${oil.changePercent > 0 ? '+' : ''}${Number(oil.changePercent).toFixed(2)}%), 10Y Yield=${Number(tnx.price).toFixed(2)}%. CNN Fear & Greed Index: ${fearGreedValue} (${fearGreedLabel}).`,
+                            prompt: 'Generate a market snapshot for a trading intelligence dashboard. The Fear & Greed data is already provided — use it in your analysis. Return JSON only.',
                             responseSchema: {
                                 type: 'object',
                                 properties: {
                                     headline: { type: 'string', description: 'Short punchy headline about today\'s market theme (max 10 words)' },
                                     description: { type: 'string', description: 'One paragraph summary of today\'s market conditions (2-3 sentences)' },
-                                    fearGreedValue: { type: 'number', description: 'Current CNN Fear & Greed Index value (0-100)' },
-                                    fearGreedLabel: { type: 'string', description: 'Current CNN Fear & Greed Index classification (e.g., Extreme Fear, Fear, Neutral, Greed, Extreme Greed)' },
                                     summaryBullets: {
                                         type: 'array',
                                         items: {
@@ -180,7 +177,7 @@ export function useMarketSnapshot() {
                                         description: '5 key market observations'
                                     }
                                 },
-                                required: ['headline', 'description', 'fearGreedValue', 'fearGreedLabel', 'summaryBullets']
+                                required: ['headline', 'description', 'summaryBullets']
                             }
                         }
                     });
@@ -188,20 +185,15 @@ export function useMarketSnapshot() {
                     clearTimeout(geminiTimeout);
 
                     if (!geminiErr && geminiRes?.text) {
-                        // Strip markdown code fences — grounded search skips responseSchema,
-                        // so Gemini may wrap JSON in ```json ... ```
                         const cleanText = geminiRes.text.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
                         const parsed = JSON.parse(cleanText);
                         headline = parsed.headline || headline;
                         description = parsed.description || description;
-                        if (parsed.fearGreedValue !== undefined) fearGreedValue = parsed.fearGreedValue;
-                        if (parsed.fearGreedLabel) fearGreedLabel = parsed.fearGreedLabel;
                         summaryBullets = (parsed.summaryBullets || []).map((b: any) => ({
                             color: `text-${b.color === 'gray' ? 'sentinel' : b.color}-400`,
                             text: b.text
                         }));
-                        // Cache AI content separately with longer TTL to prevent flicker
-                        setCachedAi({ headline, description, fearGreedValue, fearGreedLabel, summaryBullets });
+                        setCachedAi({ headline, description, summaryBullets });
                     }
                 } catch (e) {
                     console.warn('[useMarketSnapshot] Gemini headline generation failed', e);

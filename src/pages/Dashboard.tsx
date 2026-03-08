@@ -6,6 +6,7 @@ import { ScannerService } from '@/services/scanner';
 import { formatPrice } from '@/utils/formatters';
 import { TABadge } from '@/components/shared/TABadge';
 import { MarketSnapshot } from '@/components/dashboard/MarketSnapshot';
+import { FearGreedPanel } from '@/components/dashboard/FearGreedPanel';
 import { MarketTrends, PotentialSignals } from '@/components/dashboard/MarketTrends';
 import { UpcomingEvents } from '@/components/dashboard/UpcomingEvents';
 import { WeeklyDigest } from '@/components/dashboard/WeeklyDigest';
@@ -159,6 +160,9 @@ export function Dashboard() {
 
             {/* MARKET OVERVIEW — Full-width hero */}
             <GlassMaterialize delay={0}><MarketSnapshot /></GlassMaterialize>
+
+            {/* CNN FEAR & GREED INDEX — Full-width panel with 7 sub-indicators */}
+            <GlassMaterialize delay={25}><FearGreedPanel /></GlassMaterialize>
 
             {/* MAIN CONTENT GRID */}
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
