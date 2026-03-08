@@ -101,24 +101,20 @@ export function useMarketSnapshot() {
                 tickerResults[t.key] = { ...EMPTY_TICKER };
             }
 
-            // Fetch ticker quotes (F&G is now handled by useFearGreed hook separately)
-            const quoteResults = await Promise.allSettled(
-                tickerMap.map(t => MarketDataService.getQuote(t.symbol))
-            );
+            // Fetch all ticker quotes in a single bulk request instead of 8 serial calls
+            const symbols = tickerMap.map(t => t.symbol);
+            const bulkQuotes = await MarketDataService.getQuotesBulk(symbols as unknown as string[]);
 
-            quoteResults.forEach((result, i) => {
-                if (result.status === 'fulfilled') {
-                    const q = result.value;
-                    const t = tickerMap[i];
-                    if (t) {
-                        tickerResults[t.key] = {
-                            price: Number(q.price || 0),
-                            changePercent: Number(q.changePercent || 0),
-                            change: Number(q.change || 0),
-                        };
-                    }
+            for (const t of tickerMap) {
+                const q = bulkQuotes[t.symbol];
+                if (q) {
+                    tickerResults[t.key] = {
+                        price: Number(q.price || 0),
+                        changePercent: Number(q.changePercent || 0),
+                        change: Number(q.change || 0),
+                    };
                 }
-            });
+            }
 
             const vix = tickerResults.vix ?? EMPTY_TICKER;
             const sp500 = tickerResults.sp500 ?? EMPTY_TICKER;

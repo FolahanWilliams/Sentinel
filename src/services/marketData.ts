@@ -36,7 +36,7 @@ export class MarketDataService {
         if (!forceRefresh) {
             const cached = cache.get(cacheKey);
             if (cached && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
-                console.log(`[MarketData Cache Hit] ${ticker}`);
+                // Cache hit — skip network call
                 return cached.data as Quote;
             }
         }
@@ -47,7 +47,7 @@ export class MarketDataService {
         ));
 
         // 2. Call Edge Function 
-        console.log(`[MarketData Proxy Request] Fetching quote for ${ticker}...`);
+        // Fetch quote via Edge Function proxy
 
         try {
             const { data, error } = await supabase.functions.invoke('proxy-market-data', {
@@ -130,11 +130,11 @@ export class MarketDataService {
         }
 
         if (cacheMisses.length === 0) {
-            console.log(`[MarketData] Bulk quotes: all ${tickers.length} from cache`);
+            // All tickers served from cache
             return results;
         }
 
-        console.log(`[MarketData] Bulk fetching ${cacheMisses.length} quotes (${tickers.length - cacheMisses.length} cached)`);
+        // Fetch cache misses via bulk endpoint
 
         try {
             const { data, error } = await supabase.functions.invoke('proxy-market-data', {
@@ -250,7 +250,6 @@ export class MarketDataService {
 
 
             cache.set(cacheKey, { data: fundamentals, timestamp: Date.now() });
-            console.log(`[MarketData] Fundamentals for ${ticker}: P/E=${parsed.pe_ratio}, D/E=${parsed.debt_to_equity}`);
             return fundamentals;
         } catch (err) {
             console.error(`[MarketData] Fundamentals error for ${ticker}:`, err);

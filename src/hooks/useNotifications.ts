@@ -1,6 +1,24 @@
 import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/config/supabase';
 
+const READ_IDS_KEY = 'sentinel_read_notification_ids';
+
+function getReadIds(): Set<string> {
+    try {
+        const raw = localStorage.getItem(READ_IDS_KEY);
+        if (raw) return new Set(JSON.parse(raw));
+    } catch { /* ignore */ }
+    return new Set();
+}
+
+function persistReadIds(ids: Set<string>) {
+    try {
+        // Keep only the most recent 200 IDs to avoid unbounded growth
+        const arr = [...ids].slice(-200);
+        localStorage.setItem(READ_IDS_KEY, JSON.stringify(arr));
+    } catch { /* ignore */ }
+}
+
 interface Notification {
     id: string;
     ticker: string;
@@ -15,35 +33,37 @@ export function useNotifications() {
     const [unreadCount, setUnreadCount] = useState(0);
 
     const fetchNotifications = useCallback(async () => {
-        // Pull recent signals as notifications (signals are the events users care about)
         const { data } = await supabase
             .from('signals')
             .select('id, ticker, signal_type, thesis, created_at')
             .order('created_at', { ascending: false })
             .limit(20);
 
+        const readIds = getReadIds();
+
         const mapped: Notification[] = (data || []).map((s: any) => ({
             id: s.id,
             ticker: s.ticker,
             signal_type: s.signal_type,
             message: s.thesis || `New ${s.signal_type} signal for ${s.ticker}`,
-            read: false, // In a full impl, track read state per-user
+            read: readIds.has(s.id),
             created_at: s.created_at,
         }));
 
         setNotifications(mapped);
-
-        // Count signals from the last 24h as "unread"
-        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-        const recentCount = mapped.filter(n => n.created_at >= oneDayAgo).length;
-        setUnreadCount(recentCount);
+        setUnreadCount(mapped.filter(n => !n.read).length);
     }, []);
 
     useEffect(() => { fetchNotifications(); }, [fetchNotifications]);
 
     const markAllRead = useCallback(() => {
+        setNotifications(prev => {
+            const readIds = getReadIds();
+            for (const n of prev) readIds.add(n.id);
+            persistReadIds(readIds);
+            return prev.map(n => ({ ...n, read: true }));
+        });
         setUnreadCount(0);
-        setNotifications(prev => prev.map(n => ({ ...n, read: true })));
     }, []);
 
     return { notifications, unreadCount, markAllRead, refetch: fetchNotifications };

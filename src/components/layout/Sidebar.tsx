@@ -90,7 +90,7 @@ export function Sidebar() {
             </div>
 
             {/* Navigation */}
-            <nav className="flex-1 py-6 px-3 space-y-1.5 overflow-y-auto overflow-x-hidden">
+            <nav aria-label="Main navigation" className="flex-1 py-6 px-3 space-y-1.5 overflow-y-auto overflow-x-hidden">
                 {NAV_ITEMS.map(({ to, icon: Icon, label }) => {
                     // Handle query-param routes like /?tab=intelligence
                     const isTabRoute = to.includes('?tab=');
@@ -102,6 +102,8 @@ export function Sidebar() {
                         <NavLink
                             key={to}
                             to={to}
+                            aria-label={label}
+                            aria-current={isActive ? 'page' : undefined}
                             className="relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors no-underline group outline-none"
                             title={collapsed ? label : undefined}
                         >
@@ -138,6 +140,7 @@ export function Sidebar() {
             <div className="p-3 border-t border-white/5 bg-transparent space-y-2">
                 <button
                     onClick={handleSignOut}
+                    aria-label="Sign Out"
                     className="flex flex-row items-center gap-3 px-3 py-2.5 w-full rounded-xl text-sm font-medium text-sentinel-400 hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer border-none outline-none group"
                     title={collapsed ? 'Sign Out' : undefined}
                 >
@@ -147,6 +150,7 @@ export function Sidebar() {
 
                 <button
                     onClick={() => setCollapsed(!collapsed)}
+                    aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                     className="flex items-center justify-center w-full py-2.5 rounded-xl text-sentinel-500 hover:text-sentinel-200 hover:bg-sentinel-800/50 transition-colors cursor-pointer border-none outline-none"
                 >
                     {collapsed ? <ChevronRight className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
