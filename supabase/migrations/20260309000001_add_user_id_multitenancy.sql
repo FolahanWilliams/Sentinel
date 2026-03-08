@@ -140,67 +140,107 @@ DROP POLICY IF EXISTS "service_role_all_signal_lessons" ON public.signal_lessons
 -- ── 7. Create new authenticated RLS policies with user_id filtering ───────────
 
 -- watchlist
+DROP POLICY IF EXISTS "user_select_watchlist" ON public.watchlist;
 CREATE POLICY "user_select_watchlist" ON public.watchlist FOR SELECT TO authenticated USING (user_id = auth.uid());
+DROP POLICY IF EXISTS "user_insert_watchlist" ON public.watchlist;
 CREATE POLICY "user_insert_watchlist" ON public.watchlist FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
+DROP POLICY IF EXISTS "user_update_watchlist" ON public.watchlist;
 CREATE POLICY "user_update_watchlist" ON public.watchlist FOR UPDATE TO authenticated USING (user_id = auth.uid());
+DROP POLICY IF EXISTS "user_delete_watchlist" ON public.watchlist;
 CREATE POLICY "user_delete_watchlist" ON public.watchlist FOR DELETE TO authenticated USING (user_id = auth.uid());
 
 -- signals
+DROP POLICY IF EXISTS "user_select_signals" ON public.signals;
 CREATE POLICY "user_select_signals" ON public.signals FOR SELECT TO authenticated USING (user_id = auth.uid());
+DROP POLICY IF EXISTS "user_insert_signals" ON public.signals;
 CREATE POLICY "user_insert_signals" ON public.signals FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
+DROP POLICY IF EXISTS "user_update_signals" ON public.signals;
 CREATE POLICY "user_update_signals" ON public.signals FOR UPDATE TO authenticated USING (user_id = auth.uid());
 
 -- signal_outcomes
+DROP POLICY IF EXISTS "user_select_signal_outcomes" ON public.signal_outcomes;
 CREATE POLICY "user_select_signal_outcomes" ON public.signal_outcomes FOR SELECT TO authenticated USING (user_id = auth.uid());
+DROP POLICY IF EXISTS "user_insert_signal_outcomes" ON public.signal_outcomes;
 CREATE POLICY "user_insert_signal_outcomes" ON public.signal_outcomes FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
+DROP POLICY IF EXISTS "user_update_signal_outcomes" ON public.signal_outcomes;
 CREATE POLICY "user_update_signal_outcomes" ON public.signal_outcomes FOR UPDATE TO authenticated USING (user_id = auth.uid());
 
 -- scan_logs
+DROP POLICY IF EXISTS "user_select_scan_logs" ON public.scan_logs;
 CREATE POLICY "user_select_scan_logs" ON public.scan_logs FOR SELECT TO authenticated USING (user_id = auth.uid());
+DROP POLICY IF EXISTS "user_insert_scan_logs" ON public.scan_logs;
 CREATE POLICY "user_insert_scan_logs" ON public.scan_logs FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
+DROP POLICY IF EXISTS "user_update_scan_logs" ON public.scan_logs;
 CREATE POLICY "user_update_scan_logs" ON public.scan_logs FOR UPDATE TO authenticated USING (user_id = auth.uid());
 
 -- app_settings
+DROP POLICY IF EXISTS "user_select_app_settings" ON public.app_settings;
 CREATE POLICY "user_select_app_settings" ON public.app_settings FOR SELECT TO authenticated USING (user_id = auth.uid());
+DROP POLICY IF EXISTS "user_insert_app_settings" ON public.app_settings;
 CREATE POLICY "user_insert_app_settings" ON public.app_settings FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
+DROP POLICY IF EXISTS "user_update_app_settings" ON public.app_settings;
 CREATE POLICY "user_update_app_settings" ON public.app_settings FOR UPDATE TO authenticated USING (user_id = auth.uid());
 
 -- portfolio_config
+DROP POLICY IF EXISTS "user_select_portfolio_config" ON public.portfolio_config;
 CREATE POLICY "user_select_portfolio_config" ON public.portfolio_config FOR SELECT TO authenticated USING (user_id = auth.uid());
+DROP POLICY IF EXISTS "user_insert_portfolio_config" ON public.portfolio_config;
 CREATE POLICY "user_insert_portfolio_config" ON public.portfolio_config FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
+DROP POLICY IF EXISTS "user_update_portfolio_config" ON public.portfolio_config;
 CREATE POLICY "user_update_portfolio_config" ON public.portfolio_config FOR UPDATE TO authenticated USING (user_id = auth.uid());
 
 -- positions
+DROP POLICY IF EXISTS "user_select_positions" ON public.positions;
 CREATE POLICY "user_select_positions" ON public.positions FOR SELECT TO authenticated USING (user_id = auth.uid());
+DROP POLICY IF EXISTS "user_insert_positions" ON public.positions;
 CREATE POLICY "user_insert_positions" ON public.positions FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
+DROP POLICY IF EXISTS "user_update_positions" ON public.positions;
 CREATE POLICY "user_update_positions" ON public.positions FOR UPDATE TO authenticated USING (user_id = auth.uid());
+DROP POLICY IF EXISTS "user_delete_positions" ON public.positions;
 CREATE POLICY "user_delete_positions" ON public.positions FOR DELETE TO authenticated USING (user_id = auth.uid());
 
 -- journal_entries
+DROP POLICY IF EXISTS "user_select_journal_entries" ON public.journal_entries;
 CREATE POLICY "user_select_journal_entries" ON public.journal_entries FOR SELECT TO authenticated USING (user_id = auth.uid());
+DROP POLICY IF EXISTS "user_insert_journal_entries" ON public.journal_entries;
 CREATE POLICY "user_insert_journal_entries" ON public.journal_entries FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
+DROP POLICY IF EXISTS "user_delete_journal_entries" ON public.journal_entries;
 CREATE POLICY "user_delete_journal_entries" ON public.journal_entries FOR DELETE TO authenticated USING (user_id = auth.uid());
 
 -- signal_ratings
+DROP POLICY IF EXISTS "user_select_signal_ratings" ON public.signal_ratings;
 CREATE POLICY "user_select_signal_ratings" ON public.signal_ratings FOR SELECT TO authenticated USING (user_id = auth.uid());
+DROP POLICY IF EXISTS "user_insert_signal_ratings" ON public.signal_ratings;
 CREATE POLICY "user_insert_signal_ratings" ON public.signal_ratings FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
+DROP POLICY IF EXISTS "user_update_signal_ratings" ON public.signal_ratings;
 CREATE POLICY "user_update_signal_ratings" ON public.signal_ratings FOR UPDATE TO authenticated USING (user_id = auth.uid());
+DROP POLICY IF EXISTS "user_delete_signal_ratings" ON public.signal_ratings;
 CREATE POLICY "user_delete_signal_ratings" ON public.signal_ratings FOR DELETE TO authenticated USING (user_id = auth.uid());
 
 -- chat_conversations
+DROP POLICY IF EXISTS "user_select_chat_conversations" ON public.chat_conversations;
 CREATE POLICY "user_select_chat_conversations" ON public.chat_conversations FOR SELECT TO authenticated USING (user_id = auth.uid());
+DROP POLICY IF EXISTS "user_insert_chat_conversations" ON public.chat_conversations;
 CREATE POLICY "user_insert_chat_conversations" ON public.chat_conversations FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
+DROP POLICY IF EXISTS "user_update_chat_conversations" ON public.chat_conversations;
 CREATE POLICY "user_update_chat_conversations" ON public.chat_conversations FOR UPDATE TO authenticated USING (user_id = auth.uid());
+DROP POLICY IF EXISTS "user_delete_chat_conversations" ON public.chat_conversations;
 CREATE POLICY "user_delete_chat_conversations" ON public.chat_conversations FOR DELETE TO authenticated USING (user_id = auth.uid());
 
 -- agent_reflections
+DROP POLICY IF EXISTS "user_select_agent_reflections" ON public.agent_reflections;
 CREATE POLICY "user_select_agent_reflections" ON public.agent_reflections FOR SELECT TO authenticated USING (user_id = auth.uid());
+DROP POLICY IF EXISTS "user_insert_agent_reflections" ON public.agent_reflections;
 CREATE POLICY "user_insert_agent_reflections" ON public.agent_reflections FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
+DROP POLICY IF EXISTS "user_update_agent_reflections" ON public.agent_reflections;
 CREATE POLICY "user_update_agent_reflections" ON public.agent_reflections FOR UPDATE TO authenticated USING (user_id = auth.uid());
 
 -- signal_lessons
+DROP POLICY IF EXISTS "user_select_signal_lessons" ON public.signal_lessons;
 CREATE POLICY "user_select_signal_lessons" ON public.signal_lessons FOR SELECT TO authenticated USING (user_id = auth.uid());
+DROP POLICY IF EXISTS "user_insert_signal_lessons" ON public.signal_lessons;
 CREATE POLICY "user_insert_signal_lessons" ON public.signal_lessons FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
+DROP POLICY IF EXISTS "user_update_signal_lessons" ON public.signal_lessons;
 CREATE POLICY "user_update_signal_lessons" ON public.signal_lessons FOR UPDATE TO authenticated USING (user_id = auth.uid());
 
 -- ── 8. Keep global tables accessible ──────────────────────────────────────────
