@@ -50,8 +50,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS app_settings_key_user ON public.app_settings(k
 -- ── 4. Update unique constraints ──────────────────────────────────────────────
 
 -- watchlist: UNIQUE(ticker) → UNIQUE(ticker, user_id) so different users can watch same ticker
-DROP INDEX IF EXISTS watchlist_ticker_key;
 ALTER TABLE public.watchlist DROP CONSTRAINT IF EXISTS watchlist_ticker_key;
+DROP INDEX IF EXISTS watchlist_ticker_key;
 CREATE UNIQUE INDEX IF NOT EXISTS watchlist_ticker_user ON public.watchlist(ticker, user_id) WHERE user_id IS NOT NULL;
 
 -- portfolio_config: global singleton → per-user singleton
