@@ -35,7 +35,14 @@ PRICE TARGET RULES (CRITICAL — violations invalidate the signal):
 - suggested_entry_low and suggested_entry_high should bracket the current price.
 - If the setup doesn't work as a long trade, set is_overreaction=false.
 
-Provide a confidence score (0-100) on whether this is a mean-reversion buying opportunity.`;
+Provide a confidence score (0-100) on whether this is a mean-reversion buying opportunity.
+
+CONVICTION FILTER (Buffett/Lynch Quality Gate):
+In addition to the overreaction analysis, evaluate the company's investment quality:
+- moat_rating (1-10): Score the economic moat — brand power, cost advantages, network effects, switching costs, patents. A commodity business with no pricing power = 1-3. A dominant franchise = 8-10.
+- lynch_category: Classify as "fast_grower" (20%+ EPS growth), "stalwart" (10-20% growth, large cap), "turnaround" (distress recovery), "asset_play" (hidden asset value), "cyclical" (economic cycle), or "slow_grower" (<10% growth).
+- conviction_score (0-100): Overall conviction combining moat quality, growth profile, catalyst strength, and margin of safety. Only ≥70 = high-conviction setup worthy of larger position sizing.
+- why_high_conviction: Explain what makes this a quality Buffett/Lynch setup (or why it falls short).`;
 
 // 3. Contagion Agent Prompt (Patch 4)
 export const CONTAGION_AGENT_PROMPT = `You are the SECTOR CONTAGION AGENT.
@@ -49,7 +56,14 @@ EVALUATION CRITERIA:
 2. Does this root cause actually apply to the Satellite stock?
 3. If the Satellite stock dropped in sympathy but has zero exposure to the Epicenter's specific problem, it is a high-confidence 'Sector Contagion' buy.
 
-Identify the strongest sympathy plays and score the irrationality of their drop (0-100).`;
+Identify the strongest sympathy plays and score the irrationality of their drop (0-100).
+
+CONVICTION FILTER (Buffett/Lynch Quality Gate):
+For each satellite ticker, also evaluate investment quality:
+- moat_rating (1-10): Economic moat score for the satellite company.
+- lynch_category: Peter Lynch classification ("fast_grower", "stalwart", "turnaround", "asset_play", "cyclical", "slow_grower").
+- conviction_score (0-100): Overall conviction that this satellite is a quality Buffett/Lynch setup, not just a cheap bounce.
+- why_high_conviction: Explain the quality case (or weakness).`;
 
 // 4. Earnings Overreaction Agent Prompt (Patch 4)
 export const EARNINGS_AGENT_PROMPT = `You are the EARNINGS OVERREACTION AGENT.
