@@ -5,12 +5,18 @@
  * (indices, commodities, crypto, bonds), and key market observations.
  */
 
-import { RefreshCw, TrendingUp, TrendingDown, Minus, BarChart3, Gauge } from 'lucide-react';
+import { useState } from 'react';
+import { RefreshCw, TrendingUp, TrendingDown, Minus, BarChart3, Gauge, ChevronDown, ArrowRight } from 'lucide-react';
 import { useMarketSnapshot } from '@/hooks/useMarketSnapshot';
+import { useFearGreed } from '@/hooks/useFearGreed';
+import { FEAR_GREED_INDICATOR_LABELS } from '@/types/fearGreed';
+import type { FearGreedData, FearGreedIndicator } from '@/types/fearGreed';
 import { Sparkline } from '@/components/shared/Sparkline';
 
 export function MarketSnapshot() {
     const { data, loading, refetch } = useMarketSnapshot();
+    const { data: fgData } = useFearGreed();
+    const [showIndicators, setShowIndicators] = useState(false);
 
     if (loading || !data) {
         return <MarketSnapshotSkeleton />;
@@ -102,30 +108,71 @@ export function MarketSnapshot() {
                             {description}
                         </p>
 
-                        {/* Fear & Greed Gauge */}
-                        <div className="bg-sentinel-950/50 rounded-xl p-3.5 border border-sentinel-800/40 mb-4">
-                            <div className="flex items-center justify-between mb-2">
-                                <div className="flex items-center gap-1.5">
-                                    <Gauge className="w-3.5 h-3.5 text-sentinel-400" />
-                                    <span className="text-[10px] font-bold text-sentinel-400 uppercase tracking-widest">Fear & Greed</span>
+                        {/* Fear & Greed Gauge + Sub-Indicators */}
+                        <div className="bg-sentinel-950/50 rounded-xl border border-sentinel-800/40 mb-4 overflow-hidden">
+                            <div className="p-3.5">
+                                <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-1.5">
+                                        <Gauge className="w-3.5 h-3.5 text-sentinel-400" />
+                                        <span className="text-[10px] font-bold text-sentinel-400 uppercase tracking-widest">CNN Fear & Greed</span>
+                                    </div>
+                                    <div className="flex items-baseline gap-1">
+                                        <span className={`text-xl font-bold font-mono ${fgColor}`}>{fearGreedValue}</span>
+                                        <span className={`text-[10px] font-bold uppercase ${fgColor}`}>{fearGreedLabel}</span>
+                                    </div>
                                 </div>
-                                <div className="flex items-baseline gap-1">
-                                    <span className={`text-xl font-bold font-mono ${fgColor}`}>{fearGreedValue}</span>
-                                    <span className={`text-[10px] font-bold uppercase ${fgColor}`}>{fearGreedLabel}</span>
+                                <div className="h-2 w-full bg-sentinel-800 rounded-full overflow-hidden relative">
+                                    <div className={`absolute top-0 left-0 h-full bg-gradient-to-r ${fgBarColor}`} style={{ width: `${fearGreedValue}%` }} />
+                                    <div
+                                        className="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-white rounded-full border-2 border-sentinel-900 shadow-lg"
+                                        style={{ left: `calc(${fearGreedValue}% - 7px)` }}
+                                    />
+                                </div>
+                                <div className="flex justify-between text-[9px] text-sentinel-500 mt-1 font-mono">
+                                    <span>EXTREME FEAR</span>
+                                    <span>NEUTRAL</span>
+                                    <span>EXTREME GREED</span>
                                 </div>
                             </div>
-                            <div className="h-2 w-full bg-sentinel-800 rounded-full overflow-hidden relative">
-                                <div className={`absolute top-0 left-0 h-full bg-gradient-to-r ${fgBarColor}`} style={{ width: `${fearGreedValue}%` }} />
-                                <div
-                                    className="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-white rounded-full border-2 border-sentinel-900 shadow-lg"
-                                    style={{ left: `calc(${fearGreedValue}% - 7px)` }}
-                                />
-                            </div>
-                            <div className="flex justify-between text-[9px] text-sentinel-500 mt-1 font-mono">
-                                <span>EXTREME FEAR</span>
-                                <span>NEUTRAL</span>
-                                <span>EXTREME GREED</span>
-                            </div>
+
+                            {/* Expand/collapse toggle for 7 sub-indicators */}
+                            {fgData && (
+                                <>
+                                    <button
+                                        onClick={() => setShowIndicators(!showIndicators)}
+                                        className="w-full flex items-center justify-center gap-1.5 py-2 border-t border-sentinel-800/40 text-[10px] font-bold text-sentinel-500 uppercase tracking-widest hover:text-sentinel-300 hover:bg-sentinel-800/20 transition-colors cursor-pointer bg-transparent border-x-0 border-b-0"
+                                    >
+                                        {showIndicators ? 'Hide' : 'Show'} 7 Indicators
+                                        <ChevronDown className={`w-3 h-3 transition-transform ${showIndicators ? 'rotate-180' : ''}`} />
+                                    </button>
+
+                                    {showIndicators && (
+                                        <div className="px-3.5 pb-3.5 border-t border-sentinel-800/30">
+                                            {/* 7 sub-indicators */}
+                                            <div className="mt-2.5 space-y-0">
+                                                {(Object.keys(fgData.indicators) as (keyof FearGreedData['indicators'])[]).map((key) => (
+                                                    <FearGreedIndicatorRow
+                                                        key={key}
+                                                        label={FEAR_GREED_INDICATOR_LABELS[key]}
+                                                        indicator={fgData.indicators[key]}
+                                                    />
+                                                ))}
+                                            </div>
+
+                                            {/* Historical comparison */}
+                                            <div className="mt-3 pt-3 border-t border-sentinel-800/30">
+                                                <h5 className="text-[9px] font-bold text-sentinel-600 uppercase tracking-widest mb-1.5">History</h5>
+                                                <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                                                    <HistoryItem label="Prev Close" current={fgData.score} previous={fgData.previousClose} />
+                                                    <HistoryItem label="1 Week Ago" current={fgData.score} previous={fgData.previousWeek} />
+                                                    <HistoryItem label="1 Month Ago" current={fgData.score} previous={fgData.previousMonth} />
+                                                    <HistoryItem label="1 Year Ago" current={fgData.score} previous={fgData.previousYear} />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </>
+                            )}
                         </div>
 
                         {/* Summary bullets */}
@@ -284,6 +331,44 @@ function generateSparkData(price: number, change: number): number[] {
         data.push(startPrice + (price - startPrice) * progress + wobble);
     }
     return data;
+}
+
+/** Fear & Greed sub-indicator row */
+function FearGreedIndicatorRow({ label, indicator }: { label: string; indicator: FearGreedIndicator }) {
+    const score = Math.round(indicator.score);
+    const color = score < 25 ? 'text-red-500' : score < 45 ? 'text-amber-500' : score < 55 ? 'text-yellow-400' : score < 75 ? 'text-lime-400' : 'text-emerald-500';
+    const barColor = score < 25 ? 'from-red-600 to-red-400' : score < 45 ? 'from-red-500 via-amber-500 to-amber-400' : score < 55 ? 'from-red-500 via-amber-500 to-yellow-400' : score < 75 ? 'from-red-500 via-amber-500 via-yellow-400 to-lime-400' : 'from-red-500 via-amber-500 via-yellow-400 to-emerald-400';
+    return (
+        <div className="flex items-center gap-2.5 py-1.5 border-b border-sentinel-800/20 last:border-b-0">
+            <span className="text-[10px] text-sentinel-400 flex-1 min-w-0 truncate">{label}</span>
+            <div className="w-16 h-1.5 bg-sentinel-800 rounded-full overflow-hidden flex-shrink-0">
+                <div className={`h-full rounded-full bg-gradient-to-r ${barColor}`} style={{ width: `${score}%` }} />
+            </div>
+            <span className={`text-[10px] font-bold font-mono w-6 text-right flex-shrink-0 ${color}`}>{score}</span>
+            <span className={`text-[9px] w-16 text-right flex-shrink-0 ${color}`}>{indicator.rating}</span>
+        </div>
+    );
+}
+
+/** Historical F&G comparison item */
+function HistoryItem({ label, current, previous }: { label: string; current: number; previous: number }) {
+    const diff = Math.round(current - previous);
+    const color = current < 25 ? 'text-red-500' : current < 45 ? 'text-amber-500' : current < 55 ? 'text-yellow-400' : current < 75 ? 'text-lime-400' : 'text-emerald-500';
+    return (
+        <div className="flex items-center justify-between">
+            <span className="text-[9px] text-sentinel-600 uppercase tracking-wider">{label}</span>
+            <div className="flex items-center gap-1">
+                <span className="text-[10px] font-mono text-sentinel-500">{Math.round(previous)}</span>
+                <ArrowRight className="w-2 h-2 text-sentinel-700" />
+                <span className={`text-[10px] font-bold font-mono ${color}`}>{Math.round(current)}</span>
+                {diff !== 0 && (
+                    <span className={`text-[9px] font-bold ${diff > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {diff > 0 ? '+' : ''}{diff}
+                    </span>
+                )}
+            </div>
+        </div>
+    );
 }
 
 /** Loading skeleton */
