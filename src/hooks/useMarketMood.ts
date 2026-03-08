@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { useFearGreed } from './useFearGreed';
 import { useMarketSnapshot } from './useMarketSnapshot';
 import { VIX_VOLATILITY_THRESHOLD, FEAR_GREED_BULLISH_THRESHOLD, FEAR_GREED_BEARISH_THRESHOLD } from '@/config/constants';
 
@@ -10,13 +11,15 @@ interface MarketMood {
 }
 
 export function useMarketMood(): MarketMood {
-  const { data } = useMarketSnapshot();
+  // Primary F&G source: direct CNN data (fast, no Gemini dependency)
+  const { data: fgData } = useFearGreed();
+  // VIX still comes from market snapshot (needed for volatility detection)
+  const { data: snapshot } = useMarketSnapshot();
 
   return useMemo(() => {
-    if (!data) return { mood: 'neutral' as const, intensity: 0 };
-
-    const fg = data.fearGreedValue ?? 50;
-    const vix = data.tickers.vix?.price ?? 0;
+    // Prefer direct CNN F&G score, fall back to snapshot's copy
+    const fg = fgData?.score ?? snapshot?.fearGreedValue ?? 50;
+    const vix = snapshot?.tickers.vix?.price ?? 0;
 
     // High VIX signals volatility
     if (vix > VIX_VOLATILITY_THRESHOLD) {
@@ -32,5 +35,5 @@ export function useMarketMood(): MarketMood {
     }
 
     return { mood: 'neutral' as const, intensity: 0.1 };
-  }, [data]);
+  }, [fgData, snapshot]);
 }

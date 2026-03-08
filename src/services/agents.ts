@@ -32,6 +32,8 @@ export interface MarketContext {
     avgVolume?: number;
     currentVolume?: number;
     sectorPerformance?: string; // e.g., "XLK -1.2% today"
+    fearGreedScore?: number;    // CNN Fear & Greed Index (0-100)
+    fearGreedRating?: string;   // e.g., "Extreme Fear", "Greed"
 }
 
 export class AgentService {
@@ -60,7 +62,8 @@ export class AgentService {
             ? `\n\nMARKET CONTEXT:
     52-Week High: $${Number(marketContext.fiftyTwoWeekHigh).toFixed(2) || 'N/A'} | 52-Week Low: $${Number(marketContext.fiftyTwoWeekLow).toFixed(2) || 'N/A'}
     Average Volume: ${marketContext.avgVolume?.toLocaleString() ?? 'N/A'} | Current Volume: ${marketContext.currentVolume?.toLocaleString() ?? 'N/A'}
-    Sector Performance: ${marketContext.sectorPerformance ?? 'N/A'}`
+    Sector Performance: ${marketContext.sectorPerformance ?? 'N/A'}
+    CNN Fear & Greed Index: ${marketContext.fearGreedScore ?? 'N/A'} (${marketContext.fearGreedRating ?? 'N/A'})`
             : '';
 
         const taBlock = taContext || '';
@@ -110,7 +113,8 @@ export class AgentService {
             ? `\n\nMARKET CONTEXT:
     52-Week High: $${marketContext.fiftyTwoWeekHigh?.toFixed(2) ?? 'N/A'} | 52-Week Low: $${marketContext.fiftyTwoWeekLow?.toFixed(2) ?? 'N/A'}
     Average Volume: ${marketContext.avgVolume?.toLocaleString() ?? 'N/A'} | Current Volume: ${marketContext.currentVolume?.toLocaleString() ?? 'N/A'}
-    Sector Performance: ${marketContext.sectorPerformance ?? 'N/A'}`
+    Sector Performance: ${marketContext.sectorPerformance ?? 'N/A'}
+    CNN Fear & Greed Index: ${marketContext.fearGreedScore ?? 'N/A'} (${marketContext.fearGreedRating ?? 'N/A'})`
             : '';
 
         const prompt = `
@@ -159,7 +163,8 @@ export class AgentService {
             ? `\n\nMARKET CONTEXT:
     52-Week High: $${marketContext.fiftyTwoWeekHigh?.toFixed(2) ?? 'N/A'} | 52-Week Low: $${marketContext.fiftyTwoWeekLow?.toFixed(2) ?? 'N/A'}
     Average Volume: ${marketContext.avgVolume?.toLocaleString() ?? 'N/A'} | Current Volume: ${marketContext.currentVolume?.toLocaleString() ?? 'N/A'}
-    Sector Performance: ${marketContext.sectorPerformance ?? 'N/A'}`
+    Sector Performance: ${marketContext.sectorPerformance ?? 'N/A'}
+    CNN Fear & Greed Index: ${marketContext.fearGreedScore ?? 'N/A'} (${marketContext.fearGreedRating ?? 'N/A'})`
             : '';
 
         const prompt = `

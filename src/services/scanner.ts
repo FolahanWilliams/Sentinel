@@ -324,6 +324,20 @@ export class ScannerService {
                 console.warn('[Scanner] Market regime detection failed (non-fatal):', regimeErr);
             }
 
+            // 3d-1a. CNN Fear & Greed Index — fetch once per scan for agent context + confidence tuning
+            let fearGreedScore: number | undefined;
+            let fearGreedRating: string | undefined;
+            try {
+                const { data: fgData, error: fgErr } = await supabase.functions.invoke('proxy-fear-greed');
+                if (!fgErr && fgData && typeof fgData.score === 'number') {
+                    fearGreedScore = Math.round(fgData.score);
+                    fearGreedRating = fgData.rating || 'Neutral';
+                    console.log(`[Scanner] CNN Fear & Greed: ${fearGreedScore} (${fearGreedRating})`);
+                }
+            } catch (fgErr) {
+                console.warn('[Scanner] Fear & Greed fetch failed (non-fatal):', fgErr);
+            }
+
             // 3d-1b. Sector Rotation — detect money flow between sectors
             let sectorRotationCtx = '';
             try {
@@ -550,6 +564,8 @@ If there is genuinely no major news, return: {"events": []}`,
                                     avgVolume: quote?.avgVolume,
                                     currentVolume: quote?.volume,
                                     sectorPerformance: quote?.sectorPerformance,
+                                    fearGreedScore,
+                                    fearGreedRating,
                                 };
 
                                 // Gather real article context for this ticker
@@ -971,6 +987,31 @@ If there is genuinely no major news, return: {"events": []}`,
                                             }
                                         } catch { /* non-fatal */ }
 
+                                        // 7.16b. FEAR & GREED CONTRARIAN — boost confidence when buying in fear, penalize in greed
+                                        let fearGreedAdjustment = 0;
+                                        if (fearGreedScore !== undefined) {
+                                            if (fearGreedScore <= 25) {
+                                                // Extreme Fear: contrarian buying opportunity — boost confidence
+                                                fearGreedAdjustment = 10;
+                                            } else if (fearGreedScore <= 40) {
+                                                // Fear: mild contrarian boost
+                                                fearGreedAdjustment = 5;
+                                            } else if (fearGreedScore >= 75) {
+                                                // Extreme Greed: buying into euphoria is risky — penalize
+                                                fearGreedAdjustment = -10;
+                                            } else if (fearGreedScore >= 60) {
+                                                // Greed: mild penalty for long entries
+                                                fearGreedAdjustment = -3;
+                                            }
+                                            if (fearGreedAdjustment !== 0) {
+                                                const before = analysis.data.confidence_score;
+                                                analysis.data.confidence_score = Math.min(100, Math.max(CONFIDENCE_FLOOR,
+                                                    analysis.data.confidence_score + fearGreedAdjustment
+                                                ));
+                                                console.log(`[Scanner] Fear & Greed (${fearGreedScore} ${fearGreedRating}) adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${fearGreedAdjustment > 0 ? '+' : ''}${fearGreedAdjustment})`);
+                                            }
+                                        }
+
                                         // Drop signal if all adjustments brought it below threshold (adaptive)
                                         if (analysis.data.confidence_score < adaptiveMinConfidence) {
                                             console.warn(`[Scanner] Signal for ${ev.ticker} dropped — confidence ${analysis.data.confidence_score} below ${adaptiveMinConfidence} after all adjustments`);
@@ -1181,6 +1222,11 @@ If there is genuinely no major news, return: {"events": []}`,
                                                     conflict_count: conflictResult.conflicts.length,
                                                     penalty: conflictResult.confidencePenalty,
                                                     summary: conflictResult.summary,
+                                                } : null,
+                                                fear_greed: fearGreedScore !== undefined ? {
+                                                    score: fearGreedScore,
+                                                    rating: fearGreedRating,
+                                                    confidence_adjustment: fearGreedAdjustment,
                                                 } : null,
                                                 conviction_filter: analysis.data.conviction_score != null ? {
                                                     conviction_score: analysis.data.conviction_score,
