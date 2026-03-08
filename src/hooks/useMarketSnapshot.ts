@@ -154,7 +154,6 @@ export function useMarketSnapshot() {
             // Only call Gemini if no cached AI content
             if (!cachedAi) {
                 try {
-                    const geminiTimeout = setTimeout(() => {}, 50_000);
                     const { data: geminiRes, error: geminiErr } = await supabase.functions.invoke('proxy-gemini', {
                         body: {
                             systemInstruction: `You are a concise financial market analyst. Today is ${new Date().toISOString().split('T')[0]}. The current market data is: VIX=${Number(vix.price).toFixed(2)} (${vix.changePercent > 0 ? '+' : ''}${Number(vix.changePercent).toFixed(2)}%), S&P 500=${Number(sp500.price).toFixed(2)} (${sp500.changePercent > 0 ? '+' : ''}${Number(sp500.changePercent).toFixed(2)}%), NASDAQ=${Number(nasdaq.price).toFixed(2)} (${nasdaq.changePercent > 0 ? '+' : ''}${Number(nasdaq.changePercent).toFixed(2)}%), DJI=${Number(dji.price).toFixed(2)} (${dji.changePercent > 0 ? '+' : ''}${Number(dji.changePercent).toFixed(2)}%), Bitcoin=${Number(btc.price).toFixed(0)} (${btc.changePercent > 0 ? '+' : ''}${Number(btc.changePercent).toFixed(2)}%), Gold=${Number(gold.price).toFixed(2)} (${gold.changePercent > 0 ? '+' : ''}${Number(gold.changePercent).toFixed(2)}%), Oil=${Number(oil.price).toFixed(2)} (${oil.changePercent > 0 ? '+' : ''}${Number(oil.changePercent).toFixed(2)}%), 10Y Yield=${Number(tnx.price).toFixed(2)}%. CNN Fear & Greed Index: ${fearGreedValue} (${fearGreedLabel}).`,
@@ -181,8 +180,6 @@ export function useMarketSnapshot() {
                             }
                         }
                     });
-
-                    clearTimeout(geminiTimeout);
 
                     if (!geminiErr && geminiRes?.text) {
                         const cleanText = geminiRes.text.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();

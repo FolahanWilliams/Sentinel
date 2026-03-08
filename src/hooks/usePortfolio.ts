@@ -3,7 +3,7 @@
  * with realtime subscriptions for live updates.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/config/supabase';
 
 export interface PortfolioConfig {
@@ -113,8 +113,8 @@ export function usePortfolio(): PortfolioData {
         return () => { supabase.removeChannel(ch); };
     }, [fetchAll]);
 
-    const openPositions = positions.filter(p => p.status === 'open');
-    const closedPositions = positions.filter(p => p.status === 'closed');
+    const openPositions = useMemo(() => positions.filter(p => p.status === 'open'), [positions]);
+    const closedPositions = useMemo(() => positions.filter(p => p.status === 'closed'), [positions]);
 
     return { config, positions, openPositions, closedPositions, loading, error };
 }

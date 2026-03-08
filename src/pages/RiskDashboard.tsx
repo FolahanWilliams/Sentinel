@@ -81,22 +81,35 @@ export function RiskDashboard() {
     }, []);
 
     // Fetch live quotes for open positions
+    // Depend on ticker list string (not array ref) to avoid re-fetching on every render
+    const tickerList = useMemo(
+        () => [...new Set(openPositions.map(p => p.ticker))].sort().join(','),
+        [openPositions]
+    );
+
     useEffect(() => {
-        if (openPositions.length === 0) return;
+        if (!tickerList) return;
+        let cancelled = false;
         setLoadingQuotes(true);
-        const tickers = [...new Set(openPositions.map(p => p.ticker))];
+        const tickers = tickerList.split(',');
         Promise.all(
             tickers.map(async t => {
-                const q = await MarketDataService.getQuote(t);
-                return { ticker: t, price: q?.price ?? 0 };
+                try {
+                    const q = await MarketDataService.getQuote(t);
+                    return { ticker: t, price: q?.price ?? 0 };
+                } catch {
+                    return { ticker: t, price: 0 };
+                }
             })
         ).then(results => {
+            if (cancelled) return;
             const quotes: Record<string, number> = {};
             results.forEach(r => { if (r.price > 0) quotes[r.ticker] = r.price; });
             setLiveQuotes(quotes);
             setLoadingQuotes(false);
         });
-    }, [openPositions]);
+        return () => { cancelled = true; };
+    }, [tickerList]);
 
     // Calculate position-level risk
     const positionRisks: PositionRisk[] = useMemo(() => {
