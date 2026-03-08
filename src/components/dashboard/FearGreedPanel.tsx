@@ -76,10 +76,6 @@ function HistoryComparison({ label, current, previous }: { label: string; curren
 export function FearGreedPanel() {
   const { data, loading, error, refetch } = useFearGreed();
 
-  if (loading || !data) {
-    return <FearGreedSkeleton />;
-  }
-
   if (error && !data) {
     return (
       <div className="glass-panel-heavy p-5">
@@ -91,6 +87,10 @@ export function FearGreedPanel() {
         </div>
       </div>
     );
+  }
+
+  if (loading || !data) {
+    return <FearGreedSkeleton />;
   }
 
   const score = Math.round(data.score);
