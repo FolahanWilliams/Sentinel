@@ -73,6 +73,16 @@ export class MarketDataService {
 
             const quoteData = data.data as Quote;
 
+            // Yahoo Finance returns LSE (.L) prices in GBX (pence).
+            // Normalize to GBP (pounds) to match entry prices stored from HL import.
+            if (ticker.toUpperCase().endsWith('.L') && quoteData.price != null) {
+                quoteData.price = quoteData.price / 100;
+                // Keep high/low consistent if present
+                if ((quoteData as any).dayHigh != null) (quoteData as any).dayHigh /= 100;
+                if ((quoteData as any).dayLow != null) (quoteData as any).dayLow /= 100;
+                if ((quoteData as any).previousClose != null) (quoteData as any).previousClose /= 100;
+            }
+
             // 3. Update Cache
             cache.set(cacheKey, {
                 data: quoteData,
@@ -149,6 +159,13 @@ export class MarketDataService {
                     const quoteData = bulkData[key];
                     if (quoteData && quoteData.price) {
                         const quote = quoteData as Quote;
+                        // Normalize LSE pence → pounds
+                        if (key.endsWith('.L') && quote.price != null) {
+                            quote.price = quote.price / 100;
+                            if ((quote as any).dayHigh != null) (quote as any).dayHigh /= 100;
+                            if ((quote as any).dayLow != null) (quote as any).dayLow /= 100;
+                            if ((quote as any).previousClose != null) (quote as any).previousClose /= 100;
+                        }
                         results[ticker] = quote;
                         cache.set(`quote_${key}`, { data: quote, timestamp: Date.now() });
                     }
