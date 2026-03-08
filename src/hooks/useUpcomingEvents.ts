@@ -62,53 +62,8 @@ export function useUpcomingEvents() {
                     systemInstruction: `You are a financial events calendar analyst. Today is ${today}. Find REAL upcoming events for the next 7 days (${today} to ${nextWeek}).`,
                     prompt: `List the upcoming notable market events, earnings reports, and economic data releases for the next 7 days. Only include REAL, VERIFIED events. Return JSON only.`,
                     requireGroundedSearch: true,
-                    responseSchema: {
-                        type: 'object',
-                        properties: {
-                            notable: {
-                                type: 'array',
-                                items: {
-                                    type: 'object',
-                                    properties: {
-                                        date: { type: 'string', description: 'Full date string e.g. "Wednesday, March 5, 2026"' },
-                                        text: { type: 'string', description: 'Brief description of the notable event' }
-                                    },
-                                    required: ['date', 'text']
-                                },
-                                description: 'Top 3 notable events this week'
-                            },
-                            earnings: {
-                                type: 'array',
-                                items: {
-                                    type: 'object',
-                                    properties: {
-                                        date: { type: 'string', description: 'Short date e.g. "Mon, Mar 3"' },
-                                        tickers: {
-                                            type: 'array',
-                                            items: { type: 'string' },
-                                            description: 'Stock tickers reporting earnings on this date (max 5)'
-                                        }
-                                    },
-                                    required: ['date', 'tickers']
-                                },
-                                description: 'Earnings dates for this week (max 5 days)'
-                            },
-                            economic: {
-                                type: 'array',
-                                items: {
-                                    type: 'object',
-                                    properties: {
-                                        date: { type: 'string', description: 'Short date e.g. "Wed, Mar 5"' },
-                                        name: { type: 'string', description: 'Name of economic data release' },
-                                        importance: { type: 'string', enum: ['high', 'medium', 'low'] }
-                                    },
-                                    required: ['date', 'name', 'importance']
-                                },
-                                description: 'Economic data releases this week (max 5)'
-                            }
-                        },
-                        required: ['notable', 'earnings', 'economic']
-                    }
+                    // responseSchema intentionally omitted — Gemini rejects
+                    // requests combining responseSchema + Google Search tool.
                 }
             });
 

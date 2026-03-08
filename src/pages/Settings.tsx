@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/config/supabase';
-import { Settings as SettingsIcon, Save, Bot, Shield, Bell, Mail } from 'lucide-react';
+import { Settings as SettingsIcon, Save, Bot, Shield, Bell, Mail, CheckCircle2 } from 'lucide-react';
 import { ReflectionPanel } from '@/components/analysis/ReflectionPanel';
 import { AlertRulesPanel } from '@/components/settings/AlertRulesPanel';
 
 export function Settings() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [saveSuccess, setSaveSuccess] = useState(false);
+    const [saveError, setSaveError] = useState<string | null>(null);
     const [emailAlertsEnabled, setEmailAlertsEnabled] = useState(false);
     const [settings, setSettings] = useState<any>({
         total_capital: 10000,
@@ -48,7 +50,20 @@ export function Settings() {
 
     async function handleSave(e: React.FormEvent) {
         e.preventDefault();
+
+        // Basic validation
+        if (settings.total_capital <= 0) {
+            setSaveError('Total capital must be greater than 0');
+            return;
+        }
+        if (settings.max_position_pct <= 0 || settings.max_position_pct > 100) {
+            setSaveError('Max position size must be between 0 and 100%');
+            return;
+        }
+
         setSaving(true);
+        setSaveSuccess(false);
+        setSaveError(null);
 
         try {
             if (settings.id) {
@@ -74,11 +89,14 @@ export function Settings() {
                 });
                 if (error) throw error;
             }
+            setSaveSuccess(true);
+            setTimeout(() => setSaveSuccess(false), 3000);
         } catch (err) {
             console.error('[Settings] Failed to save config:', err);
+            setSaveError('Failed to save configuration. Please try again.');
         }
 
-        setTimeout(() => setSaving(false), 500);
+        setSaving(false);
     }
 
     if (loading) return <div className="p-12 flex justify-center"><div className="w-6 h-6 border-2 border-sentinel-600 border-t-sentinel-300 rounded-full animate-spin"></div></div>;
@@ -135,7 +153,15 @@ export function Settings() {
                             </div>
                         </div>
 
-                        <div className="flex justify-end pt-4 border-t border-white/5">
+                        <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/5">
+                            {saveSuccess && (
+                                <span className="text-xs text-emerald-400 flex items-center gap-1">
+                                    <CheckCircle2 className="w-3.5 h-3.5" /> Saved
+                                </span>
+                            )}
+                            {saveError && (
+                                <span className="text-xs text-red-400">{saveError}</span>
+                            )}
                             <button type="submit" disabled={saving} className="px-6 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2">
                                 {saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : <Save className="w-4 h-4" />}
                                 Save Configuration

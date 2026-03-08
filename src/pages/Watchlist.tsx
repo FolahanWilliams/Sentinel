@@ -175,7 +175,7 @@ export function Watchlist() {
                                         </td>
                                         <td className="px-6 py-4">
                                             <button
-                                                onClick={() => toggleActive(item.id, item.is_active)}
+                                                onClick={(e) => { e.stopPropagation(); toggleActive(item.id, item.is_active); }}
                                                 className={`px-3 py-1 text-xs font-bold rounded-full transition-colors ${item.is_active
                                                     ? 'bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/20 hover:bg-emerald-500/20'
                                                     : 'bg-sentinel-800 text-sentinel-500 ring-1 ring-sentinel-700 hover:bg-sentinel-700 hover:text-sentinel-400'

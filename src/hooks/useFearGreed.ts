@@ -26,16 +26,18 @@ export function useFearGreed() {
   const [loading, setLoading] = useState(!getCached());
   const [error, setError] = useState<string | null>(null);
 
-  const fetch_ = useCallback(async () => {
+  const fetch_ = useCallback(async (force = false) => {
     setLoading(true);
     setError(null);
 
     try {
-      const cached = getCached();
-      if (cached) {
-        setData(cached);
-        setLoading(false);
-        return;
+      if (!force) {
+        const cached = getCached();
+        if (cached) {
+          setData(cached);
+          setLoading(false);
+          return;
+        }
       }
 
       const { data: result, error: fnError } = await supabase.functions.invoke('proxy-fear-greed');
@@ -61,5 +63,7 @@ export function useFearGreed() {
 
   useEffect(() => { fetch_(); }, [fetch_]);
 
-  return { data, loading, error, refetch: fetch_ };
+  const refetch = useCallback(() => fetch_(true), [fetch_]);
+
+  return { data, loading, error, refetch };
 }

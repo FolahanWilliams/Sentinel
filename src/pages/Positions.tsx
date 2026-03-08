@@ -106,24 +106,24 @@ export function Positions() {
         )];
     }, [positions]);
 
-    // Poll live quotes for open positions
+    // Poll live quotes for open positions using bulk API
     const fetchQuotes = useCallback(async () => {
         if (openTickers.length === 0) return;
         setQuotesLoading(true);
-        const newQuotes: Record<string, LiveQuote> = {};
 
-        await Promise.all(
-            openTickers.map(async (ticker) => {
-                try {
-                    const quote = await MarketDataService.getQuote(ticker);
-                    newQuotes[ticker] = { price: quote.price, changePercent: quote.changePercent };
-                } catch {
-                    // Keep previous quote if fetch fails
+        try {
+            const bulkQuotes = await MarketDataService.getQuotesBulk(openTickers);
+            const newQuotes: Record<string, LiveQuote> = {};
+            for (const [ticker, q] of Object.entries(bulkQuotes)) {
+                if (q?.price) {
+                    newQuotes[ticker] = { price: q.price, changePercent: q.changePercent ?? 0 };
                 }
-            })
-        );
+            }
+            setLiveQuotes(prev => ({ ...prev, ...newQuotes }));
+        } catch {
+            // Keep previous quotes if bulk fetch fails
+        }
 
-        setLiveQuotes(prev => ({ ...prev, ...newQuotes }));
         setQuotesLoading(false);
     }, [openTickers]);
 

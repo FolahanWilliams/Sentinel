@@ -10,6 +10,8 @@ import { Component, type ErrorInfo, type ReactNode } from 'react';
 interface Props {
     children: ReactNode;
     fallback?: ReactNode;
+    /** Pass a changing value (e.g. location.key) to auto-reset on navigation */
+    resetKey?: string;
 }
 
 interface State {
@@ -25,6 +27,13 @@ export class ErrorBoundary extends Component<Props, State> {
 
     static getDerivedStateFromError(error: Error): State {
         return { hasError: true, error };
+    }
+
+    componentDidUpdate(prevProps: Props) {
+        // Auto-reset when resetKey changes (e.g. on navigation)
+        if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
+            this.setState({ hasError: false, error: null });
+        }
     }
 
     componentDidCatch(error: Error, errorInfo: ErrorInfo) {

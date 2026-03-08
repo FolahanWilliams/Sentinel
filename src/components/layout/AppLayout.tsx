@@ -41,6 +41,38 @@ export function AppLayout() {
         };
     }, [isLowEnd]);
 
+    // Pause intervals when tab is hidden to avoid wasted API calls
+    useEffect(() => {
+        function handleVisibilityChange() {
+            if (document.hidden) {
+                if (outcomeIntervalRef.current) {
+                    clearInterval(outcomeIntervalRef.current);
+                    outcomeIntervalRef.current = null;
+                }
+                if (exposureIntervalRef.current) {
+                    clearInterval(exposureIntervalRef.current);
+                    exposureIntervalRef.current = null;
+                }
+            } else {
+                // Resume on tab focus
+                if (!outcomeIntervalRef.current) {
+                    OutcomeTracker.updatePendingOutcomes().catch(() => {});
+                    outcomeIntervalRef.current = setInterval(() => {
+                        OutcomeTracker.updatePendingOutcomes().catch(() => {});
+                    }, 30 * 60 * 1000);
+                }
+                if (!exposureIntervalRef.current) {
+                    ExposureMonitor.checkAndAlert().catch(() => {});
+                    exposureIntervalRef.current = setInterval(() => {
+                        ExposureMonitor.checkAndAlert().catch(() => {});
+                    }, 5 * 60 * 1000);
+                }
+            }
+        }
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+    }, []);
+
     // Run OutcomeTracker independently every 30 minutes
     useEffect(() => {
         // Initial run after 60s to avoid blocking app startup

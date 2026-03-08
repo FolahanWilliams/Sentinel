@@ -229,5 +229,15 @@ export function useMarketSnapshot() {
 
     useEffect(() => { fetch_(); }, [fetch_]);
 
+    // Periodic refresh every 5 minutes (market data stays reasonably fresh)
+    useEffect(() => {
+        const interval = setInterval(() => {
+            if (!document.hidden) {
+                fetch_();
+            }
+        }, 5 * 60 * 1000);
+        return () => clearInterval(interval);
+    }, [fetch_]);
+
     return { data, loading, error, refetch: fetch_ };
 }

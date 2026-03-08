@@ -33,7 +33,7 @@ import {
 
 const NAV_ITEMS = [
     { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
-    { to: '/?tab=intelligence', icon: Newspaper, label: 'Intelligence' },
+    { to: '/intelligence', icon: Newspaper, label: 'Intelligence' },
     { to: '/watchlist', icon: List, label: 'Watchlist' },
     { to: '/positions', icon: Briefcase, label: 'Positions' },
     { to: '/scanner', icon: Radar, label: 'Scanner' },
