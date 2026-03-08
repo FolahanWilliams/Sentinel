@@ -231,7 +231,7 @@ export function Positions() {
             setCloseReason('manual');
             await fetchPositions();
 
-            // Fire-and-forget AI post-mortem generation
+            // AI post-mortem generation — refresh positions only once when done
             setGeneratingPostMortem(pos.id);
             PostMortemService.generateAndSave(pos.id, {
                 ticker: pos.ticker,
@@ -245,9 +245,11 @@ export function Positions() {
                 closed_at: new Date().toISOString(),
                 close_reason: closeReason,
                 original_notes: pos.notes || undefined,
+            }).catch((err) => {
+                console.warn('[Positions] Post-mortem generation failed:', err);
             }).finally(() => {
                 setGeneratingPostMortem(null);
-                fetchPositions(); // Refresh to show generated notes
+                fetchPositions();
             });
         }
     }
@@ -357,7 +359,10 @@ export function Positions() {
             >
                 <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
                     <h2 className="text-sm font-semibold text-sentinel-200 uppercase tracking-wider">Open Positions</h2>
-                    {quotesLoading && <Loader2 className="w-4 h-4 text-sentinel-500 animate-spin" />}
+                    <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-sentinel-600">Quotes may be delayed ~15 min</span>
+                        {quotesLoading && <Loader2 className="w-4 h-4 text-sentinel-500 animate-spin" />}
+                    </div>
                 </div>
 
                 {loading ? (
@@ -636,6 +641,7 @@ export function Positions() {
                                         onChange={e => setFormNotes(e.target.value)}
                                         placeholder="Trade thesis, setup notes..."
                                         rows={2}
+                                        maxLength={5000}
                                         className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm text-sentinel-100 placeholder-sentinel-600 outline-none focus:border-blue-500/50 resize-none transition-colors"
                                     />
                                 </div>
