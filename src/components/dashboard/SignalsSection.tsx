@@ -140,7 +140,7 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
 
         // Direction filter
         if (directionFilter === 'long') {
-            result = result.filter(s => s.signal_type.includes('long') || s.signal_type === 'sector_contagion');
+            result = result.filter(s => s.signal_type.includes('long') || s.signal_type === 'sector_contagion' || s.signal_type === 'bullish_catalyst');
         } else if (directionFilter === 'short') {
             result = result.filter(s => s.signal_type.includes('short'));
         }
@@ -518,7 +518,7 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                             {filteredSignals.map((signal, idx) => {
                                 const quote = quotes[signal.ticker];
                                 const isExpanded = expandedId === signal.id;
-                                const isLong = signal.signal_type.includes('long') || signal.signal_type === 'sector_contagion';
+                                const isLong = signal.signal_type.includes('long') || signal.signal_type === 'sector_contagion' || signal.signal_type === 'bullish_catalyst';
 
                                 return (
                                     <motion.div

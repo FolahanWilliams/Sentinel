@@ -39,6 +39,7 @@ const CATEGORY_COLORS: Record<string, string> = {
     short_overreaction: '#ef4444',
     sector_contagion: '#3b82f6',
     earnings_overreaction: '#f59e0b',
+    bullish_catalyst: '#06b6d4',
     information: '#8b5cf6',
 };
 

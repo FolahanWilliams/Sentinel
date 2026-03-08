@@ -193,7 +193,12 @@ export function Journal() {
     function handleScreenshot(e: React.ChangeEvent<HTMLInputElement>) {
         const files = e.target.files;
         if (!files) return;
+        const MAX_SCREENSHOT_BYTES = 1_000_000; // 1MB per screenshot
         Array.from(files).slice(0, 3 - screenshots.length).forEach(file => {
+            if (file.size > MAX_SCREENSHOT_BYTES) {
+                alert(`Screenshot "${file.name}" exceeds 1MB limit. Please resize and try again.`);
+                return;
+            }
             const reader = new FileReader();
             reader.onload = (ev) => {
                 const result = ev.target?.result as string;

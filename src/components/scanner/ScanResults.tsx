@@ -85,6 +85,7 @@ export const ScanResults: React.FC = () => {
             case 'short_overreaction': return 'Short — Overreaction';
             case 'sector_contagion': return 'Long — Contagion';
             case 'earnings_overreaction': return 'Long — Earnings';
+            case 'bullish_catalyst': return 'Long — Catalyst';
             default: return type;
         }
     };

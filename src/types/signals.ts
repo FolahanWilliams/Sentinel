@@ -5,7 +5,7 @@
 import type { BiasType } from '@/config/constants';
 export type { BiasType };
 
-export type SignalType = 'long_overreaction' | 'short_overreaction' | 'sector_contagion' | 'earnings_overreaction' | 'information';
+export type SignalType = 'long_overreaction' | 'short_overreaction' | 'sector_contagion' | 'earnings_overreaction' | 'bullish_catalyst' | 'information';
 export type LynchCategory = 'fast_grower' | 'stalwart' | 'turnaround' | 'asset_play' | 'cyclical' | 'slow_grower';
 export type SignalStatus = 'active' | 'triggered' | 'stopped_out' | 'target_hit' | 'manually_closed' | 'expired';
 export type RiskLevel = 'low' | 'medium' | 'high' | 'extreme';
@@ -76,11 +76,12 @@ export interface Signal {
     updated_at: string;
 }
 
-import type { OverreactionResult, SanityCheckResult, ContagionResult } from './agents';
-export type { OverreactionResult, SanityCheckResult, ContagionResult };
+import type { OverreactionResult, SanityCheckResult, ContagionResult, BullishCatalystResult } from './agents';
+export type { OverreactionResult, SanityCheckResult, ContagionResult, BullishCatalystResult };
 
 export interface AgentOutputsJson {
     overreaction?: OverreactionResult;
+    bullish_catalyst?: BullishCatalystResult;
     red_team?: SanityCheckResult;
     contagion?: ContagionResult;
     self_critique?: any;

@@ -115,6 +115,43 @@ export const SATELLITE_DISCOVERY_SCHEMA = {
     required: ["reasoning", "satellites"]
 };
 
+export const BULLISH_CATALYST_SCHEMA = {
+    type: "object",
+    properties: {
+        reasoning: { type: "string", description: "Think step-by-step. Analyze the positive catalyst, its actual impact on revenue/earnings, whether the market has fully priced it in, and whether momentum is sustainable. Then reach your conclusion." },
+        is_underreaction: { type: "boolean", description: "True if the market hasn't fully priced in the positive catalyst." },
+        confidence_score: { type: "integer", description: "0-100 confidence score." },
+        catalyst_type: { type: "string", description: "Type of catalyst: 'earnings_beat', 'analyst_upgrade', 'product_launch', 'fda_approval', 'partnership', 'contract_win', 'breakout', 'guidance_raise', 'insider_buying', 'sector_tailwind'." },
+        identified_biases: {
+            type: "array",
+            items: { type: "string" },
+            description: "Cognitive biases causing under-pricing (e.g., 'anchoring' to old estimates, 'status_quo_bias', 'underreaction_to_positive_news')."
+        },
+        bias_type: {
+            type: "string",
+            enum: ["bullish", "bearish", "neutral"],
+            description: "Primary direction — for bullish catalyst this is 'bullish'."
+        },
+        secondary_biases: {
+            type: "array",
+            items: { type: "string", enum: ["bullish", "bearish", "neutral"] },
+            description: "Any secondary directional biases."
+        },
+        thesis: { type: "string", description: "Why this positive catalyst has more upside than the market expects." },
+        catalyst_impact_assessment: { type: "string", description: "Assessment of the catalyst's impact on forward earnings, revenue, or competitive position." },
+        suggested_entry_low: { type: "number", description: "Suggested low-end of entry zone." },
+        suggested_entry_high: { type: "number", description: "Suggested high-end of entry zone." },
+        stop_loss: { type: "number", description: "Hard stop loss level BELOW the current price." },
+        target_price: { type: "number", description: "Target price — must be ABOVE the current price." },
+        timeframe_days: { type: "integer", description: "Expected days for the setup to play out." },
+        moat_rating: { type: "integer", description: "Economic moat score 1-10." },
+        lynch_category: { type: "string", description: "Peter Lynch category: 'fast_grower', 'stalwart', 'turnaround', 'asset_play', 'cyclical', or 'slow_grower'." },
+        conviction_score: { type: "integer", description: "Overall conviction 0-100. Only ≥70 = high-conviction setup." },
+        why_high_conviction: { type: "string", description: "Explain what makes this a quality setup (or the key weakness)." }
+    },
+    required: ["reasoning", "is_underreaction", "confidence_score", "catalyst_type", "identified_biases", "bias_type", "secondary_biases", "thesis", "catalyst_impact_assessment", "stop_loss", "target_price", "moat_rating", "lynch_category", "conviction_score"]
+};
+
 export const SANITY_CHECK_SCHEMA = {
     type: "object",
     properties: {
