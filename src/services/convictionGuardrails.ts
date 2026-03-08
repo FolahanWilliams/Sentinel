@@ -10,7 +10,7 @@
  */
 
 import { supabase } from '@/config/supabase';
-import type { Signal, LynchCategory } from '@/types/signals';
+import type { LynchCategory } from '@/types/signals';
 
 export interface GuardrailResult {
     passed: boolean;
@@ -28,7 +28,6 @@ export interface PortfolioGuardrailReport {
 
 const MAX_CYCLICAL_PCT = 25;
 const MAX_LOW_MOAT_PCT = 15;
-const PEG_WARNING_THRESHOLD = 1.5;
 
 export class ConvictionGuardrails {
 
