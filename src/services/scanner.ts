@@ -1141,8 +1141,22 @@ If there is genuinely no major news, return: {"events": []}`,
                                                     penalty: conflictResult.confidencePenalty,
                                                     summary: conflictResult.summary,
                                                 } : null,
+                                                conviction_filter: analysis.data.conviction_score != null ? {
+                                                    conviction_score: analysis.data.conviction_score,
+                                                    moat_rating: analysis.data.moat_rating,
+                                                    lynch_category: analysis.data.lynch_category,
+                                                    why_high_conviction: analysis.data.why_high_conviction,
+                                                    margin_of_safety_pct: marginOfSafetyPct,
+                                                } : null,
                                             },
                                             margin_of_safety_pct: marginOfSafetyPct,
+                                            conviction_score: typeof analysis.data.conviction_score === 'number'
+                                                ? Math.max(0, Math.min(100, Math.round(analysis.data.conviction_score))) : null,
+                                            moat_rating: typeof analysis.data.moat_rating === 'number'
+                                                ? Math.max(1, Math.min(10, Math.round(analysis.data.moat_rating))) : null,
+                                            lynch_category: ['fast_grower', 'stalwart', 'turnaround', 'asset_play', 'cyclical', 'slow_grower']
+                                                .includes(analysis.data.lynch_category) ? analysis.data.lynch_category : null,
+                                            why_high_conviction: analysis.data.why_high_conviction || null,
                                             status: 'active',
                                             secondary_biases: [],
                                             sources: [],
@@ -1180,7 +1194,8 @@ If there is genuinely no major news, return: {"events": []}`,
                                                 taSnapshot,
                                                 ev.ticker,
                                                 tickerSectorForSizing,
-                                                confluence.score
+                                                confluence.score,
+                                                typeof analysis.data.conviction_score === 'number' ? analysis.data.conviction_score : undefined,
                                             );
                                             console.log(`[Scanner] Position size for ${ev.ticker}: ${sizing.recommendedPct}% ($${sizing.usdValue}) via ${sizing.method}${sizing.wasReduced ? ` [REDUCED: ${sizing.reductionReason}]` : ''}${sizing.stopLoss ? ` | SL: $${sizing.stopLoss}` : ''}`);
 
@@ -1314,6 +1329,13 @@ If there is genuinely no major news, return: {"events": []}`,
                                                                     } catch { return contagion.data.confidence_score; }
                                                                 })(),
                                                                 margin_of_safety_pct: contagionMarginPct,
+                                                                conviction_score: typeof contagion.data.conviction_score === 'number'
+                                                                    ? Math.max(0, Math.min(100, Math.round(contagion.data.conviction_score))) : null,
+                                                                moat_rating: typeof contagion.data.moat_rating === 'number'
+                                                                    ? Math.max(1, Math.min(10, Math.round(contagion.data.moat_rating))) : null,
+                                                                lynch_category: ['fast_grower', 'stalwart', 'turnaround', 'asset_play', 'cyclical', 'slow_grower']
+                                                                    .includes(contagion.data.lynch_category) ? contagion.data.lynch_category : null,
+                                                                why_high_conviction: contagion.data.why_high_conviction || null,
                                                                 data_quality: 'partial',
                                                                 secondary_biases: ['herding'],
                                                                 sources: [],
@@ -1608,6 +1630,13 @@ If there is genuinely no major news, return: {"events": []}`,
                                 self_critique: critiqueOutput,
                             },
                             margin_of_safety_pct: singleMarginPct,
+                            conviction_score: typeof analysis.data.conviction_score === 'number'
+                                ? Math.max(0, Math.min(100, Math.round(analysis.data.conviction_score))) : null,
+                            moat_rating: typeof analysis.data.moat_rating === 'number'
+                                ? Math.max(1, Math.min(10, Math.round(analysis.data.moat_rating))) : null,
+                            lynch_category: ['fast_grower', 'stalwart', 'turnaround', 'asset_play', 'cyclical', 'slow_grower']
+                                .includes(analysis.data.lynch_category) ? analysis.data.lynch_category : null,
+                            why_high_conviction: analysis.data.why_high_conviction || null,
                             status: 'active',
                             data_quality: singleTaSnapshot ? 'full' : 'partial',
                             sources: [],

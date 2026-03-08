@@ -26,9 +26,13 @@ export const OVERREACTION_SCHEMA = {
         suggested_entry_high: { type: "number", description: "Suggested high-end of entry zone." },
         stop_loss: { type: "number", description: "Hard stop loss level BELOW the current price (this is a LONG trade — stop must be lower than entry and target)." },
         target_price: { type: "number", description: "Target price for the reversion — must be ABOVE the current price (we are buying a dip expecting a bounce)." },
-        timeframe_days: { type: "integer", description: "Expected days for the setup to play out." }
+        timeframe_days: { type: "integer", description: "Expected days for the setup to play out." },
+        moat_rating: { type: "integer", description: "Economic moat score 1-10. 1=commodity business, 10=monopoly-like moat. Assess brand power, cost advantages, network effects, switching costs, patents/IP." },
+        lynch_category: { type: "string", description: "Peter Lynch category: 'fast_grower' (20%+ EPS growth), 'stalwart' (10-20% growth, large cap), 'turnaround' (recovering from distress), 'asset_play' (hidden asset value), 'cyclical' (tied to economic cycles), 'slow_grower' (<10% growth, dividend focus)." },
+        conviction_score: { type: "integer", description: "Overall conviction 0-100 combining moat quality, growth/value profile, catalyst strength, and margin of safety. Only ≥70 represents a truly high-conviction Buffett/Lynch setup." },
+        why_high_conviction: { type: "string", description: "If conviction_score ≥ 70, explain what makes this a Buffett/Lynch quality setup. If < 70, explain the key weakness." }
     },
-    required: ["reasoning", "is_overreaction", "confidence_score", "identified_biases", "thesis", "financial_impact_assessment", "stop_loss", "target_price"]
+    required: ["reasoning", "is_overreaction", "confidence_score", "identified_biases", "thesis", "financial_impact_assessment", "stop_loss", "target_price", "moat_rating", "lynch_category", "conviction_score"]
 };
 
 export const CONTAGION_SCHEMA = {
@@ -44,9 +48,13 @@ export const CONTAGION_SCHEMA = {
         suggested_entry_high: { type: "number" },
         stop_loss: { type: "number" },
         target_price: { type: "number" },
-        timeframe_days: { type: "integer" }
+        timeframe_days: { type: "integer" },
+        moat_rating: { type: "integer", description: "Economic moat score 1-10 for the satellite ticker. 1=commodity, 10=monopoly-like moat." },
+        lynch_category: { type: "string", description: "Peter Lynch category for the satellite: 'fast_grower', 'stalwart', 'turnaround', 'asset_play', 'cyclical', or 'slow_grower'." },
+        conviction_score: { type: "integer", description: "Overall conviction 0-100 combining moat quality, growth profile, and catalyst strength for the satellite ticker." },
+        why_high_conviction: { type: "string", description: "If conviction_score ≥ 70, explain the Buffett/Lynch quality case. If < 70, explain the key weakness." }
     },
-    required: ["reasoning", "is_contagion", "confidence_score", "epicenter_ticker", "thesis", "exposure_analysis", "stop_loss", "target_price"]
+    required: ["reasoning", "is_contagion", "confidence_score", "epicenter_ticker", "thesis", "exposure_analysis", "stop_loss", "target_price", "moat_rating", "lynch_category", "conviction_score"]
 };
 
 export const EARNINGS_SCHEMA = {
