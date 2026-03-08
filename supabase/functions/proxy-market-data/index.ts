@@ -14,6 +14,10 @@ interface Quote {
     low: number;
     marketCap?: number;
     peRatio?: number;
+    pegRatio?: number;
+    debtToEquity?: number;
+    roe?: number;
+    freeCashFlow?: number;
     fiftyTwoWeekHigh?: number;
     fiftyTwoWeekLow?: number;
     lastUpdated: string;
@@ -189,6 +193,10 @@ async function fetchQuoteViaApify(
             low: data.regularMarketDayLow ?? data.dayLow ?? data.low ?? 0,
             marketCap: data.marketCap ?? undefined,
             peRatio: data.trailingPE ?? data.peRatio ?? undefined,
+            pegRatio: data.pegRatio ?? data.trailingPegRatio ?? undefined,
+            debtToEquity: data.debtToEquity ?? undefined,
+            roe: data.returnOnEquity ?? data.roe ?? undefined,
+            freeCashFlow: data.freeCashflow ?? data.freeCashFlow ?? undefined,
             fiftyTwoWeekHigh: data.fiftyTwoWeekHigh ?? undefined,
             fiftyTwoWeekLow: data.fiftyTwoWeekLow ?? undefined,
             lastUpdated: new Date().toISOString(),
@@ -373,6 +381,10 @@ Deno.serve(async (req) => {
                                 low: quote.low,
                                 marketCap: quote.marketCap,
                                 peRatio: quote.peRatio,
+                                pegRatio: quote.pegRatio,
+                                debtToEquity: quote.debtToEquity,
+                                roe: quote.roe,
+                                freeCashFlow: quote.freeCashFlow,
                                 fiftyTwoWeekHigh: quote.fiftyTwoWeekHigh,
                                 fiftyTwoWeekLow: quote.fiftyTwoWeekLow,
                                 lastUpdated: new Date().toISOString(),
@@ -492,6 +504,10 @@ Deno.serve(async (req) => {
                             low: quote.low,
                             marketCap: quote.marketCap,
                             peRatio: quote.peRatio,
+                            pegRatio: quote.pegRatio,
+                            debtToEquity: quote.debtToEquity,
+                            roe: quote.roe,
+                            freeCashFlow: quote.freeCashFlow,
                             fiftyTwoWeekHigh: quote.fiftyTwoWeekHigh,
                             fiftyTwoWeekLow: quote.fiftyTwoWeekLow,
                         }
@@ -667,6 +683,10 @@ Deno.serve(async (req) => {
                                 low: quote.low,
                                 marketCap: quote.marketCap,
                                 peRatio: quote.peRatio,
+                                pegRatio: quote.pegRatio,
+                                debtToEquity: quote.debtToEquity,
+                                roe: quote.roe,
+                                freeCashFlow: quote.freeCashFlow,
                                 fiftyTwoWeekHigh: quote.fiftyTwoWeekHigh,
                                 fiftyTwoWeekLow: quote.fiftyTwoWeekLow,
                             }

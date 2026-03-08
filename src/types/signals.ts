@@ -5,6 +5,7 @@
 import type { BiasType } from '@/config/constants';
 
 export type SignalType = 'long_overreaction' | 'short_overreaction' | 'sector_contagion' | 'earnings_overreaction' | 'information';
+export type LynchCategory = 'fast_grower' | 'stalwart' | 'turnaround' | 'asset_play' | 'cyclical' | 'slow_grower';
 export type SignalStatus = 'active' | 'triggered' | 'stopped_out' | 'target_hit' | 'manually_closed' | 'expired';
 export type RiskLevel = 'low' | 'medium' | 'high' | 'extreme';
 export type DataQuality = 'full' | 'partial' | 'stale' | 'no_quote';
@@ -62,6 +63,11 @@ export interface Signal {
     projected_roi: number | null;
     projected_win_rate: number | null;
     similar_events_count: number | null;
+    conviction_score: number | null;
+    moat_rating: number | null;
+    lynch_category: LynchCategory | null;
+    margin_of_safety_pct: number | null;
+    why_high_conviction: string | null;
     data_quality: DataQuality;
     user_notes: string | null;
     is_paper: boolean;
@@ -171,6 +177,21 @@ export interface AgentOutputsJson {
         key_drivers: string[];
         thesis_validation: string;
         generated_at: string;
+    } | null;
+    conviction_filter?: {
+        conviction_score: number;
+        moat_rating: number;
+        moat_reasoning: string;
+        lynch_category: LynchCategory;
+        peg_ratio: number | null;
+        margin_of_safety_pct: number;
+        owner_earnings_quality: {
+            free_cash_flow_positive: boolean;
+            debt_to_equity: number | null;
+            roe: number | null;
+        };
+        why_high_conviction: string;
+        passed: boolean;
     } | null;
     // Legacy fields for older signals
     event_detector?: any;
