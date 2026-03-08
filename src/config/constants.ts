@@ -113,6 +113,29 @@ export const MARKET_HOURS = {
 } as const;
 
 // ===========================
+// CONVICTION GUARDRAILS (Buffett/Lynch)
+// ===========================
+export const CONVICTION_HIGH_THRESHOLD = 85; // High-conviction filter cutoff
+export const CONVICTION_ELITE_THRESHOLD = 90; // Elite sizing boost threshold
+export const CONVICTION_LOW_THRESHOLD = 70; // Below this = reduced sizing
+export const MARGIN_OF_SAFETY_MIN_PCT = 10; // Min discount from 52w high
+export const MAX_CYCLICAL_EXPOSURE_PCT = 25; // Max portfolio in cyclicals
+export const MAX_LOW_MOAT_EXPOSURE_PCT = 15; // Max portfolio in moat <5
+export const PEG_WARNING_THRESHOLD = 1.5; // Portfolio-level PEG alert
+
+// ===========================
+// LYNCH CATEGORY LABELS
+// ===========================
+export const LYNCH_CATEGORY_LABELS: Record<string, string> = {
+    fast_grower: 'Fast Grower',
+    stalwart: 'Stalwart',
+    turnaround: 'Turnaround',
+    asset_play: 'Asset Play',
+    cyclical: 'Cyclical',
+    slow_grower: 'Slow Grower',
+} as const;
+
+// ===========================
 // BIAS TAXONOMY
 // ===========================
 export const BIAS_TYPES = [

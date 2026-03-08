@@ -97,6 +97,7 @@ export class PositionSizer {
         taSnapshot: TASnapshot | null,
         _ticker?: string,
         confluenceScore?: number,
+        convictionScore?: number,
     ): Promise<PositionSizeResult> {
         // 1. Fetch config
         const { data: config, error } = await supabase
@@ -282,6 +283,20 @@ export class PositionSizer {
             console.warn('[PositionSizer] Failed to fetch drawdown data, skipping scaling', err);
         }
 
+        // 8c. Conviction-weighted scaling — scale size by conviction quality
+        //     >90 conviction: up to 4% max (high-conviction Buffett/Lynch setup)
+        //     70-90: normal sizing
+        //     <70: reduce to 50% (low conviction = smaller bet)
+        if (convictionScore !== undefined && convictionScore > 0) {
+            if (convictionScore >= 90) {
+                // Allow larger positions for elite setups, cap at 4%
+                recommendedPct = Math.min(recommendedPct * 1.5, 4.0);
+            } else if (convictionScore < 70) {
+                recommendedPct *= 0.5;
+            }
+            // 70-90 range: no adjustment (standard sizing)
+        }
+
         // Enforce caps
         let limitReason: string | null = null;
         if (recommendedPct > (maxExposurePct)) {
@@ -291,6 +306,14 @@ export class PositionSizer {
         if (drawdownScaling && drawdownScaling.scalingFactor < 1.0) {
             const ddNote = `Drawdown scaling: ${drawdownScaling.currentDrawdownPct.toFixed(1)}% drawdown → ${Math.round(drawdownScaling.scalingFactor * 100)}% size`;
             limitReason = limitReason ? `${limitReason}; ${ddNote}` : ddNote;
+        }
+        if (convictionScore !== undefined && convictionScore > 0) {
+            const cvNote = convictionScore >= 90
+                ? `High conviction (${convictionScore}) → 1.5x size boost`
+                : convictionScore < 70
+                    ? `Low conviction (${convictionScore}) → 50% size reduction`
+                    : `Conviction: ${convictionScore}`;
+            limitReason = limitReason ? `${limitReason}; ${cvNote}` : cvNote;
         }
 
         // 9. Risk:Reward ratio

@@ -15,6 +15,13 @@ export interface Quote {
     high: number;
     low: number;
     marketCap: number | null;
+    peRatio: number | null;
+    pegRatio: number | null;
+    debtToEquity: number | null;
+    roe: number | null;
+    freeCashFlow: number | null;
+    fiftyTwoWeekHigh: number | null;
+    fiftyTwoWeekLow: number | null;
     timestamp: Date;
 }
 

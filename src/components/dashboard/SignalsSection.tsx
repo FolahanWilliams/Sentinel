@@ -30,8 +30,9 @@ interface SignalsSectionProps {
     className?: string;
 }
 
-type SortField = 'created_at' | 'projected_roi' | 'confidence_score' | 'confluence_score';
+type SortField = 'created_at' | 'projected_roi' | 'confidence_score' | 'confluence_score' | 'conviction_score';
 type DirectionFilter = 'all' | 'long' | 'short';
+type LynchFilter = 'all' | 'fast_grower' | 'stalwart' | 'turnaround' | 'asset_play' | 'cyclical' | 'slow_grower';
 
 export function SignalsSection({ className = '' }: SignalsSectionProps) {
     const navigate = useNavigate();
@@ -55,6 +56,8 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
     const [highRoiOnly, setHighRoiOnly] = useState(false);
     const [directionFilter, setDirectionFilter] = useState<DirectionFilter>('all');
     const [confluenceFilter, setConfluenceFilter] = useState(false);
+    const [highConvictionOnly, setHighConvictionOnly] = useState(false);
+    const [lynchFilter, setLynchFilter] = useState<LynchFilter>('all');
     const [sortBy, setSortBy] = useState<SortField>('created_at');
 
     // Fetch signals from Supabase
@@ -146,6 +149,16 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
             result = result.filter(s => s.confluence_level === 'strong' || s.confluence_level === 'moderate');
         }
 
+        // High conviction filter (Buffett/Lynch quality gate)
+        if (highConvictionOnly) {
+            result = result.filter(s => (s.conviction_score ?? 0) >= 85);
+        }
+
+        // Lynch category filter
+        if (lynchFilter !== 'all') {
+            result = result.filter(s => s.lynch_category === lynchFilter);
+        }
+
         // Sort
         result.sort((a, b) => {
             switch (sortBy) {
@@ -155,13 +168,15 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                     return (b.confidence_score ?? 0) - (a.confidence_score ?? 0);
                 case 'confluence_score':
                     return (b.confluence_score ?? 0) - (a.confluence_score ?? 0);
+                case 'conviction_score':
+                    return ((b.conviction_score ?? 0) * (b.projected_roi ?? 1)) - ((a.conviction_score ?? 0) * (a.projected_roi ?? 1));
                 default:
                     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
             }
         });
 
         return result;
-    }, [signals, minConfidence, highImpactOnly, highRoiOnly, directionFilter, confluenceFilter, sortBy]);
+    }, [signals, minConfidence, highImpactOnly, highRoiOnly, directionFilter, confluenceFilter, highConvictionOnly, lynchFilter, sortBy]);
 
     const activeFilterCount = [
         minConfidence > 0,
@@ -169,6 +184,8 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
         highRoiOnly,
         directionFilter !== 'all',
         confluenceFilter,
+        highConvictionOnly,
+        lynchFilter !== 'all',
         sortBy !== 'created_at',
     ].filter(Boolean).length;
 
@@ -303,6 +320,21 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                     </button>
 
                     <button
+                        onClick={() => {
+                            setHighConvictionOnly(!highConvictionOnly);
+                            if (!highConvictionOnly) setSortBy('conviction_score');
+                        }}
+                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ring-1 flex items-center gap-2 border-none cursor-pointer ${highConvictionOnly
+                            ? 'bg-amber-500/15 text-amber-400 ring-amber-500/30'
+                            : 'bg-sentinel-800/50 text-sentinel-400 ring-sentinel-700/50 hover:bg-sentinel-700/50'
+                            }`}
+                        aria-label="Toggle high conviction signals only"
+                    >
+                        <Shield className="w-4 h-4" />
+                        High Conviction
+                    </button>
+
+                    <button
                         onClick={() => setShowFilters(!showFilters)}
                         className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ring-1 flex items-center gap-2 border-none cursor-pointer ${activeFilterCount > 0
                             ? 'bg-blue-500/15 text-blue-400 ring-blue-500/30'
@@ -391,6 +423,26 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                         <option value="projected_roi">Projected ROI</option>
                                         <option value="confidence_score">Confidence</option>
                                         <option value="confluence_score">Confluence</option>
+                                        <option value="conviction_score">Conviction x ROI</option>
+                                    </select>
+                                </div>
+
+                                {/* Lynch Category */}
+                                <div className="space-y-1">
+                                    <label className="text-xs text-sentinel-400 font-medium" htmlFor="lynch-filter">Lynch Category</label>
+                                    <select
+                                        id="lynch-filter"
+                                        value={lynchFilter}
+                                        onChange={(e) => setLynchFilter(e.target.value as LynchFilter)}
+                                        className="bg-sentinel-800 text-sentinel-200 rounded-lg px-3 py-1.5 text-sm border border-sentinel-700/50 outline-none"
+                                    >
+                                        <option value="all">All</option>
+                                        <option value="fast_grower">Fast Growers</option>
+                                        <option value="stalwart">Stalwarts</option>
+                                        <option value="turnaround">Turnarounds</option>
+                                        <option value="asset_play">Asset Plays</option>
+                                        <option value="cyclical">Cyclicals</option>
+                                        <option value="slow_grower">Slow Growers</option>
                                     </select>
                                 </div>
 
@@ -421,8 +473,10 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                             setMinConfidence(0);
                                             setHighImpactOnly(false);
                                             setHighRoiOnly(false);
+                                            setHighConvictionOnly(false);
                                             setDirectionFilter('all');
                                             setConfluenceFilter(false);
+                                            setLynchFilter('all');
                                             setSortBy('created_at');
                                         }}
                                         className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1 bg-transparent border-none cursor-pointer"
@@ -545,6 +599,28 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                             {signal.confluence_level && signal.confluence_level !== 'none' && (
                                                 <span className={`px-2 py-0.5 text-[10px] font-bold rounded ring-1 ${confluenceColor(signal.confluence_level)}`}>
                                                     {signal.confluence_level.toUpperCase()} CONFLUENCE
+                                                </span>
+                                            )}
+                                            {signal.conviction_score != null && signal.conviction_score > 0 && (
+                                                <span className={`px-2 py-0.5 text-[10px] font-bold font-mono rounded ring-1 ${signal.conviction_score >= 85
+                                                    ? 'bg-amber-500/15 text-amber-400 ring-amber-500/30'
+                                                    : signal.conviction_score >= 70
+                                                        ? 'bg-blue-500/10 text-blue-400 ring-blue-500/20'
+                                                        : 'bg-sentinel-800/50 text-sentinel-500 ring-sentinel-700/30'
+                                                    }`} title={signal.why_high_conviction || `Conviction: ${signal.conviction_score}/100`}>
+                                                    CV {signal.conviction_score}
+                                                </span>
+                                            )}
+                                            {signal.lynch_category && (
+                                                <span className="px-2 py-0.5 text-[10px] font-bold rounded ring-1 bg-violet-500/10 text-violet-400 ring-violet-500/20"
+                                                    title={`Lynch: ${signal.lynch_category.replace('_', ' ')}`}>
+                                                    {signal.lynch_category.replace('_', ' ').toUpperCase()}
+                                                </span>
+                                            )}
+                                            {signal.moat_rating != null && signal.moat_rating >= 7 && (
+                                                <span className="px-2 py-0.5 text-[10px] font-bold rounded ring-1 bg-amber-500/10 text-amber-300 ring-amber-500/20"
+                                                    title={`Buffett Moat Rating: ${signal.moat_rating}/10`}>
+                                                    MOAT {signal.moat_rating}/10
                                                 </span>
                                             )}
                                             {signal.projected_roi != null && (
