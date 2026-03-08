@@ -81,8 +81,8 @@ export class RetailVsNewsSentimentDetector {
                 return neutral;
             }
 
-            const retailAvg = retailScores.reduce((a, b) => a + b, 0) / retailScores.length;
-            const newsAvg = newsScores.reduce((a, b) => a + b, 0) / newsScores.length;
+            const retailAvg = retailScores.reduce((a: number, b: number) => a + b, 0) / retailScores.length;
+            const newsAvg = newsScores.reduce((a: number, b: number) => a + b, 0) / newsScores.length;
             const gap = Math.abs(retailAvg - newsAvg);
 
             const result = this.classifyGap(retailAvg, newsAvg, gap, retailScores.length, newsScores.length);
