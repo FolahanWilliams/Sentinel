@@ -9,7 +9,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/config/supabase';
 import {
-    Trophy, TrendingUp, TrendingDown, BarChart3,
+    Trophy, TrendingUp, BarChart3,
     Loader2, Award, Medal, Target, Hash,
     ArrowUpRight, ArrowDownRight, Minus,
 } from 'lucide-react';
