@@ -40,7 +40,7 @@ async function callGemini(
     model: string,
     payload: any,
     apiKey: string
-): Promise<{ data: any; text: string; inputTokens: number; outputTokens: number }> {
+): Promise<{ data: any; text: string; inputTokens: number; outputTokens: number; groundingSources: Array<{ url: string; title: string }> }> {
     // 25s timeout per call — leaves room for a retry (25+25=50s < 60s gateway)
     // Supabase gateway kills at 60s and strips CORS headers, causing client errors
     const controller = new AbortController()
@@ -68,14 +68,27 @@ async function callGemini(
         const data = await geminiRes.json()
 
         let text = ''
+        let groundingSources: Array<{ url: string; title: string }> = []
         if (data.candidates && data.candidates.length > 0) {
             text = data.candidates[0].content?.parts?.[0]?.text || ''
+
+            // Extract grounding metadata (source citations from Google Search)
+            const gm = data.candidates[0].groundingMetadata
+            if (gm) {
+                const chunks = gm.groundingChunks || gm.supportChunks || []
+                for (const chunk of chunks) {
+                    const web = chunk.web || chunk.retrievedContext
+                    if (web?.uri) {
+                        groundingSources.push({ url: web.uri, title: web.title || '' })
+                    }
+                }
+            }
         }
 
         const inputTokens = data.usageMetadata?.promptTokenCount || 0
         const outputTokens = data.usageMetadata?.candidatesTokenCount || 0
 
-        return { data, text, inputTokens, outputTokens }
+        return { data, text, inputTokens, outputTokens, groundingSources }
     } finally {
         clearTimeout(timeoutId)
     }
@@ -353,7 +366,7 @@ serve(async (req) => {
         }
 
         // 6. Call Gemini with auto-retry on JSON parse failure
-        let result: { data: any; text: string; inputTokens: number; outputTokens: number }
+        let result: { data: any; text: string; inputTokens: number; outputTokens: number; groundingSources: Array<{ url: string; title: string }> }
         let totalInputTokens = 0
         let totalOutputTokens = 0
 
@@ -427,6 +440,7 @@ serve(async (req) => {
             JSON.stringify({
                 success: true,
                 text: result.text,
+                groundingSources: result.groundingSources.length > 0 ? result.groundingSources : undefined,
                 metadata: {
                     inputTokens: totalInputTokens,
                     outputTokens: totalOutputTokens,

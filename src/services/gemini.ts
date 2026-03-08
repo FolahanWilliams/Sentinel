@@ -113,7 +113,8 @@ export class GeminiService {
                 duration_ms: Date.now() - startTime,
                 tokens_used: (data.metadata?.inputTokens || 0) + (data.metadata?.outputTokens || 0),
                 model_used: modelToUse,
-                grounded_search_used: req.requireGroundedSearch ?? false
+                grounded_search_used: req.requireGroundedSearch ?? false,
+                grounding_sources: data.groundingSources,
             };
 
         } catch (err: any) {

@@ -2,6 +2,11 @@
  * Sentinel — Agent Pipeline Types
  */
 
+export interface GroundingSource {
+    url: string;
+    title: string;
+}
+
 export interface AgentResult<T> {
     success: boolean;
     data: T | null;
@@ -10,6 +15,7 @@ export interface AgentResult<T> {
     tokens_used: number;
     model_used: string;
     grounded_search_used: boolean;
+    grounding_sources?: GroundingSource[];
 }
 
 export interface OverreactionResult {
