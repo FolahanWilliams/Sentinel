@@ -955,6 +955,18 @@ If there is genuinely no major news, return: {"events": []}`,
                                             ? Math.round(((quote.fiftyTwoWeekHigh - quote.price) / quote.fiftyTwoWeekHigh) * 1000) / 10
                                             : null;
 
+                                        // 7.18. PORTFOLIO-LEVEL GUARDRAILS — check cyclical/moat exposure limits
+                                        try {
+                                            const portfolioGuardrails = await ConvictionGuardrails.checkPortfolioGuardrails();
+                                            if (portfolioGuardrails.blocked) {
+                                                console.warn(`[Scanner] Portfolio guardrails blocked ${ev.ticker}: ${portfolioGuardrails.warnings.join('; ')}`);
+                                                continue;
+                                            }
+                                            if (portfolioGuardrails.warnings.length > 0) {
+                                                console.log(`[Scanner] Portfolio warnings for ${ev.ticker}: ${portfolioGuardrails.warnings.join('; ')}`);
+                                            }
+                                        } catch { /* non-fatal */ }
+
                                         // 8. WINNER! WE HAVE A SIGNAL.
                                         signalsGenerated++;
 
