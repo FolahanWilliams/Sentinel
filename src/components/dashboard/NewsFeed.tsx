@@ -95,6 +95,7 @@ export function NewsFeed({ ticker, limit = 10, title = "Live Intelligence Feed",
                     <div className="flex gap-2 text-xs">
                         <select
                             value={categoryFilter}
+                            aria-label="Filter by news category"
                             onChange={(e) => setCategoryFilter(e.target.value)}
                             className="bg-sentinel-950 border border-sentinel-700 text-sentinel-300 rounded-md px-2 py-1 focus:outline-none focus:border-sentinel-500"
                         >

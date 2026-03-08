@@ -129,6 +129,7 @@ export function Header() {
                     <button
                         className="p-2 rounded-lg transition-colors cursor-pointer relative"
                         style={{ backgroundColor: 'transparent', border: 'none', color: 'var(--color-text-secondary)' }}
+                        aria-label={totalUnread > 0 ? `Notifications (${totalUnread} unread)` : 'Notifications'}
                         title="Notifications"
                         onClick={() => {
                             setShowNotifications(!showNotifications);

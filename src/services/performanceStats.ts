@@ -400,12 +400,16 @@ export class PerformanceStats {
                 .sort((a, b) => (b.return_at_30d ?? 0) - (a.return_at_30d ?? 0));
 
             if (sorted.length > 0) {
-                const bestItem = sorted[0]!;
-                const worstItem = sorted[sorted.length - 1]!;
-                const bestSig = signalMap.get(bestItem.signal_id);
-                const worstSig = signalMap.get(worstItem.signal_id);
-                if (bestSig) bestSignal = { ticker: bestSig.ticker, returnPct: bestItem.return_at_30d ?? 0 };
-                if (worstSig) worstSignal = { ticker: worstSig.ticker, returnPct: worstItem.return_at_30d ?? 0 };
+                const bestItem = sorted[0];
+                const worstItem = sorted[sorted.length - 1];
+                if (bestItem) {
+                    const bestSig = signalMap.get(bestItem.signal_id);
+                    if (bestSig) bestSignal = { ticker: bestSig.ticker, returnPct: bestItem.return_at_30d ?? 0 };
+                }
+                if (worstItem) {
+                    const worstSig = signalMap.get(worstItem.signal_id);
+                    if (worstSig) worstSignal = { ticker: worstSig.ticker, returnPct: worstItem.return_at_30d ?? 0 };
+                }
             }
         }
 

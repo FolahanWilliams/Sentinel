@@ -100,7 +100,9 @@ export class ReflectionAgent {
                         ratingsMap[r.signal_id] = r.rating;
                     }
                 }
-            } catch { /* signal_ratings table may not exist yet */ }
+            } catch (err) {
+                console.warn('[ReflectionAgent] signal_ratings lookup failed (table may not exist):', err);
+            }
         }
 
         // 2. Build a condensed dataset for the prompt

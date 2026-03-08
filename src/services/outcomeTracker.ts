@@ -92,7 +92,7 @@ export class OutcomeTracker {
                     .from('signals')
                     .select('stop_loss, target_price, signal_type')
                     .eq('id', outcome.signal_id)
-                    .single();
+                    .maybeSingle();
 
                 if (signal) {
                     const stopLoss = typeof signal.stop_loss === 'number' ? signal.stop_loss : null;

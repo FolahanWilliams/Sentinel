@@ -73,6 +73,7 @@ export class DynamicCalibrator {
     while (changed) {
       changed = false;
       for (let i = 0; i < blocks.length - 1; i++) {
+        if (blocks[i]!.sumW === 0 || blocks[i + 1]!.sumW === 0) continue;
         const meanI = blocks[i]!.sumWY / blocks[i]!.sumW;
         const meanNext = blocks[i + 1]!.sumWY / blocks[i + 1]!.sumW;
         if (meanI > meanNext) {
@@ -89,10 +90,12 @@ export class DynamicCalibrator {
       }
     }
 
-    return blocks.map((b) => ({
-      x: Math.round(b.x * 100) / 100,
-      y: Math.round((b.sumWY / b.sumW) * 100) / 100,
-    }));
+    return blocks
+      .filter((b) => b.sumW > 0)
+      .map((b) => ({
+        x: Math.round(b.x * 100) / 100,
+        y: Math.round((b.sumWY / b.sumW) * 100) / 100,
+      }));
   }
 
   // ── Curve fitting ────────────────────────────────────────────────
@@ -208,9 +211,14 @@ export class DynamicCalibrator {
       } catch {
         return this.emptyCurve();
       } finally {
+        // Always clear pendingFetch so future calls retry instead of inheriting a stale/failed promise
         this.pendingFetch = null;
       }
-    })();
+    })().catch((err) => {
+      // Ensure a rejected promise doesn't block future calls
+      this.pendingFetch = null;
+      return this.emptyCurve();
+    });
 
     return this.pendingFetch;
   }

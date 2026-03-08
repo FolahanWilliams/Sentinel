@@ -21,5 +21,14 @@ export default defineConfig({
         target: 'esnext',
         // Phase 6 fix (Audit M9): Only enable sourcemaps in dev, not production
         sourcemap: process.env.NODE_ENV !== 'production',
+        rollupOptions: {
+            output: {
+                manualChunks: {
+                    'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+                    'vendor-ui': ['framer-motion', 'lucide-react'],
+                    'vendor-supabase': ['@supabase/supabase-js'],
+                },
+            },
+        },
     },
 });

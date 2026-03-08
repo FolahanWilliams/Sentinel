@@ -80,26 +80,28 @@ export class ScannerService {
      */
     static async prioritizeTickers(tickers: { ticker: string; sector: string }[]): Promise<{ ticker: string; sector: string; priority: number; prioritySources: string[] }[]> {
         const tickerNames = tickers.map(t => t.ticker);
-
-        // Count recent events per ticker (last 24h)
         const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-        const { data: recentEvents } = await supabase
-            .from('market_events')
-            .select('ticker')
-            .in('ticker', tickerNames)
-            .gte('detected_at', oneDayAgo);
 
+        // Batch all independent DB queries in parallel instead of sequential
+        const [
+            { data: recentEvents },
+            { data: signals },
+            { data: rssMentions },
+            sentinelResult,
+        ] = await Promise.all([
+            supabase.from('market_events').select('ticker').in('ticker', tickerNames).gte('detected_at', oneDayAgo),
+            supabase.from('signals').select('id, ticker').in('ticker', tickerNames),
+            supabase.from('rss_cache').select('title').gte('fetched_at', oneDayAgo).limit(200),
+            supabase.from('sentinel_articles').select('title, summary, impact, signals, affected_tickers').gte('processed_at', oneDayAgo).limit(100).then(r => r).catch(() => ({ data: null })),
+        ]);
+
+        // Count recent events per ticker
         const eventCounts: Record<string, number> = {};
         for (const ev of recentEvents || []) {
             eventCounts[ev.ticker] = (eventCounts[ev.ticker] || 0) + 1;
         }
 
-        // Win rate per ticker from outcomes
-        const { data: signals } = await supabase
-            .from('signals')
-            .select('id, ticker')
-            .in('ticker', tickerNames);
-
+        // Win rate per ticker from outcomes (this one depends on signals result)
         const signalIds = (signals || []).map(s => s.id);
         const { data: outcomes } = signalIds.length > 0
             ? await supabase
@@ -120,13 +122,7 @@ export class ScannerService {
             if (outcome === 'win') wr.wins++;
         }
 
-        // Count RSS mentions (articles in cache)
-        const { data: rssMentions } = await supabase
-            .from('rss_cache')
-            .select('title')
-            .gte('fetched_at', oneDayAgo)
-            .limit(200);
-
+        // Count RSS mentions
         const rssCounts: Record<string, number> = {};
         for (const article of rssMentions || []) {
             const titleLower = (article.title || '').toLowerCase();
@@ -137,23 +133,13 @@ export class ScannerService {
             }
         }
 
-        // ── NEWS INTELLIGENCE BOOST ──
-        // Query sentinel_articles from last 24h (processed by the Intelligence subsystem)
-        // High-impact articles mentioning a watchlist ticker get a massive priority boost
+        // News Intelligence boost from sentinel_articles
         const sentinelCounts: Record<string, { total: number; highImpact: number }> = {};
-        try {
-            const { data: sentinelArticles } = await supabase
-                .from('sentinel_articles')
-                .select('title, summary, impact, signals, affected_tickers')
-                .gte('processed_at', oneDayAgo)
-                .limit(100);
-
-            for (const article of sentinelArticles || []) {
-                // Check affected_tickers array first (most reliable)
+        const sentinelArticles = sentinelResult?.data;
+        if (sentinelArticles) {
+            for (const article of sentinelArticles) {
                 const affectedTickers = (article.affected_tickers as string[]) || [];
-                // Also scan title + summary for ticker mentions
                 const textToScan = `${article.title || ''} ${article.summary || ''}`.toUpperCase();
-                // Also extract tickers from signals JSONB [{ ticker, direction, confidence }]
                 const articleSignals = (Array.isArray(article.signals) ? article.signals : []) as Array<{ ticker?: string }>;
 
                 for (const t of tickerNames) {
@@ -168,8 +154,6 @@ export class ScannerService {
                     }
                 }
             }
-        } catch (e) {
-            console.warn('[Scanner] sentinel_articles boost lookup failed (non-fatal):', e);
         }
 
         // Score each ticker
@@ -1550,6 +1534,9 @@ If there is genuinely no major news, return: {"events": []}`,
 
                                                             // Seed outcome tracking
                                                             if (savedContagionSignal) {
+                                                                ConflictDetector.invalidateCache();
+                                                                CorrelationGuard.invalidateCache();
+                                                                PriceCorrelationMatrix.invalidateCache();
                                                                 NotificationService.checkAndDispatchAlerts(savedContagionSignal);
 
                                                                 await supabase.from('signal_outcomes').insert({
@@ -1854,6 +1841,9 @@ If there is genuinely no major news, return: {"events": []}`,
                         }
 
                         if (savedSignal) {
+                            ConflictDetector.invalidateCache();
+                            CorrelationGuard.invalidateCache();
+                            PriceCorrelationMatrix.invalidateCache();
                             NotificationService.checkAndDispatchAlerts(savedSignal);
 
                             // Seed outcome tracking so OutcomeTracker can follow this signal
