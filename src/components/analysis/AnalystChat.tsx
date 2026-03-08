@@ -15,6 +15,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MessageSquare, X, Send, Loader2, Sparkles, Bot, User, CheckCircle2 } from 'lucide-react';
 import { GeminiService } from '@/services/gemini';
+import { GEMINI_MODEL_LITE } from '@/config/constants';
 import { supabase } from '@/config/supabase';
 import { useChat } from '@/contexts/ChatContext';
 import { MarketDataService } from '@/services/marketData';
@@ -84,8 +85,11 @@ function AnalystChatInner() {
     // Conversation memory — rolling summary of older messages
     const [conversationSummary, setConversationSummary] = useState<string>('');
 
+    // Live quotes for open positions (for unrealized P&L)
+    const [positionQuotes, setPositionQuotes] = useState<Record<string, number>>({});
+
     // News context — per-ticker or cross-portfolio
-    const [tickerNews, setTickerNews] = useState<{ ticker?: string; title: string; source: string; published_at: string }[]>([]);
+    const [tickerNews, setTickerNews] = useState<{ ticker?: string; title: string; source: string; published_at: string; sentiment_score?: number }[]>([]);
 
     // Scanner/signal intelligence for replacement trade ideas
     const [scannerResults, setScannerResults] = useState<{
@@ -165,6 +169,39 @@ function AnalystChatInner() {
         return () => { isMounted = false; };
     }, [isOpen]);
 
+    // Fetch live quotes for all open positions (for unrealized P&L)
+    useEffect(() => {
+        if (!portfolio?.positions) return;
+        let cancelled = false;
+
+        const openTickers = portfolio.positions
+            .filter(p => p.status === 'open' && p.ticker)
+            .map(p => p.ticker);
+
+        if (openTickers.length === 0) return;
+
+        async function fetchQuotes() {
+            const quotes: Record<string, number> = {};
+            // Fetch in parallel, cap at 10 to avoid rate limits
+            const results = await Promise.allSettled(
+                openTickers.slice(0, 10).map(async (tk) => {
+                    const q = await MarketDataService.getQuote(tk);
+                    return { ticker: tk, price: q?.price ?? null };
+                })
+            );
+            if (cancelled) return;
+            for (const r of results) {
+                if (r.status === 'fulfilled' && r.value.price != null) {
+                    quotes[r.value.ticker] = r.value.price;
+                }
+            }
+            setPositionQuotes(quotes);
+        }
+
+        fetchQuotes();
+        return () => { cancelled = true; };
+    }, [portfolio]);
+
     // Fetch ticker-specific context if we have an active ticker
     useEffect(() => {
         let isMounted = true;
@@ -184,20 +221,54 @@ function AnalystChatInner() {
                     .order('detected_at', { ascending: false })
                     .limit(5);
 
-                const { data: signal } = await supabase
+                // Fetch multiple signals for aggregated bias analysis
+                const { data: signals } = await supabase
                     .from('signals')
-                    .select('agent_outputs')
+                    .select('agent_outputs, created_at')
                     .eq('ticker', activeTicker)
                     .order('created_at', { ascending: false })
-                    .limit(1)
-                    .single();
+                    .limit(5);
 
                 if (isMounted) {
-                    const agentOutputs = signal?.agent_outputs as any;
+                    // Use newest signal for fundamentals
+                    const newestOutputs = (signals?.[0] as any)?.agent_outputs;
+                    const fundamentals = newestOutputs?.overreaction?.fundamentals || {};
+
+                    // Aggregate bias weights across all signals (weighted by recency)
+                    const biasFields = ['recency_bias', 'anchoring_bias', 'herding_bias', 'loss_aversion', 'confirmation_bias'] as const;
+                    const aggregatedBias: Record<string, any> = {};
+
+                    if (signals && signals.length > 0) {
+                        const allBiases = signals
+                            .map((s: any) => s.agent_outputs?.overreaction?.biasWeights)
+                            .filter(Boolean);
+
+                        if (allBiases.length > 0) {
+                            // Weighted average: newest signal gets highest weight
+                            const weights = allBiases.map((_: any, i: number) => Math.pow(0.7, i));
+                            const totalWeight = weights.reduce((a: number, b: number) => a + b, 0);
+
+                            for (const field of biasFields) {
+                                const values = allBiases.map((b: any) => b[field]).filter((v: any) => v != null);
+                                if (values.length > 0) {
+                                    const weightedSum = values.reduce((sum: number, v: number, i: number) => sum + v * (weights[i] ?? 0), 0);
+                                    aggregatedBias[field] = Math.round(weightedSum / totalWeight);
+                                }
+                            }
+
+                            // Take newest overall bias label + explanation, but recalculate score as average
+                            const newestBias = allBiases[0];
+                            aggregatedBias.overall_bias = newestBias.overall_bias;
+                            aggregatedBias.overall_score = newestBias.overall_score;
+                            aggregatedBias.bias_explanation = newestBias.bias_explanation;
+                            aggregatedBias.signals_analyzed = allBiases.length;
+                        }
+                    }
+
                     setTickerAnalysis({
                         events,
-                        fundamentals: agentOutputs?.overreaction?.fundamentals || {},
-                        biasWeights: agentOutputs?.overreaction?.biasWeights || {}
+                        fundamentals,
+                        biasWeights: Object.keys(aggregatedBias).length > 0 ? aggregatedBias : (newestOutputs?.overreaction?.biasWeights || {}),
                     });
                     setHasLoadedContext(true);
                 }
@@ -226,7 +297,7 @@ function AnalystChatInner() {
                     // Single ticker mode
                     const { data } = await supabase
                         .from('rss_cache')
-                        .select('title, feed_name, published_at')
+                        .select('title, feed_name, published_at, sentiment_score')
                         .contains('tickers_mentioned', [activeTicker.toUpperCase()])
                         .order('published_at', { ascending: false })
                         .limit(5);
@@ -236,6 +307,7 @@ function AnalystChatInner() {
                             title: d.title,
                             source: d.feed_name,
                             published_at: d.published_at || '',
+                            sentiment_score: d.sentiment_score ?? undefined,
                         })));
                     }
                 } else if (portfolio?.positions) {
@@ -253,7 +325,7 @@ function AnalystChatInner() {
                     const newsPromises = openTickers.slice(0, 10).map(tk =>
                         supabase
                             .from('rss_cache')
-                            .select('title, feed_name, published_at, tickers_mentioned')
+                            .select('title, feed_name, published_at, tickers_mentioned, sentiment_score')
                             .contains('tickers_mentioned', [tk])
                             .order('published_at', { ascending: false })
                             .limit(3)
@@ -279,6 +351,7 @@ function AnalystChatInner() {
                                 title: d.title,
                                 source: d.feed_name,
                                 published_at: d.published_at || '',
+                                sentiment_score: (d as any).sentiment_score ?? undefined,
                             });
                         }
                     }
@@ -498,9 +571,10 @@ function AnalystChatInner() {
         parts.push(`Total Capital: ${formatPrice(totalCapital)}`);
         parts.push(`Risk Limits: Max ${config?.max_position_pct ?? 10}% per position, ${config?.max_total_exposure_pct ?? 50}% total exposure, ${config?.max_sector_exposure_pct ?? 25}% per sector`);
 
-        // Open positions with exposure
+        // Open positions with exposure and live P&L
         if (openPositions.length > 0) {
             let totalExposure = 0;
+            let totalUnrealizedPnl = 0;
 
             parts.push(`\nOPEN POSITIONS (${openPositions.length}):`);
             for (const pos of openPositions) {
@@ -510,11 +584,24 @@ function AnalystChatInner() {
                 const pct = totalCapital > 0 ? (size / totalCapital * 100) : 0;
                 const sector = sectorMap[pos.ticker] || sectorMap[pos.ticker.replace('.L', '')] || 'Unknown';
 
-                // Approximate P&L using entry price (no live quotes in this context)
                 const entryPrice = pos.entry_price ?? 0;
                 const shares = pos.shares ?? 0;
+                const currentPrice = positionQuotes[pos.ticker];
 
-                parts.push(`  ${pos.ticker} | ${pos.side.toUpperCase()} | ${shares} shares @ ${formatPrice(entryPrice, currency)} | Size: ${formatPrice(size, currency)} (${pct.toFixed(1)}%) | Sector: ${sector}`);
+                let pnlStr = '';
+                if (currentPrice != null && entryPrice > 0 && shares > 0) {
+                    const multiplier = pos.side === 'short' ? -1 : 1;
+                    const unrealizedPnl = (currentPrice - entryPrice) * shares * multiplier;
+                    const unrealizedPct = ((currentPrice - entryPrice) / entryPrice) * 100 * multiplier;
+                    totalUnrealizedPnl += unrealizedPnl;
+                    pnlStr = ` | Current: ${formatPrice(currentPrice, currency)} | P&L: ${unrealizedPnl >= 0 ? '+' : ''}${formatPrice(unrealizedPnl, currency)} (${unrealizedPct >= 0 ? '+' : ''}${unrealizedPct.toFixed(1)}%)`;
+                }
+
+                parts.push(`  ${pos.ticker} | ${pos.side.toUpperCase()} | ${shares} shares @ ${formatPrice(entryPrice, currency)} | Size: ${formatPrice(size, currency)} (${pct.toFixed(1)}%) | Sector: ${sector}${pnlStr}`);
+            }
+
+            if (Object.keys(positionQuotes).length > 0) {
+                parts.push(`\nTOTAL UNREALIZED P&L: ${totalUnrealizedPnl >= 0 ? '+' : ''}${formatPrice(totalUnrealizedPnl)}`);
             }
 
             // Sector allocation breakdown
@@ -561,7 +648,7 @@ function AnalystChatInner() {
 
         parts.push('=== END PORTFOLIO ===');
         return parts.join('\n');
-    }, [portfolio]);
+    }, [portfolio, positionQuotes]);
 
     // ─── Build Ticker Context ────────────────────────────────────────────────
 
@@ -578,7 +665,8 @@ function AnalystChatInner() {
 
         if (tickerAnalysis?.biasWeights) {
             const bw = tickerAnalysis.biasWeights;
-            parts.push(`\nBIAS ANALYSIS:`);
+            const signalCount = bw.signals_analyzed || 1;
+            parts.push(`\nBIAS ANALYSIS (aggregated across ${signalCount} signal${signalCount > 1 ? 's' : ''}):`);
             parts.push(`  Overall Bias: ${bw.overall_bias || 'N/A'} (Score: ${bw.overall_score || 'N/A'})`);
             if (bw.recency_bias) parts.push(`  Recency Bias: ${bw.recency_bias}/100`);
             if (bw.anchoring_bias) parts.push(`  Anchoring Bias: ${bw.anchoring_bias}/100`);
@@ -627,7 +715,10 @@ function AnalystChatInner() {
                 ? new Date(article.published_at).toLocaleDateString()
                 : 'Unknown date';
             const tickerTag = article.ticker && !activeTicker ? `[${article.ticker}] ` : '';
-            parts.push(`  • ${tickerTag}[${article.source}] ${article.title} (${timeStr})`);
+            const sentimentTag = article.sentiment_score != null
+                ? ` [Sentiment: ${article.sentiment_score > 0.3 ? 'Positive' : article.sentiment_score < -0.3 ? 'Negative' : 'Neutral'} (${article.sentiment_score.toFixed(2)})]`
+                : '';
+            parts.push(`  • ${tickerTag}[${article.source}] ${article.title} (${timeStr})${sentimentTag}`);
         }
         parts.push('=== END NEWS ===');
         return parts.join('\n');
@@ -1168,16 +1259,123 @@ function AnalystChatInner() {
                 let systemResponse = '';
 
                 switch (command) {
-                    case '/screen':
-                        systemResponse = `**Screening command recognized:** Searching for \`${args || 'general setups'}\`...\n\n*Note: In a full production environment, this would trigger the backend scanner with specific filter criteria and return the top results directly in this chat.*`;
+                    case '/screen': {
+                        const screenCriteria = args || 'high-conviction overreaction setups';
+                        // Show immediate feedback
+                        setMessages(prev => [...prev, {
+                            role: 'system',
+                            content: `Screening for: ${screenCriteria}...`,
+                            timestamp: new Date(),
+                        }]);
+
+                        // Build context from scanner results + portfolio for Gemini
+                        const screenContext = buildScannerContext();
+                        const portfolioCtx = buildPortfolioContext();
+
+                        try {
+                            const screenResult = await GeminiService.generate<string>({
+                                prompt: `You are a trading screen tool. The user wants to screen for: "${screenCriteria}".
+
+Here are the current active signals from the scanner:
+${screenContext || 'No active scanner signals available.'}
+
+${portfolioCtx}
+
+Based on the active signals and scanner data, return the top 3-5 matches for the user's criteria. For each match, include:
+- Ticker and signal type
+- Confidence score and projected ROI
+- Brief thesis (1-2 sentences)
+- Entry/target/stop if available
+- Why it matches the screen criteria
+
+If no signals match the criteria well, say so and suggest what to look for instead. Be concise and direct.`,
+                                requireGroundedSearch: true,
+                                temperature: 0.3,
+                            });
+
+                            if (screenResult.success && screenResult.data) {
+                                systemResponse = typeof screenResult.data === 'string'
+                                    ? screenResult.data
+                                    : JSON.stringify(screenResult.data);
+                            } else {
+                                systemResponse = `Screen failed: ${screenResult.error || 'Unknown error'}`;
+                            }
+                        } catch (screenErr: any) {
+                            systemResponse = `Screen error: ${screenErr.message}`;
+                        }
                         break;
-                    case '/compare':
+                    }
+                    case '/compare': {
                         if (!args) {
                             systemResponse = `**Usage:** \`/compare TICKER\`\nExample: \`/compare MSFT\` to compare ${ticker} with MSFT.`;
                         } else {
-                            systemResponse = `**Comparison command recognized:** Comparing ${ticker} vs \`${args.toUpperCase()}\`...\n\n*Note: This would fetch fundamental and technical data for both assets and provide a side-by-side Gemini analysis.*`;
+                            const compareTicker = args.trim().toUpperCase();
+                            // Show immediate feedback
+                            setMessages(prev => [...prev, {
+                                role: 'system',
+                                content: `Comparing ${ticker} vs ${compareTicker}...`,
+                                timestamp: new Date(),
+                            }]);
+
+                            try {
+                                // Fetch quotes for both tickers in parallel
+                                const [quoteA, quoteB] = await Promise.all([
+                                    MarketDataService.getQuote(ticker),
+                                    MarketDataService.getQuote(compareTicker),
+                                ]);
+
+                                // Fetch signals for both
+                                const [sigA, sigB] = await Promise.all([
+                                    supabase.from('signals')
+                                        .select('signal_type, confidence_score, thesis, target_price, stop_loss, projected_roi')
+                                        .eq('ticker', ticker).eq('status', 'active')
+                                        .order('created_at', { ascending: false }).limit(1).single(),
+                                    supabase.from('signals')
+                                        .select('signal_type, confidence_score, thesis, target_price, stop_loss, projected_roi')
+                                        .eq('ticker', compareTicker).eq('status', 'active')
+                                        .order('created_at', { ascending: false }).limit(1).single(),
+                                ]);
+
+                                const tickerCtx = buildTickerContext();
+
+                                const compareResult = await GeminiService.generate<string>({
+                                    prompt: `Compare these two stocks for a trading decision:
+
+**${ticker}:**
+- Price: $${quoteA?.price ?? 'N/A'} | Change: ${quoteA?.changePercent ?? 'N/A'}%
+- Volume: ${quoteA?.volume?.toLocaleString() ?? 'N/A'}
+${sigA.data ? `- Signal: ${sigA.data.signal_type} | Confidence: ${sigA.data.confidence_score}/100 | ROI: ${sigA.data.projected_roi ?? 'N/A'}%\n- Thesis: ${sigA.data.thesis || 'N/A'}` : '- No active signal'}
+${tickerCtx}
+
+**${compareTicker}:**
+- Price: $${quoteB?.price ?? 'N/A'} | Change: ${quoteB?.changePercent ?? 'N/A'}%
+- Volume: ${quoteB?.volume?.toLocaleString() ?? 'N/A'}
+${sigB.data ? `- Signal: ${sigB.data.signal_type} | Confidence: ${sigB.data.confidence_score}/100 | ROI: ${sigB.data.projected_roi ?? 'N/A'}%\n- Thesis: ${sigB.data.thesis || 'N/A'}` : '- No active signal'}
+
+Provide a side-by-side comparison covering:
+1. Valuation & momentum
+2. Risk profile
+3. Signal strength (if available)
+4. Clear recommendation: which is the better trade RIGHT NOW and why
+
+Be direct and opinionated. Use actual numbers.`,
+                                    requireGroundedSearch: true,
+                                    temperature: 0.3,
+                                });
+
+                                if (compareResult.success && compareResult.data) {
+                                    systemResponse = typeof compareResult.data === 'string'
+                                        ? compareResult.data
+                                        : JSON.stringify(compareResult.data);
+                                } else {
+                                    systemResponse = `Compare failed: ${compareResult.error || 'Unknown error'}`;
+                                }
+                            } catch (compareErr: any) {
+                                systemResponse = `Compare error: ${compareErr.message}`;
+                            }
                         }
                         break;
+                    }
                     case '/risk': {
                         const severitySum = tickerAnalysis?.events?.reduce((acc: number, ev: any) => acc + (ev?.severity || 0), 0) || 0;
                         systemResponse = `**Risk Profile for ${ticker}:**\n- Volatility (Beta): ${tickerAnalysis?.fundamentals?.beta || 'Unknown'}\n- Recent Events Severity: ${severitySum} (Cumulative)\n- AI Bias Confidence: ${tickerAnalysis?.biasWeights?.overall_score || 'Unknown'}/100\n\n*Note: This is a simulated risk profile based on current context.*`;
@@ -1386,49 +1584,101 @@ INSTRUCTIONS:
         }
     };
 
-    // ─── Quick Questions (portfolio-aware) ───────────────────────────────────
+    // ─── Quick Questions (AI-generated) ────────────────────────────────────
 
     const openPositions = portfolio?.positions.filter(p => p.status === 'open') ?? [];
     const hasPositions = openPositions.length > 0;
     const hasSignals = (portfolio?.activeSignals.length ?? 0) > 0;
     const hasNews = tickerNews.length > 0;
 
-    // Find positions with significant drawdowns for dynamic suggestions
-    const distressedPositions = openPositions.filter(p => {
-        if (!p.entry_price || !p.shares) return false;
-        // Rough check — we don't have live prices here, but realized_pnl on open = unrealized hint
-        return (p.realized_pnl ?? 0) < 0;
-    });
+    const [aiQuickQuestions, setAiQuickQuestions] = useState<string[] | null>(null);
 
-    const quickQuestions = activeTicker ? [
+    // Generate contextual quick questions via Gemini when portfolio/context loads
+    useEffect(() => {
+        if (!isOpen || messages.length > 0) return; // Only generate for empty chat
+        let cancelled = false;
+
+        async function generateQuickQuestions() {
+            // Build a compact context summary for the AI
+            const positionsSummary = openPositions.length > 0
+                ? openPositions.slice(0, 5).map(p => {
+                    const livePrice = positionQuotes[p.ticker];
+                    const pnlInfo = livePrice && p.entry_price
+                        ? ` (${((livePrice - p.entry_price) / p.entry_price * 100 * (p.side === 'short' ? -1 : 1)).toFixed(1)}%)`
+                        : '';
+                    return `${p.ticker} ${p.side}${pnlInfo}`;
+                }).join(', ')
+                : 'none';
+
+            const signalsSummary = (portfolio?.activeSignals || []).slice(0, 3)
+                .map(s => `${s.ticker} (${s.confidence_score}/100)`)
+                .join(', ') || 'none';
+
+            const newsSnippet = tickerNews.slice(0, 3)
+                .map(n => `${n.ticker ? `[${n.ticker}] ` : ''}${n.title}`)
+                .join('; ') || 'none';
+
+            try {
+                const result = await GeminiService.generate<string>({
+                    prompt: `Generate exactly 4 short, actionable trading questions a user would want to ask their AI analyst right now.
+
+Context:
+- Active ticker: ${activeTicker || 'none (global mode)'}
+- Open positions: ${positionsSummary}
+- Active signals: ${signalsSummary}
+- Recent news: ${newsSnippet}
+
+Rules:
+- Each question must be under 80 characters
+- Be specific — reference actual tickers from the context when relevant
+- Mix question types: risk, opportunity, portfolio, and market
+- If there's an active ticker, 2 questions should be about it
+- Return ONLY the 4 questions, one per line, no numbering or bullets`,
+                    temperature: 0.7,
+                    model: GEMINI_MODEL_LITE, // Use lite model for speed
+                });
+
+                if (!cancelled && result.success && result.data) {
+                    const text = typeof result.data === 'string' ? result.data : '';
+                    const questions = text.split('\n')
+                        .map((q: string) => q.replace(/^\d+[.)]\s*/, '').replace(/^[-•]\s*/, '').trim())
+                        .filter((q: string) => q.length > 10 && q.length < 100)
+                        .slice(0, 4);
+                    if (questions.length >= 2) {
+                        setAiQuickQuestions(questions);
+                    }
+                }
+            } catch {
+                // Silently fall back to hardcoded questions
+            }
+        }
+
+        // Small delay to avoid competing with other context fetches
+        const timer = setTimeout(generateQuickQuestions, 800);
+        return () => { cancelled = true; clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen, activeTicker, portfolio, tickerNews.length, messages.length]);
+
+    // Fallback hardcoded questions (used while AI generates or if it fails)
+    const fallbackQuestions = activeTicker ? [
         `What's the bull case for ${ticker}?`,
         ...(hasNews ? [`What's the latest news saying about ${ticker}?`] : []),
-        `Am I already overexposed to ${ticker}'s sector?`,
         `What are the biggest risks for ${ticker}?`,
         `Should I add to my ${ticker} position or trim?`,
     ].slice(0, 4) : [
-        ...(distressedPositions.length > 0 && distressedPositions[0] ? [
-            `My ${distressedPositions[0].ticker} position is underwater — should I cut or hold?`,
-        ] : []),
         ...(hasPositions ? [
             'Am I over-exposed to any single sector right now?',
             'Which of my positions has the worst risk/reward?',
         ] : []),
         ...(hasSignals ? [
             'What are the highest conviction signals I should act on?',
-            'Where should I rotate my capital based on active signals?',
         ] : [
             'What sectors are showing the most opportunity right now?',
-            'Find me high-conviction setups in the current market.',
         ]),
-        ...(hasPositions ? [
-            'Give me a portfolio health check — concentration, risk, and suggestions.',
-        ] : []),
-        ...(!hasPositions && !hasSignals ? [
-            'What is the overall market sentiment today?',
-            'Which sectors are showing extreme overreaction?',
-        ] : []),
+        'Give me a portfolio health check.',
     ].slice(0, 4);
+
+    const quickQuestions = aiQuickQuestions || fallbackQuestions;
 
     const availableCommands = [
         { cmd: '/screen', desc: 'Run a custom market screen', usage: '/screen ' },
