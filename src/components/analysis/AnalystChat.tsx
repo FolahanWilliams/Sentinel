@@ -978,26 +978,191 @@ function AnalystChatInner() {
             }
         }
 
-        // ACTION: Delete Position (mistaken entries only)
+        // ACTION: Delete Position (open or closed — for mistaken entries)
         if (messageText.includes('[ACTION:DELETE_POSITION]')) {
-            const deleteMatch = messageText.match(/\[ACTION:DELETE_POSITION\]\s*(\w+(?:\.\w+)?)/i);
+            const deleteMatch = messageText.match(/\[ACTION:DELETE_POSITION\]\s*(\w+(?:\.\w+)?)\s*(OPEN|CLOSED|ALL)?/i);
             if (deleteMatch?.[1]) {
                 const deleteTicker = deleteMatch[1].toUpperCase();
-                const { error } = await supabase
-                    .from('positions')
-                    .delete()
-                    .eq('ticker', deleteTicker)
-                    .eq('status', 'open');
+                const statusFilter = (deleteMatch[2] || '').toUpperCase();
+
+                let query = supabase.from('positions').delete().eq('ticker', deleteTicker);
+                if (statusFilter === 'OPEN') query = query.eq('status', 'open');
+                else if (statusFilter === 'CLOSED') query = query.eq('status', 'closed');
+                // No status filter = delete all matching ticker (both open and closed)
+
+                const { error, count } = await query;
                 if (!error) {
+                    const label = statusFilter ? statusFilter.toLowerCase() : 'all';
                     setMessages(prev => [...prev, {
                         role: 'system',
-                        content: `Position deleted: ${deleteTicker}`,
+                        content: `Deleted ${label} position(s) for ${deleteTicker}`,
                         timestamp: new Date(),
                     }]);
                 } else {
                     setMessages(prev => [...prev, {
                         role: 'system',
                         content: `Failed to delete ${deleteTicker}: ${error.message}`,
+                        timestamp: new Date(),
+                    }]);
+                }
+            }
+        }
+
+        // ACTION: Bulk delete all closed positions
+        if (messageText.includes('[ACTION:DELETE_ALL_CLOSED]')) {
+            const { data: closedPositions, error: fetchErr } = await supabase
+                .from('positions')
+                .select('id, ticker')
+                .eq('status', 'closed');
+
+            if (fetchErr) {
+                setMessages(prev => [...prev, {
+                    role: 'system',
+                    content: `Failed to fetch closed positions: ${fetchErr.message}`,
+                    timestamp: new Date(),
+                }]);
+            } else if (!closedPositions || closedPositions.length === 0) {
+                setMessages(prev => [...prev, {
+                    role: 'system',
+                    content: 'No closed positions to delete.',
+                    timestamp: new Date(),
+                }]);
+            } else {
+                const ids = closedPositions.map(p => p.id);
+                const { error: delErr } = await supabase
+                    .from('positions')
+                    .delete()
+                    .in('id', ids);
+
+                if (!delErr) {
+                    const tickers = [...new Set(closedPositions.map(p => p.ticker))].join(', ');
+                    setMessages(prev => [...prev, {
+                        role: 'system',
+                        content: `Deleted ${closedPositions.length} closed position(s): ${tickers}`,
+                        timestamp: new Date(),
+                    }]);
+                } else {
+                    setMessages(prev => [...prev, {
+                        role: 'system',
+                        content: `Failed to delete closed positions: ${delErr.message}`,
+                        timestamp: new Date(),
+                    }]);
+                }
+            }
+        }
+
+        // ACTION: Delete specific closed positions by tickers
+        if (messageText.includes('[ACTION:DELETE_CLOSED_TICKERS]')) {
+            const tickerListMatch = messageText.match(/\[ACTION:DELETE_CLOSED_TICKERS\]\s*(.+)/i);
+            if (tickerListMatch?.[1]) {
+                const tickers = tickerListMatch[1]
+                    .split(/[,\s]+/)
+                    .map(t => t.trim().toUpperCase())
+                    .filter(t => /^[A-Z0-9.]+$/.test(t));
+
+                if (tickers.length === 0) {
+                    setMessages(prev => [...prev, {
+                        role: 'system',
+                        content: 'No valid tickers provided for deletion.',
+                        timestamp: new Date(),
+                    }]);
+                } else {
+                    const { data: toDelete, error: fetchErr } = await supabase
+                        .from('positions')
+                        .select('id, ticker')
+                        .eq('status', 'closed')
+                        .in('ticker', tickers);
+
+                    if (fetchErr) {
+                        setMessages(prev => [...prev, {
+                            role: 'system',
+                            content: `Failed to find positions: ${fetchErr.message}`,
+                            timestamp: new Date(),
+                        }]);
+                    } else if (!toDelete || toDelete.length === 0) {
+                        setMessages(prev => [...prev, {
+                            role: 'system',
+                            content: `No closed positions found for: ${tickers.join(', ')}`,
+                            timestamp: new Date(),
+                        }]);
+                    } else {
+                        const ids = toDelete.map(p => p.id);
+                        const { error: delErr } = await supabase
+                            .from('positions')
+                            .delete()
+                            .in('id', ids);
+
+                        if (!delErr) {
+                            const deletedTickers = [...new Set(toDelete.map(p => p.ticker))].join(', ');
+                            setMessages(prev => [...prev, {
+                                role: 'system',
+                                content: `Deleted ${toDelete.length} closed position(s): ${deletedTickers}`,
+                                timestamp: new Date(),
+                            }]);
+                        } else {
+                            setMessages(prev => [...prev, {
+                                role: 'system',
+                                content: `Failed to delete positions: ${delErr.message}`,
+                                timestamp: new Date(),
+                            }]);
+                        }
+                    }
+                }
+            }
+        }
+
+        // ACTION: Delete signal outcomes (performance data cleanup)
+        if (messageText.includes('[ACTION:DELETE_SIGNAL_OUTCOMES]')) {
+            const outcomesMatch = messageText.match(/\[ACTION:DELETE_SIGNAL_OUTCOMES\]\s*(ALL|\w+(?:\.\w+)?(?:\s*,\s*\w+(?:\.\w+)?)*)?/i);
+            const target = (outcomesMatch?.[1] || '').trim().toUpperCase();
+
+            if (target === 'ALL' || target === '') {
+                const { error } = await supabase.from('signal_outcomes').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+                if (!error) {
+                    setMessages(prev => [...prev, {
+                        role: 'system',
+                        content: 'Deleted all signal outcomes (performance data reset).',
+                        timestamp: new Date(),
+                    }]);
+                } else {
+                    setMessages(prev => [...prev, {
+                        role: 'system',
+                        content: `Failed to delete signal outcomes: ${error.message}`,
+                        timestamp: new Date(),
+                    }]);
+                }
+            } else {
+                // Delete outcomes for specific tickers via their parent signals
+                const tickers = target.split(/[,\s]+/).map(t => t.trim()).filter(Boolean);
+                const { data: signals } = await supabase
+                    .from('signals')
+                    .select('id')
+                    .in('ticker', tickers);
+
+                if (signals && signals.length > 0) {
+                    const signalIds = signals.map(s => s.id);
+                    const { error } = await supabase
+                        .from('signal_outcomes')
+                        .delete()
+                        .in('signal_id', signalIds);
+
+                    if (!error) {
+                        setMessages(prev => [...prev, {
+                            role: 'system',
+                            content: `Deleted signal outcomes for: ${tickers.join(', ')}`,
+                            timestamp: new Date(),
+                        }]);
+                    } else {
+                        setMessages(prev => [...prev, {
+                            role: 'system',
+                            content: `Failed to delete signal outcomes: ${error.message}`,
+                            timestamp: new Date(),
+                        }]);
+                    }
+                } else {
+                    setMessages(prev => [...prev, {
+                        role: 'system',
+                        content: `No signals found for: ${tickers.join(', ')}`,
                         timestamp: new Date(),
                     }]);
                 }
@@ -1457,14 +1622,18 @@ INSTRUCTIONS:
    - Log a trade: [ACTION:ADD_POSITION] TICKER @PRICE xSHARES SIDE (e.g., [ACTION:ADD_POSITION] AAPL @150.00 x100 LONG)
    - Close a trade with exit price: [ACTION:CLOSE_POSITION] TICKER @EXIT_PRICE REASON (e.g., [ACTION:CLOSE_POSITION] AAPL @165.00 target_hit)
    - Update a position (shares, stop, entry): [ACTION:UPDATE_POSITION] TICKER FIELD=VALUE (e.g., [ACTION:UPDATE_POSITION] AAPL shares=50 or [ACTION:UPDATE_POSITION] AAPL entry_price=148.50)
-   - Delete/remove a position (mistaken entry): [ACTION:DELETE_POSITION] TICKER (e.g., [ACTION:DELETE_POSITION] AZN.L)
+   - Delete/remove a position (mistaken entry): [ACTION:DELETE_POSITION] TICKER STATUS (e.g., [ACTION:DELETE_POSITION] AZN.L CLOSED or [ACTION:DELETE_POSITION] META OPEN). STATUS is optional: OPEN, CLOSED, or ALL. Omit STATUS to delete all positions for that ticker.
+   - Bulk delete ALL closed positions: [ACTION:DELETE_ALL_CLOSED] (deletes every closed position — use when user says "delete all closed trades" or "clear my trade history")
+   - Delete specific closed positions by ticker list: [ACTION:DELETE_CLOSED_TICKERS] TICKER1 TICKER2 ... (e.g., [ACTION:DELETE_CLOSED_TICKERS] RIO.L AZN.L MRK META — deletes only the closed positions for those tickers)
+   - Delete signal outcomes (performance/win-rate data): [ACTION:DELETE_SIGNAL_OUTCOMES] ALL or [ACTION:DELETE_SIGNAL_OUTCOMES] TICKER1,TICKER2 (e.g., [ACTION:DELETE_SIGNAL_OUTCOMES] ALL resets all performance data; [ACTION:DELETE_SIGNAL_OUTCOMES] RIO.L,AZN.L clears outcomes for specific tickers)
    - Add to watchlist: [ACTION:ADD_WATCHLIST] TICKER (e.g., [ACTION:ADD_WATCHLIST] TSLA)
    - Remove from watchlist: [ACTION:REMOVE_WATCHLIST] TICKER (e.g., [ACTION:REMOVE_WATCHLIST] TSLA)
    - Run scanner on a ticker: [ACTION:RUN_SCAN] TICKER (e.g., [ACTION:RUN_SCAN] NVDA)
    - Run a specialized agent: [ACTION:RUN_AGENT] AGENT_TYPE TICKER (e.g., [ACTION:RUN_AGENT] SANITY_CHECK AAPL or [ACTION:RUN_AGENT] OVERREACTION NVDA or [ACTION:RUN_AGENT] EARNINGS MSFT)
    - Calculate position size: [ACTION:POSITION_SIZE] TICKER @PRICE TARGET=X STOP=X SIGNAL_TYPE (e.g., [ACTION:POSITION_SIZE] AAPL @150.00 TARGET=180.00 STOP=140.00 overreaction)
-   IMPORTANT: Use CLOSE_POSITION (not DELETE) when the user wants to exit a trade — this preserves the record with P&L. Use DELETE_POSITION only for mistaken entries.
+   IMPORTANT: Use CLOSE_POSITION (not DELETE) when the user wants to exit a trade — this preserves the record with P&L. Use DELETE_POSITION/DELETE_ALL_CLOSED/DELETE_CLOSED_TICKERS only for mistaken entries or data cleanup.
    IMPORTANT: When the user asks about position sizing, use [ACTION:POSITION_SIZE] to get real calculations from the engine.
+   IMPORTANT: When deleting trades that were logged by mistake, also offer to clean up the associated signal outcomes with [ACTION:DELETE_SIGNAL_OUTCOMES] so win-rate stats are accurate.
 7. If the user asks about something not in the provided context, use your knowledge and grounded search to answer.
 8. Do NOT add financial disclaimers. Be opinionated and direct — this is a trading intelligence system.
 9. At the END of your response, include 2-3 contextual follow-up questions the user might want to ask next, formatted as: [FOLLOWUPS] question1 | question2 | question3
