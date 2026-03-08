@@ -48,7 +48,9 @@ import { SectorRotationService } from './sectorRotation';
 import { MultiTimeframeService } from './multiTimeframe';
 import { DEFAULT_MIN_CONFIDENCE, DEFAULT_MIN_PRICE_DROP_PCT, CONFIDENCE_GATE_OVERREACTION, CONFIDENCE_GATE_CONTAGION, CONFIDENCE_GATE_CRITIQUE, CONFIDENCE_FLOOR, SEVERITY_THRESHOLD } from '@/config/constants';
 import type { MultiTimeframeResult } from './technicalAnalysis';
-import type { AgentOutputsJson, SignalType } from '@/types/signals';
+import type { AgentOutputsJson, SignalType, LynchCategory } from '@/types/signals';
+import type { Json } from '@/types/database';
+import type { Quote } from '@/types/market';
 
 export class ScannerService {
 
@@ -1044,11 +1046,11 @@ If there is genuinely no major news, return: {"events": []}`,
 
                                         const { data: savedSignal } = await supabase.from('signals').insert({
                                             ticker: ev.ticker,
-                                            signal_type: 'long_overreaction' as SignalType,
+                                            signal_type: 'long_overreaction',
                                             confidence_score: analysis.data.confidence_score,
                                             calibrated_confidence: calibratedConfidence,
                                             risk_level: sanity.data.risk_score > 80 ? 'low' : 'medium',
-                                            bias_type: 'recency_bias',
+                                            bias_type: (analysis.data as any).bias_type || 'recency_bias',
                                             thesis: analysis.data.thesis,
                                             counter_argument: sanity.data.counter_thesis,
                                             suggested_entry_low: analysis.data.suggested_entry_low,
@@ -1056,7 +1058,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                             stop_loss: stopLoss,
                                             target_price: analysis.data.target_price,
                                             trailing_stop_rule: trailingStopRule,
-                                            ta_snapshot: taSnapshot,
+                                            ta_snapshot: taSnapshot as unknown as Json,
                                             ta_alignment: taAlignment,
                                             confluence_score: confluence.score,
                                             confluence_level: confluence.level,
@@ -1144,11 +1146,11 @@ If there is genuinely no major news, return: {"events": []}`,
                                                 conviction_filter: analysis.data.conviction_score != null ? {
                                                     conviction_score: analysis.data.conviction_score,
                                                     moat_rating: analysis.data.moat_rating,
-                                                    lynch_category: analysis.data.lynch_category,
+                                                    lynch_category: analysis.data.lynch_category as LynchCategory,
                                                     why_high_conviction: analysis.data.why_high_conviction,
                                                     margin_of_safety_pct: marginOfSafetyPct,
                                                 } : null,
-                                            },
+                                            } as unknown as Json,
                                             margin_of_safety_pct: marginOfSafetyPct,
                                             conviction_score: typeof analysis.data.conviction_score === 'number'
                                                 ? Math.max(0, Math.min(100, Math.round(analysis.data.conviction_score))) : null,
@@ -1161,7 +1163,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                             secondary_biases: [],
                                             sources: [],
                                             is_paper: false
-                                        } as any).select().single();
+                                        }).select().single();
 
                                         // 8b. Seed outcome tracking row so OutcomeTracker can follow this signal
                                         if (savedSignal) {
@@ -1248,7 +1250,7 @@ If there is genuinely no major news, return: {"events": []}`,
 
                                                 // Evaluate each satellite
                                                 for (const sat of satellites.slice(0, 3)) { // Cap at 3 to control API cost
-                                                    let satQuote;
+                                                    let satQuote: Quote | null = null;
                                                     try {
                                                         satQuote = await MarketDataService.getQuote(sat.ticker);
                                                     } catch (e: any) {
@@ -1283,7 +1285,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                                             // Margin-of-safety check for contagion
                                                             const contagionMos = ConvictionGuardrails.checkMarginOfSafety(
                                                                 satQuote.price,
-                                                                satQuote.fiftyTwoWeekHigh,
+                                                                (satQuote as any).fiftyTwoWeekHigh ?? 0,
                                                                 contagion.data.confidence_score,
                                                             );
                                                             if (!contagionMos.passed) {
@@ -1291,15 +1293,16 @@ If there is genuinely no major news, return: {"events": []}`,
                                                                 continue;
                                                             }
 
-                                                            const contagionMarginPct = satQuote.fiftyTwoWeekHigh && satQuote.fiftyTwoWeekHigh > 0
-                                                                ? Math.round(((satQuote.fiftyTwoWeekHigh - satQuote.price) / satQuote.fiftyTwoWeekHigh) * 1000) / 10
+                                                            const contagionMarginPct = (satQuote as any).fiftyTwoWeekHigh && (satQuote as any).fiftyTwoWeekHigh > 0
+                                                                ? Math.round((((satQuote as any).fiftyTwoWeekHigh - satQuote.price) / (satQuote as any).fiftyTwoWeekHigh) * 1000) / 10
                                                                 : null;
 
                                                             signalsGenerated++;
 
                                                             // Confluence for contagion signal
+                                                            const satSnapshot = await TechnicalAnalysisService.getSnapshot(sat.ticker);
                                                             const contagionConfluence = TechnicalAnalysisService.computeConfluence(
-                                                                null, 'long', contagion.data.confidence_score
+                                                                satSnapshot, 'long', contagion.data.confidence_score
                                                             );
 
                                                             const { data: savedContagionSignal } = await supabase.from('signals').insert({
@@ -1307,7 +1310,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                                                 signal_type: 'sector_contagion',
                                                                 confidence_score: contagion.data.confidence_score,
                                                                 risk_level: contagionSanity.data.risk_score > 80 ? 'low' : 'medium',
-                                                                bias_type: 'representativeness_heuristic',
+                                                                bias_type: contagion.data.bias_type || 'representativeness_heuristic',
                                                                 thesis: contagion.data.thesis,
                                                                 counter_argument: contagionSanity.data.counter_thesis,
                                                                 suggested_entry_low: contagion.data.suggested_entry_low,
@@ -1320,7 +1323,8 @@ If there is genuinely no major news, return: {"events": []}`,
                                                                     contagion: contagion.data,
                                                                     red_team: contagionSanity.data,
                                                                     epicenter: { ticker: ev.ticker, headline: ev.headline }
-                                                                },
+                                                                } as unknown as Json,
+                                                                ta_snapshot: satSnapshot as unknown as Json,
                                                                 status: 'active',
                                                                 calibrated_confidence: await (async () => {
                                                                     try {
@@ -1613,14 +1617,14 @@ If there is genuinely no major news, return: {"events": []}`,
                             confidence_score: singleConfidence,
                             calibrated_confidence: calibratedConf,
                             risk_level: sanity.data.risk_score > 80 ? 'low' : 'medium',
-                            bias_type: 'recency_bias',
+                            bias_type: (analysis.data as any).bias_type || 'recency_bias',
                             thesis: analysis.data.thesis,
                             counter_argument: sanity.data.counter_thesis,
                             suggested_entry_low: analysis.data.suggested_entry_low,
                             suggested_entry_high: analysis.data.suggested_entry_high,
                             stop_loss: analysis.data.stop_loss,
                             target_price: analysis.data.target_price,
-                            ta_snapshot: singleTaSnapshot,
+                            ta_snapshot: singleTaSnapshot as unknown as Json,
                             ta_alignment: singleTaAlignment,
                             confluence_score: discConfluence.score,
                             confluence_level: discConfluence.level,
@@ -1628,7 +1632,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                 overreaction: analysis.data,
                                 red_team: sanity.data,
                                 self_critique: critiqueOutput,
-                            },
+                            } as unknown as Json,
                             margin_of_safety_pct: singleMarginPct,
                             conviction_score: typeof analysis.data.conviction_score === 'number'
                                 ? Math.max(0, Math.min(100, Math.round(analysis.data.conviction_score))) : null,

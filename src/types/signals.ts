@@ -3,6 +3,7 @@
  */
 
 import type { BiasType } from '@/config/constants';
+export type { BiasType };
 
 export type SignalType = 'long_overreaction' | 'short_overreaction' | 'sector_contagion' | 'earnings_overreaction' | 'information';
 export type LynchCategory = 'fast_grower' | 'stalwart' | 'turnaround' | 'asset_play' | 'cyclical' | 'slow_grower';
@@ -75,9 +76,12 @@ export interface Signal {
     updated_at: string;
 }
 
+import type { OverreactionResult, SanityCheckResult, ContagionResult } from './agents';
+
 export interface AgentOutputsJson {
-    overreaction?: any;
-    red_team?: any;
+    overreaction?: OverreactionResult;
+    red_team?: SanityCheckResult;
+    contagion?: ContagionResult;
     self_critique?: any;
     sentiment_divergence?: {
         type: string;
@@ -216,7 +220,7 @@ export interface BiasClassification {
     };
 }
 
-export interface SanityCheckResult {
+export interface TradeSanityCheck {
     pass_filter: boolean;
     overall_health: 'healthy' | 'concerning' | 'distressed';
     green_flags: string[];
@@ -259,7 +263,7 @@ export interface HistoricalMatch {
 export interface TradingSignal extends Signal {
     market_events: import('./events').MarketEvent[];
     bias_classification: BiasClassification;
-    sanity_check: SanityCheckResult;
+    sanity_check: TradeSanityCheck;
     historical_matches: HistoricalMatchResult;
     position_sizing?: PositionSizing;
 }

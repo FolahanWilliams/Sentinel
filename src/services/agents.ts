@@ -21,7 +21,7 @@ import {
     SATELLITE_DISCOVERY_SCHEMA
 } from './schemas';
 import { GEMINI_MODEL } from '@/config/constants';
-import type { AgentResult } from '@/types/agents';
+import type { AgentResult, OverreactionResult, ContagionResult, SanityCheckResult } from '@/types/agents';
 
 /**
  * Extended market context for richer agent analysis.
@@ -51,7 +51,7 @@ export class AgentService {
         marketContext?: MarketContext,
         taContext?: string,
         historicalContext?: string
-    ): Promise<AgentResult<any>> {
+    ): Promise<AgentResult<OverreactionResult>> {
         const perfBlock = performanceContext
             ? `\n\n${performanceContext}\n\nUse the performance data above to calibrate your confidence. If this bias type or sector historically underperforms, lower your confidence. If it outperforms, you may raise it slightly.`
             : '';
@@ -101,7 +101,7 @@ export class AgentService {
         satelliteDropPct: number,
         performanceContext?: string,
         marketContext?: MarketContext
-    ): Promise<AgentResult<any>> {
+    ): Promise<AgentResult<ContagionResult>> {
         const perfBlock = performanceContext
             ? `\n\n${performanceContext}\n\nUse the performance data above to calibrate your confidence. If sector contagion signals historically underperform, be more skeptical. If they outperform, you may be slightly more confident.`
             : '';
@@ -198,7 +198,7 @@ export class AgentService {
         agentType: string,
         performanceContext?: string,
         taContext?: string
-    ): Promise<AgentResult<any>> {
+    ): Promise<AgentResult<SanityCheckResult>> {
         const perfBlock = performanceContext
             ? `\n\n${performanceContext}\n\nAs the Red Team, use this performance history to identify systemic weaknesses. If the originating agent type or sector has a poor track record, be EXTRA skeptical and demand stronger evidence.`
             : '';

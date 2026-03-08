@@ -20,6 +20,16 @@ export const OVERREACTION_SCHEMA = {
             items: { type: "string" },
             description: "List of cognitive biases identified (e.g., 'recency_bias', 'herding')."
         },
+        bias_type: {
+            type: "string",
+            enum: ["bullish", "bearish", "neutral"],
+            description: "The primary direction of the expected correction. For an overreaction dip, this is 'bullish'."
+        },
+        secondary_biases: {
+            type: "array",
+            items: { type: "string", enum: ["bullish", "bearish", "neutral"] },
+            description: "Any secondary directional biases."
+        },
         thesis: { type: "string", description: "Brief, objective explanation of why this is a mean-reversion setup." },
         financial_impact_assessment: { type: "string", description: "Assessment of the actual long-term cash flow impact." },
         suggested_entry_low: { type: "number", description: "Suggested low-end of entry zone." },
@@ -32,7 +42,7 @@ export const OVERREACTION_SCHEMA = {
         conviction_score: { type: "integer", description: "Overall conviction 0-100 combining moat quality, growth/value profile, catalyst strength, and margin of safety. Only ≥70 represents a truly high-conviction Buffett/Lynch setup." },
         why_high_conviction: { type: "string", description: "If conviction_score ≥ 70, explain what makes this a Buffett/Lynch quality setup. If < 70, explain the key weakness." }
     },
-    required: ["reasoning", "is_overreaction", "confidence_score", "identified_biases", "thesis", "financial_impact_assessment", "stop_loss", "target_price", "moat_rating", "lynch_category", "conviction_score"]
+    required: ["reasoning", "is_overreaction", "confidence_score", "identified_biases", "bias_type", "secondary_biases", "thesis", "financial_impact_assessment", "stop_loss", "target_price", "moat_rating", "lynch_category", "conviction_score"]
 };
 
 export const CONTAGION_SCHEMA = {
@@ -42,6 +52,16 @@ export const CONTAGION_SCHEMA = {
         is_contagion: { type: "boolean", description: "True if the ticker dropped purely in sympathy without actual exposure." },
         confidence_score: { type: "integer", description: "0-100 confidence score." },
         epicenter_ticker: { type: "string", description: "The ticker that originally caused the sector drop." },
+        bias_type: {
+            type: "string",
+            enum: ["bullish", "bearish", "neutral"],
+            description: "The primary direction of the expected correction. For a contagion dip, this is 'bullish'."
+        },
+        secondary_biases: {
+            type: "array",
+            items: { type: "string", enum: ["bullish", "bearish", "neutral"] },
+            description: "Any secondary directional biases."
+        },
         thesis: { type: "string", description: "Why the satellite ticker is immune to the epicenter's problem." },
         exposure_analysis: { type: "string", description: "Analysis of the actual fundamental overlap between the two companies." },
         suggested_entry_low: { type: "number" },
@@ -54,7 +74,7 @@ export const CONTAGION_SCHEMA = {
         conviction_score: { type: "integer", description: "Overall conviction 0-100 combining moat quality, growth profile, and catalyst strength for the satellite ticker." },
         why_high_conviction: { type: "string", description: "If conviction_score ≥ 70, explain the Buffett/Lynch quality case. If < 70, explain the key weakness." }
     },
-    required: ["reasoning", "is_contagion", "confidence_score", "epicenter_ticker", "thesis", "exposure_analysis", "stop_loss", "target_price", "moat_rating", "lynch_category", "conviction_score"]
+    required: ["reasoning", "is_contagion", "confidence_score", "epicenter_ticker", "bias_type", "secondary_biases", "thesis", "exposure_analysis", "stop_loss", "target_price", "moat_rating", "lynch_category", "conviction_score"]
 };
 
 export const EARNINGS_SCHEMA = {

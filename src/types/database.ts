@@ -497,6 +497,56 @@ export type Database = {
         }
         Relationships: []
       }
+      signal_lessons: {
+        Row: {
+          category: string
+          conviction_score: number | null
+          created_at: string | null
+          id: string
+          lesson_text: string
+          lynch_category: string | null
+          moat_rating: number | null
+          outcome_impact: string | null
+          signal_id: string | null
+          ticker: string | null
+          trade_return_pct: number | null
+        }
+        Insert: {
+          category: string
+          conviction_score?: number | null
+          created_at?: string | null
+          id?: string
+          lesson_text: string
+          lynch_category?: string | null
+          moat_rating?: number | null
+          outcome_impact?: string | null
+          signal_id?: string | null
+          ticker?: string | null
+          trade_return_pct?: number | null
+        }
+        Update: {
+          category?: string
+          conviction_score?: number | null
+          created_at?: string | null
+          id?: string
+          lesson_text?: string
+          lynch_category?: string | null
+          moat_rating?: number | null
+          outcome_impact?: string | null
+          signal_id?: string | null
+          ticker?: string | null
+          trade_return_pct?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "signal_lessons_signal_id_fkey"
+            columns: ["signal_id"]
+            isOneToOne: false
+            referencedRelation: "signals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       signal_outcomes: {
         Row: {
           completed_at: string | null
@@ -609,6 +659,7 @@ export type Database = {
           confidence_score: number
           confluence_level: string | null
           confluence_score: number | null
+          conviction_score: number | null
           correction_probability: number | null
           counter_argument: string | null
           created_at: string
@@ -619,6 +670,9 @@ export type Database = {
           historical_win_rate: number | null
           id: string
           is_paper: boolean
+          lynch_category: string | null
+          margin_of_safety_pct: number | null
+          moat_rating: number | null
           projected_roi: number | null
           projected_win_rate: number | null
           risk_level: string
@@ -638,6 +692,7 @@ export type Database = {
           trailing_stop_rule: string | null
           updated_at: string
           user_notes: string | null
+          why_high_conviction: string | null
         }
         Insert: {
           agent_outputs?: Json | null
@@ -647,6 +702,7 @@ export type Database = {
           confidence_score: number
           confluence_level?: string | null
           confluence_score?: number | null
+          conviction_score?: number | null
           correction_probability?: number | null
           counter_argument?: string | null
           created_at?: string
@@ -657,6 +713,9 @@ export type Database = {
           historical_win_rate?: number | null
           id?: string
           is_paper?: boolean
+          lynch_category?: string | null
+          margin_of_safety_pct?: number | null
+          moat_rating?: number | null
           projected_roi?: number | null
           projected_win_rate?: number | null
           risk_level: string
@@ -676,6 +735,7 @@ export type Database = {
           trailing_stop_rule?: string | null
           updated_at?: string
           user_notes?: string | null
+          why_high_conviction?: string | null
         }
         Update: {
           agent_outputs?: Json | null
@@ -685,6 +745,7 @@ export type Database = {
           confidence_score?: number
           confluence_level?: string | null
           confluence_score?: number | null
+          conviction_score?: number | null
           correction_probability?: number | null
           counter_argument?: string | null
           created_at?: string
@@ -695,6 +756,9 @@ export type Database = {
           historical_win_rate?: number | null
           id?: string
           is_paper?: boolean
+          lynch_category?: string | null
+          margin_of_safety_pct?: number | null
+          moat_rating?: number | null
           projected_roi?: number | null
           projected_win_rate?: number | null
           risk_level?: string
@@ -714,6 +778,7 @@ export type Database = {
           trailing_stop_rule?: string | null
           updated_at?: string
           user_notes?: string | null
+          why_high_conviction?: string | null
         }
         Relationships: [
           {

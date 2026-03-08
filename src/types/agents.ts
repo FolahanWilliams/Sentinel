@@ -4,7 +4,7 @@
 
 export interface AgentResult<T> {
     success: boolean;
-    data: T | null;
+    data: T; // Change from T | null to T, as data is expected to be present on success
     error: string | null;
     duration_ms: number;
     tokens_used: number;
@@ -12,10 +12,59 @@ export interface AgentResult<T> {
     grounded_search_used: boolean;
 }
 
+export interface OverreactionResult {
+    reasoning: string;
+    is_overreaction: boolean;
+    confidence_score: number;
+    identified_biases: string[];
+    bias_type: import('./signals').BiasType;
+    secondary_biases: import('./signals').BiasType[];
+    thesis: string;
+    financial_impact_assessment: string;
+    suggested_entry_low: number;
+    suggested_entry_high: number;
+    stop_loss: number;
+    target_price: number;
+    timeframe_days: number;
+    moat_rating: number;
+    lynch_category: import('./signals').LynchCategory;
+    conviction_score: number;
+    why_high_conviction: string;
+}
+
+export interface ContagionResult {
+    reasoning: string;
+    is_contagion: boolean;
+    confidence_score: number;
+    epicenter_ticker: string;
+    bias_type: import('./signals').BiasType;
+    secondary_biases: import('./signals').BiasType[];
+    thesis: string;
+    exposure_analysis: string;
+    suggested_entry_low: number;
+    suggested_entry_high: number;
+    stop_loss: number;
+    target_price: number;
+    timeframe_days: number;
+    moat_rating: number;
+    lynch_category: import('./signals').LynchCategory;
+    conviction_score: number;
+    why_high_conviction: string;
+}
+
+export interface SanityCheckResult {
+    reasoning: string;
+    passes_sanity_check: boolean;
+    risk_score: number;
+    fatal_flaws: string[];
+    macro_obstacles: string;
+    counter_thesis: string;
+}
+
 export interface AgentOutputs {
     event_detection: AgentResult<import('./events').DetectionResult>;
     bias_classification: AgentResult<import('./signals').BiasClassification> | null;
-    sanity_check: AgentResult<import('./signals').SanityCheckResult> | null;
+    sanity_check: AgentResult<SanityCheckResult> | null;
     historical_match: AgentResult<import('./signals').HistoricalMatchResult> | null;
     signal_synthesis: AgentResult<import('./signals').TradingSignal> | null;
 }
