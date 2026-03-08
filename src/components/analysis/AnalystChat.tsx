@@ -990,7 +990,7 @@ function AnalystChatInner() {
                 else if (statusFilter === 'CLOSED') query = query.eq('status', 'closed');
                 // No status filter = delete all matching ticker (both open and closed)
 
-                const { error, count } = await query;
+                const { error } = await query;
                 if (!error) {
                     const label = statusFilter ? statusFilter.toLowerCase() : 'all';
                     setMessages(prev => [...prev, {
