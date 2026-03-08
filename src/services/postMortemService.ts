@@ -11,6 +11,7 @@
 import { supabase } from '@/config/supabase';
 import { GeminiService } from './gemini';
 import { GEMINI_MODEL_LITE } from '@/config/constants';
+import { PostMortemService as LessonExtractor } from './postMortem';
 
 const POST_MORTEM_PROMPT = `You are SENTINEL's Trade Post-Mortem Analyst.
 
@@ -129,6 +130,40 @@ Write the post-mortem analysis.`;
             console.error('[PostMortem] Failed to save:', error);
         } else {
             console.log(`[PostMortem] Saved post-mortem for position ${positionId}`);
+        }
+
+        // Extract structured lesson to signal_lessons table (fire-and-forget)
+        try {
+            // Look up conviction data from the linked signal
+            const { data: position } = await supabase
+                .from('positions')
+                .select('signal_id')
+                .eq('id', positionId)
+                .single();
+
+            let signalData: any = null;
+            if (position?.signal_id) {
+                const { data } = await supabase
+                    .from('signals')
+                    .select('conviction_score, moat_rating, lynch_category, thesis')
+                    .eq('id', position.signal_id)
+                    .single();
+                signalData = data;
+            }
+
+            const outcome = input.realized_pnl >= 0 ? 'win' : 'loss';
+            await LessonExtractor.analyze({
+                signal_id: position?.signal_id || undefined,
+                ticker: input.ticker,
+                outcome,
+                return_pct: input.realized_pnl_pct,
+                conviction_score: signalData?.conviction_score ?? undefined,
+                moat_rating: signalData?.moat_rating ?? undefined,
+                lynch_category: signalData?.lynch_category ?? undefined,
+                thesis: signalData?.thesis ?? postMortem,
+            });
+        } catch (err) {
+            console.warn('[PostMortem] Lesson extraction failed (non-fatal):', err);
         }
     }
 }
