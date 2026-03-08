@@ -94,6 +94,7 @@ export function SectorHeatMap() {
                 setSectors(sectorStats);
             } catch (err) {
                 console.error('[SectorHeatMap] Failed to load:', err);
+                setSectors([]); // Ensure empty state renders instead of stale data
             }
             setLoading(false);
         }

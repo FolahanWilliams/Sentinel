@@ -67,18 +67,21 @@ export function WatchlistSuggestions() {
 
     // Fetch user's current watchlist
     useEffect(() => {
+        let cancelled = false;
         async function fetchWatchlist() {
             const { data } = await supabase
                 .from('watchlist')
                 .select('ticker')
                 .eq('is_active', true);
 
+            if (cancelled) return;
             if (data) {
                 setWatchlistTickers(new Set(data.map(w => w.ticker.toUpperCase())));
             }
             setWatchlistLoading(false);
         }
         fetchWatchlist();
+        return () => { cancelled = true; };
     }, []);
 
     // Find trending tickers NOT in watchlist

@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { Search, Filter, AlertTriangle } from 'lucide-react';
 import { motion } from 'framer-motion';
 import type { ArticleCategory } from '@/types/sentinel';
@@ -20,6 +21,14 @@ export function FilterBar({
     activeSentiment, setActiveSentiment,
     highImpactOnly, setHighImpactOnly
 }: FilterBarProps) {
+    // Debounce search input — avoids filtering 1000+ articles on every keystroke
+    const [searchInput, setSearchInput] = useState(searchQuery);
+    useEffect(() => {
+        const timer = setTimeout(() => setSearchQuery(searchInput), 300);
+        return () => clearTimeout(timer);
+    }, [searchInput, setSearchQuery]);
+    // Sync external changes (e.g., clear)
+    useEffect(() => { setSearchInput(searchQuery); }, [searchQuery]);
 
     const toggleCategory = (cat: ArticleCategory) => {
         setActiveCategories(prev => {
@@ -41,8 +50,9 @@ export function FilterBar({
                     <input
                         type="text"
                         placeholder="Search briefings, entities, tickers..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
+                        aria-label="Search intelligence articles"
+                        value={searchInput}
+                        onChange={(e) => setSearchInput(e.target.value)}
                         className="w-full bg-sentinel-950/60 border border-sentinel-700/50 rounded-lg pl-10 pr-4 py-2 text-sm focus:outline-none transition-shadow text-white placeholder-sentinel-500 glass-input-recessed glass-focus-ring"
                     />
                 </div>
@@ -51,6 +61,7 @@ export function FilterBar({
                 <div className="flex gap-2 w-full sm:w-auto">
                     <select
                         value={activeSentiment}
+                        aria-label="Filter by sentiment"
                         onChange={(e) => setActiveSentiment(e.target.value as any)}
                         className="bg-sentinel-950/60 border border-sentinel-700/50 rounded-lg px-3 py-2 text-sm text-sentinel-300 focus:outline-none appearance-none flex-1 sm:flex-none cursor-pointer glass-input-recessed glass-focus-ring"
                     >

@@ -37,17 +37,24 @@ export function PortfolioOverview() {
 
     // Fetch watchlist to get sector data for tickers
     useEffect(() => {
+        let cancelled = false;
         async function fetchSectors() {
-            const { data } = await supabase
-                .from('watchlist')
-                .select('ticker, sector');
-            if (data) {
-                const map: Record<string, string> = {};
-                data.forEach(w => { map[w.ticker] = w.sector || 'Other'; });
-                setSectorMap(map);
+            try {
+                const { data } = await supabase
+                    .from('watchlist')
+                    .select('ticker, sector');
+                if (cancelled) return;
+                if (data) {
+                    const map: Record<string, string> = {};
+                    data.forEach(w => { map[w.ticker] = w.sector || 'Other'; });
+                    setSectorMap(map);
+                }
+            } catch (err) {
+                console.warn('[PortfolioOverview] Failed to fetch sectors:', err);
             }
         }
         fetchSectors();
+        return () => { cancelled = true; };
     }, []);
 
     // Fetch live quotes via shared web worker — offloads polling from the main thread

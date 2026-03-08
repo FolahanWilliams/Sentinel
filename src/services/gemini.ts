@@ -97,10 +97,20 @@ export class GeminiService {
                     // Strip markdown code fences — grounded search calls skip responseSchema
                     // on the proxy side, so Gemini may wrap JSON in ```json ... ```
                     const cleanText = data.text.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
-                    parsedData = JSON.parse(cleanText) as T;
-                } catch {
-                    console.error('[GeminiService] Failed to parse JSON response:', data.text?.slice(0, 200));
-                    throw new Error('Gemini returned invalid JSON');
+                    const parsed = JSON.parse(cleanText);
+                    // Basic shape validation: if schema declares required top-level keys, verify they exist
+                    const requiredKeys = req.responseSchema?.required as string[] | undefined;
+                    if (requiredKeys && typeof parsed === 'object' && parsed !== null) {
+                        const missing = requiredKeys.filter((k: string) => !(k in parsed));
+                        if (missing.length > 0) {
+                            console.error(`[GeminiService] Response missing required keys: ${missing.join(', ')}`);
+                            throw new Error(`Gemini response missing required fields: ${missing.join(', ')}`);
+                        }
+                    }
+                    parsedData = parsed as T;
+                } catch (parseErr: any) {
+                    console.error('[GeminiService] Failed to parse/validate JSON response:', data.text?.slice(0, 200), parseErr.message);
+                    throw new Error(parseErr.message?.includes('missing required') ? parseErr.message : 'Gemini returned invalid JSON');
                 }
             } else {
                 parsedData = data.text as unknown as T;

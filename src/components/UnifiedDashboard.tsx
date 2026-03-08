@@ -6,7 +6,7 @@
  * with one cohesive trading intelligence interface.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
 import { usePortfolio } from '@/hooks/usePortfolio';
@@ -15,10 +15,12 @@ import { formatPrice, formatPercent } from '@/utils/formatters';
 import { calcUnrealizedPnl, getPositionPrice } from '@/utils/portfolio';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 import { SignalsSection } from '@/components/dashboard/SignalsSection';
-import { UnifiedPortfolioView } from '@/components/dashboard/UnifiedPortfolioView';
-import { WatchlistSection } from '@/components/dashboard/WatchlistSection';
-import { PerformanceMetrics } from '@/components/dashboard/PerformanceMetrics';
-import { SentinelPanel } from '@/components/sentinel/SentinelPanel';
+
+// Lazy-load tab components — only one tab is visible at a time
+const UnifiedPortfolioView = lazy(() => import('@/components/dashboard/UnifiedPortfolioView').then(m => ({ default: m.UnifiedPortfolioView })));
+const WatchlistSection = lazy(() => import('@/components/dashboard/WatchlistSection').then(m => ({ default: m.WatchlistSection })));
+const PerformanceMetrics = lazy(() => import('@/components/dashboard/PerformanceMetrics').then(m => ({ default: m.PerformanceMetrics })));
+const SentinelPanel = lazy(() => import('@/components/sentinel/SentinelPanel').then(m => ({ default: m.SentinelPanel })));
 import {
     Activity, Briefcase, Eye, BarChart3, Zap, User, TrendingUp, Newspaper,
 } from 'lucide-react';
@@ -263,15 +265,17 @@ export function UnifiedDashboard() {
                         id={`tab-panel-${activeTab}`}
                         aria-label={TABS.find(t => t.id === activeTab)?.label}
                     >
-                        {activeTab === 'signals' && <SignalsSection />}
-                        {activeTab === 'intelligence' && (
-                            <div className="h-[calc(100vh-16rem)]">
-                                <SentinelPanel />
-                            </div>
-                        )}
-                        {activeTab === 'portfolio' && <UnifiedPortfolioView />}
-                        {activeTab === 'watchlist' && <WatchlistSection />}
-                        {activeTab === 'performance' && <PerformanceMetrics />}
+                        <Suspense fallback={<div className="flex items-center justify-center py-16"><div className="w-6 h-6 border-2 border-sentinel-600 border-t-sentinel-300 rounded-full animate-spin" /></div>}>
+                            {activeTab === 'signals' && <SignalsSection />}
+                            {activeTab === 'intelligence' && (
+                                <div className="h-[calc(100vh-16rem)]">
+                                    <SentinelPanel />
+                                </div>
+                            )}
+                            {activeTab === 'portfolio' && <UnifiedPortfolioView />}
+                            {activeTab === 'watchlist' && <WatchlistSection />}
+                            {activeTab === 'performance' && <PerformanceMetrics />}
+                        </Suspense>
                     </motion.div>
                 </AnimatePresence>
 

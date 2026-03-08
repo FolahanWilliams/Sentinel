@@ -22,7 +22,8 @@ const cache = new Map<string, CacheEntry<any>>();
 
 export class MarketDataService {
     // Throttle: enforce minimum 500ms between Edge Function calls for market data
-    private static lastScheduledTime = 0;
+    // Uses a queue promise to serialize concurrent calls and prevent thundering herd
+    private static throttleQueue: Promise<void> = Promise.resolve();
     private static readonly MIN_CALL_INTERVAL_MS = 500;
 
     /**
@@ -40,15 +41,10 @@ export class MarketDataService {
             }
         }
 
-        // Throttle: properly queue concurrent calls
-        const now = Date.now();
-        const scheduledTime = Math.max(now, this.lastScheduledTime + this.MIN_CALL_INTERVAL_MS);
-        this.lastScheduledTime = scheduledTime;
-
-        const delay = scheduledTime - now;
-        if (delay > 0) {
-            await new Promise(res => setTimeout(res, delay));
-        }
+        // Throttle: chain onto queue to serialize concurrent calls
+        await (this.throttleQueue = this.throttleQueue.then(
+            () => new Promise(res => setTimeout(res, this.MIN_CALL_INTERVAL_MS))
+        ));
 
         // 2. Call Edge Function 
         console.log(`[MarketData Proxy Request] Fetching quote for ${ticker}...`);
