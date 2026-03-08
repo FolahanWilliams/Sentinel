@@ -491,9 +491,12 @@ export function ImportHLCSV({ onClose, existingTickers = [], existingPositions =
         }
 
         // Auto-close positions missing from the CSV (sold on HL)
+        // Filter out any that were already deleted in the duplicate-replace step above
         let closed = 0;
-        if (autoCloseEnabled && missingPositions.length > 0) {
-            for (const pos of missingPositions) {
+        const deletedTickers = new Set(selected.filter(h => h.isDuplicate).map(h => h.ticker.toUpperCase()));
+        const toAutoClose = missingPositions.filter(p => !deletedTickers.has(p.ticker.toUpperCase()));
+        if (autoCloseEnabled && toAutoClose.length > 0) {
+            for (const pos of toAutoClose) {
                 try {
                     // Try to get last market quote for exit price
                     let exitPrice = pos.entry_price ?? 0;
