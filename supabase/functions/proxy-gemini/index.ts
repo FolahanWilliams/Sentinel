@@ -81,6 +81,96 @@ async function callGemini(
     }
 }
 
+/**
+ * Call the Gemini API with streaming (SSE) and relay chunks to the client.
+ * Returns an SSE ReadableStream.
+ */
+async function callGeminiStream(
+    model: string,
+    payload: any,
+    apiKey: string
+): Promise<{ stream: ReadableStream; inputTokens: number; outputTokens: number }> {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 45_000)
+
+    const geminiRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse`,
+        {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'x-goog-api-key': apiKey,
+            },
+            body: JSON.stringify(payload),
+            signal: controller.signal,
+        }
+    )
+
+    if (!geminiRes.ok) {
+        clearTimeout(timeoutId)
+        const errorText = await geminiRes.text()
+        throw new Error(`Gemini API ${geminiRes.status}: ${errorText}`)
+    }
+
+    const reader = geminiRes.body!.getReader()
+    const decoder = new TextDecoder()
+    let totalInputTokens = 0
+    let totalOutputTokens = 0
+    let buffer = ''
+
+    const stream = new ReadableStream({
+        async start(ctrl) {
+            try {
+                while (true) {
+                    const { done, value } = await reader.read()
+                    if (done) break
+
+                    buffer += decoder.decode(value, { stream: true })
+                    const lines = buffer.split('\n')
+                    buffer = lines.pop() || ''
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const jsonStr = line.slice(6).trim()
+                            if (!jsonStr) continue
+                            try {
+                                const chunk = JSON.parse(jsonStr)
+                                const text = chunk.candidates?.[0]?.content?.parts?.[0]?.text || ''
+                                if (chunk.usageMetadata) {
+                                    totalInputTokens = chunk.usageMetadata.promptTokenCount || totalInputTokens
+                                    totalOutputTokens = chunk.usageMetadata.candidatesTokenCount || totalOutputTokens
+                                }
+                                if (text) {
+                                    const sseData = `data: ${JSON.stringify({ text })}\n\n`
+                                    ctrl.enqueue(new TextEncoder().encode(sseData))
+                                }
+                            } catch {
+                                // Skip malformed chunks
+                            }
+                        }
+                    }
+                }
+                // Send metadata at the end
+                const metaData = `data: ${JSON.stringify({ done: true, inputTokens: totalInputTokens, outputTokens: totalOutputTokens })}\n\ndata: [DONE]\n\n`
+                ctrl.enqueue(new TextEncoder().encode(metaData))
+                ctrl.close()
+            } catch (err: any) {
+                const errorData = `data: ${JSON.stringify({ error: err.message })}\n\n`
+                ctrl.enqueue(new TextEncoder().encode(errorData))
+                ctrl.close()
+            } finally {
+                clearTimeout(timeoutId)
+            }
+        },
+        cancel() {
+            clearTimeout(timeoutId)
+            reader.cancel()
+        }
+    })
+
+    return { stream, inputTokens: totalInputTokens, outputTokens: totalOutputTokens }
+}
+
 serve(async (req) => {
     // 1. Handle CORS preflight
     if (req.method === 'OPTIONS') {
@@ -128,7 +218,8 @@ serve(async (req) => {
             requireGroundedSearch = false,
             responseSchema,
             temperature,
-            enableThinking = false
+            enableThinking = false,
+            stream = false
         } = await req.json()
 
         if (!prompt && (!messages || messages.length === 0)) {
@@ -149,6 +240,57 @@ serve(async (req) => {
         // Use gemini-3-flash-preview for all calls including grounded search —
         // better reasoning and logic quality outweighs the speed difference.
         const effectiveModel = requireGroundedSearch ? 'gemini-3-flash-preview' : model
+
+        // 3b. Handle streaming requests
+        if (stream) {
+            const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY')
+            if (!GEMINI_API_KEY) {
+                return new Response(
+                    JSON.stringify({ success: false, error: 'Server configuration error' }),
+                    { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
+                )
+            }
+
+            const effectiveTemp = typeof temperature === 'number'
+                ? Math.max(0.0, Math.min(2.0, temperature))
+                : 0.2
+
+            const contents = messages && Array.isArray(messages) && messages.length > 0
+                ? messages.map((m: any) => ({ role: m.role, parts: [{ text: m.text }] }))
+                : [{ role: 'user', parts: [{ text: prompt }] }]
+
+            const streamPayload: any = {
+                contents,
+                generationConfig: { temperature: effectiveTemp },
+            }
+            if (systemInstruction) {
+                streamPayload.systemInstruction = { parts: [{ text: systemInstruction }] }
+            }
+            if (requireGroundedSearch) {
+                streamPayload.tools = [{ googleSearch: {} }]
+            }
+            if (enableThinking) {
+                streamPayload.generationConfig.thinkingConfig = { thinkingBudget: 2048 }
+            }
+
+            try {
+                const { stream: sseStream } = await callGeminiStream(effectiveModel, streamPayload, GEMINI_API_KEY)
+                return new Response(sseStream, {
+                    headers: {
+                        ...corsHeaders,
+                        'Content-Type': 'text/event-stream',
+                        'Cache-Control': 'no-cache',
+                        'Connection': 'keep-alive',
+                    },
+                })
+            } catch (streamErr: any) {
+                console.error(`[proxy-gemini] Stream error: ${streamErr.message}`)
+                return new Response(
+                    JSON.stringify({ success: false, error: 'Streaming failed', detail: streamErr.message }),
+                    { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 502 }
+                )
+            }
+        }
 
         // 4. Initialize clients
         const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''

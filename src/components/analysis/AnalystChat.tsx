@@ -21,7 +21,11 @@ import { MarketDataService } from '@/services/marketData';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 import { formatPrice } from '@/utils/formatters';
 import { inferCurrency, getPositionExposure } from '@/utils/portfolio';
+import { PostMortemService } from '@/services/postMortemService';
+import { PositionSizer } from '@/services/positionSizer';
+import { AgentService } from '@/services/agents';
 import type { Position, PortfolioConfig } from '@/hooks/usePortfolio';
+import type { TASnapshot } from '@/types/signals';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -335,19 +339,61 @@ function AnalystChatInner() {
         return () => { cancelled = true; };
     }, [isOpen]);
 
-    const [messages, setMessages] = useState<ChatMessage[]>(() => {
-        try {
-            const stored = sessionStorage.getItem(`sentinel_chat_${ticker}`);
-            if (stored) {
-                const parsed = JSON.parse(stored);
-                return parsed.map((m: any) => ({ ...m, timestamp: new Date(m.timestamp) }));
-            }
-        } catch { /* ignore */ }
-        return [];
-    });
+    const [messages, setMessages] = useState<ChatMessage[]>([]);
+    const [conversationId, setConversationId] = useState<string | null>(null);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [isDragging, setIsDragging] = useState(false);
+
+    // Load conversation from Supabase on open (with sessionStorage as fast cache)
+    useEffect(() => {
+        if (!isOpen) return;
+        let cancelled = false;
+
+        async function loadConversation() {
+            // Try sessionStorage first for instant load
+            try {
+                const cached = sessionStorage.getItem(`sentinel_chat_${ticker}`);
+                if (cached) {
+                    const parsed = JSON.parse(cached);
+                    if (!cancelled && parsed.messages?.length > 0) {
+                        setMessages(parsed.messages.map((m: any) => ({ ...m, timestamp: new Date(m.timestamp) })));
+                        if (parsed.id) setConversationId(parsed.id);
+                        if (parsed.summary) setConversationSummary(parsed.summary);
+                    }
+                }
+            } catch { /* ignore */ }
+
+            // Then load from Supabase (authoritative)
+            try {
+                const { data } = await supabase
+                    .from('chat_conversations')
+                    .select('id, messages, summary')
+                    .eq('ticker', ticker)
+                    .order('updated_at', { ascending: false })
+                    .limit(1)
+                    .single();
+
+                if (!cancelled && data) {
+                    const dbMessages = (data.messages as any[] || []).map((m: any) => ({
+                        ...m,
+                        timestamp: new Date(m.timestamp),
+                    }));
+                    if (dbMessages.length > 0) {
+                        setMessages(dbMessages);
+                    }
+                    setConversationId(data.id);
+                    if (data.summary) setConversationSummary(data.summary);
+                }
+            } catch {
+                // No existing conversation — will create one on first message
+            }
+        }
+
+        loadConversation();
+        return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen, ticker]);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
@@ -376,26 +422,56 @@ function AnalystChatInner() {
         } catch { /* ignore */ }
     };
 
-    // Persist messages to sessionStorage (cap at 50 messages to prevent quota overflow)
+    // Persist messages to sessionStorage (fast) + Supabase (durable)
+    const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     useEffect(() => {
-        if (messages.length > 0) {
+        if (messages.length === 0) return;
+
+        // 1. Always write to sessionStorage immediately
+        try {
+            const toStore = messages.slice(-50);
+            sessionStorage.setItem(`sentinel_chat_${ticker}`, JSON.stringify({
+                id: conversationId,
+                summary: conversationSummary,
+                messages: toStore,
+            }));
+        } catch { /* quota exceeded — non-critical */ }
+
+        // 2. Debounced write to Supabase (500ms after last message change)
+        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = setTimeout(async () => {
+            const toSave = messages.slice(-100); // Keep last 100 in DB
             try {
-                const toStore = messages.slice(-50); // Keep last 50 messages max
-                sessionStorage.setItem(`sentinel_chat_${ticker}`, JSON.stringify(toStore));
-            } catch {
-                // Quota exceeded — clear oldest chat caches to make room
-                try {
-                    for (let i = 0; i < sessionStorage.length; i++) {
-                        const key = sessionStorage.key(i);
-                        if (key?.startsWith('sentinel_chat_') && key !== `sentinel_chat_${ticker}`) {
-                            sessionStorage.removeItem(key);
-                            break; // Remove one at a time
-                        }
-                    }
-                } catch { /* give up */ }
+                if (conversationId) {
+                    await supabase
+                        .from('chat_conversations')
+                        .update({
+                            messages: toSave as any,
+                            summary: conversationSummary || null,
+                            updated_at: new Date().toISOString(),
+                        })
+                        .eq('id', conversationId);
+                } else if (toSave.length > 0) {
+                    const { data } = await supabase
+                        .from('chat_conversations')
+                        .insert({
+                            ticker,
+                            messages: toSave as any,
+                            summary: conversationSummary || null,
+                        })
+                        .select('id')
+                        .single();
+                    if (data?.id) setConversationId(data.id);
+                }
+            } catch (err) {
+                console.warn('[AnalystChat] Failed to persist to Supabase:', err);
             }
-        }
-    }, [messages, ticker]);
+        }, 500);
+
+        return () => {
+            if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+        };
+    }, [messages, ticker, conversationId, conversationSummary]);
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -583,10 +659,10 @@ function AnalystChatInner() {
 
     const summarizeHistory = useCallback(async (msgs: ChatMessage[]): Promise<string> => {
         // Only summarize if we have enough messages
-        if (msgs.length < 10) return conversationSummary;
+        if (msgs.length < 14) return conversationSummary;
 
-        // Take older messages beyond the recent window
-        const olderMessages = msgs.slice(0, -6);
+        // Take older messages beyond the recent window (12 messages)
+        const olderMessages = msgs.slice(0, -12);
         if (olderMessages.length === 0) return conversationSummary;
 
         const historyText = olderMessages.map(m =>
@@ -613,26 +689,30 @@ function AnalystChatInner() {
         return conversationSummary;
     }, [conversationSummary]);
 
-    // ─── Extract Follow-up Suggestions ────────────────────────────────────
+    // ─── Extract AI-generated Follow-up Suggestions ─────────────────────────
 
     const extractFollowups = useCallback((assistantResponse: string): string[] => {
-        const followups: string[] = [];
+        // First try to extract AI-generated follow-ups from the [FOLLOWUPS] tag
+        const followupMatch = assistantResponse.match(/\[FOLLOWUPS\]\s*(.+?)$/m);
+        if (followupMatch?.[1]) {
+            const aiFollowups = followupMatch[1]
+                .split('|')
+                .map(q => q.trim())
+                .filter(q => q.length > 0)
+                .slice(0, 3);
+            if (aiFollowups.length >= 2) return aiFollowups;
+        }
 
-        // Check for specific content patterns and generate relevant follow-ups
+        // Fallback: keyword-based suggestions
+        const followups: string[] = [];
         const lowerResp = assistantResponse.toLowerCase();
 
         if (activeTicker) {
-            if (lowerResp.includes('risk') || lowerResp.includes('stop loss') || lowerResp.includes('downside')) {
-                followups.push(`What's a good stop-loss level for ${ticker}?`);
-            }
-            if (lowerResp.includes('bullish') || lowerResp.includes('upside') || lowerResp.includes('buy')) {
+            if (lowerResp.includes('risk') || lowerResp.includes('stop loss')) {
                 followups.push(`What's the optimal position size for ${ticker}?`);
             }
-            if (lowerResp.includes('bearish') || lowerResp.includes('sell') || lowerResp.includes('trim')) {
-                followups.push(`Should I hedge my ${ticker} exposure?`);
-            }
-            if (lowerResp.includes('earnings') || lowerResp.includes('report')) {
-                followups.push(`How has ${ticker} performed after recent earnings?`);
+            if (lowerResp.includes('bullish') || lowerResp.includes('upside')) {
+                followups.push(`Run a sanity check on ${ticker}`);
             }
             if (followups.length < 2) {
                 followups.push(`Compare ${ticker} with its top competitor`);
@@ -641,15 +721,11 @@ function AnalystChatInner() {
             if (lowerResp.includes('sector')) {
                 followups.push('Which sectors have the strongest momentum right now?');
             }
-            if (lowerResp.includes('exposure') || lowerResp.includes('concentration')) {
+            if (lowerResp.includes('exposure')) {
                 followups.push('How should I rebalance to reduce concentration risk?');
-            }
-            if (lowerResp.includes('signal')) {
-                followups.push('Which active signal has the best risk/reward ratio?');
             }
         }
 
-        // Always offer a general follow-up
         if (followups.length < 3) {
             followups.push(activeTicker
                 ? `What are the key catalysts for ${ticker} this quarter?`
@@ -658,6 +734,418 @@ function AnalystChatInner() {
 
         return followups.slice(0, 3);
     }, [activeTicker, ticker]);
+
+    // ─── Execute Actions from AI Response ─────────────────────────────────
+
+    const executeActions = useCallback(async (messageText: string) => {
+        // ACTION: Add Position
+        if (messageText.includes('[ACTION:ADD_POSITION]')) {
+            const actionMatch = messageText.match(/\[ACTION:ADD_POSITION\]\s*(\w+(?:\.\w+)?)\s*@?\s*\$?([\d.]+)\s*x?\s*(\d+)?\s*(LONG|SHORT)?/i);
+            if (actionMatch) {
+                const [, actionTicker, price, shares, side] = actionMatch;
+                await supabase.from('positions').insert({
+                    ticker: (actionTicker || ticker).toUpperCase(),
+                    entry_price: parseFloat(price || '0'),
+                    shares: parseInt(shares || '100', 10),
+                    side: (side || 'long').toLowerCase(),
+                    status: 'open',
+                    currency: inferCurrency((actionTicker || ticker).toUpperCase()),
+                    opened_at: new Date().toISOString(),
+                });
+                setMessages(prev => [...prev, {
+                    role: 'system',
+                    content: `Position added: ${(actionTicker || ticker).toUpperCase()}`,
+                    timestamp: new Date(),
+                }]);
+            }
+        }
+
+        // ACTION: Close Position (with P&L calc + post-mortem)
+        if (messageText.includes('[ACTION:CLOSE_POSITION]')) {
+            const closeMatch = messageText.match(/\[ACTION:CLOSE_POSITION\]\s*(\w+(?:\.\w+)?)\s*@?\s*\$?([\d.]+)\s*([\w_]+)?/i);
+            if (closeMatch?.[1] && closeMatch?.[2]) {
+                const closeTicker = closeMatch[1].toUpperCase();
+                const exitPrice = parseFloat(closeMatch[2]);
+                const closeReason = closeMatch[3] || 'manual';
+
+                // Find the open position
+                const { data: openPos } = await supabase
+                    .from('positions')
+                    .select('*')
+                    .eq('ticker', closeTicker)
+                    .eq('status', 'open')
+                    .limit(1)
+                    .single();
+
+                if (openPos && openPos.entry_price && openPos.shares) {
+                    const multiplier = openPos.side === 'short' ? -1 : 1;
+                    const realizedPnl = (exitPrice - openPos.entry_price) * openPos.shares * multiplier;
+                    const realizedPnlPct = ((exitPrice - openPos.entry_price) / openPos.entry_price) * 100 * multiplier;
+
+                    const { error } = await supabase.from('positions')
+                        .update({
+                            status: 'closed',
+                            exit_price: exitPrice,
+                            closed_at: new Date().toISOString(),
+                            realized_pnl: realizedPnl,
+                            realized_pnl_pct: realizedPnlPct,
+                            close_reason: closeReason,
+                        })
+                        .eq('id', openPos.id);
+
+                    if (!error) {
+                        const pnlStr = `${realizedPnl >= 0 ? '+' : ''}$${realizedPnl.toFixed(2)} (${realizedPnlPct >= 0 ? '+' : ''}${realizedPnlPct.toFixed(1)}%)`;
+                        setMessages(prev => [...prev, {
+                            role: 'system',
+                            content: `Position closed: ${closeTicker} @ $${exitPrice.toFixed(2)} | P&L: ${pnlStr}`,
+                            timestamp: new Date(),
+                        }]);
+
+                        // Fire-and-forget post-mortem generation
+                        PostMortemService.generateAndSave(openPos.id, {
+                            ticker: closeTicker,
+                            side: openPos.side,
+                            entry_price: openPos.entry_price,
+                            exit_price: exitPrice,
+                            shares: openPos.shares,
+                            realized_pnl: realizedPnl,
+                            realized_pnl_pct: realizedPnlPct,
+                            opened_at: openPos.opened_at || new Date().toISOString(),
+                            closed_at: new Date().toISOString(),
+                            close_reason: closeReason,
+                            original_notes: openPos.notes || undefined,
+                        }).catch(err => console.error('[Chat] Post-mortem failed:', err));
+                    } else {
+                        setMessages(prev => [...prev, {
+                            role: 'system',
+                            content: `Failed to close ${closeTicker}: ${error.message}`,
+                            timestamp: new Date(),
+                        }]);
+                    }
+                } else {
+                    setMessages(prev => [...prev, {
+                        role: 'system',
+                        content: `No open position found for ${closeTicker}`,
+                        timestamp: new Date(),
+                    }]);
+                }
+            }
+        }
+
+        // ACTION: Update Position
+        if (messageText.includes('[ACTION:UPDATE_POSITION]')) {
+            const updateMatch = messageText.match(/\[ACTION:UPDATE_POSITION\]\s*(\w+(?:\.\w+)?)\s+(\w+)=([\d.]+)/i);
+            if (updateMatch?.[1] && updateMatch?.[2] && updateMatch?.[3]) {
+                const updateTicker = updateMatch[1].toUpperCase();
+                const field = updateMatch[2].toLowerCase();
+                const value = parseFloat(updateMatch[3]);
+
+                const allowedFields: Record<string, string> = {
+                    shares: 'shares',
+                    entry_price: 'entry_price',
+                    stop_loss: 'notes', // Store stop loss in notes since no dedicated column
+                };
+
+                if (allowedFields[field]) {
+                    const updateData: Record<string, any> = {};
+                    if (field === 'stop_loss') {
+                        // Append stop loss to notes
+                        const { data: pos } = await supabase
+                            .from('positions')
+                            .select('notes')
+                            .eq('ticker', updateTicker)
+                            .eq('status', 'open')
+                            .limit(1)
+                            .single();
+
+                        const existingNotes = (pos as any)?.notes || '';
+                        updateData.notes = `${existingNotes}\n[Stop Loss: $${value.toFixed(2)}]`.trim();
+                    } else {
+                        updateData[allowedFields[field]!] = value;
+                    }
+
+                    const { error } = await supabase.from('positions')
+                        .update(updateData)
+                        .eq('ticker', updateTicker)
+                        .eq('status', 'open');
+
+                    if (!error) {
+                        setMessages(prev => [...prev, {
+                            role: 'system',
+                            content: `Position updated: ${updateTicker} ${field} = ${value}`,
+                            timestamp: new Date(),
+                        }]);
+                    } else {
+                        setMessages(prev => [...prev, {
+                            role: 'system',
+                            content: `Failed to update ${updateTicker}: ${error.message}`,
+                            timestamp: new Date(),
+                        }]);
+                    }
+                }
+            }
+        }
+
+        // ACTION: Delete Position (mistaken entries only)
+        if (messageText.includes('[ACTION:DELETE_POSITION]')) {
+            const deleteMatch = messageText.match(/\[ACTION:DELETE_POSITION\]\s*(\w+(?:\.\w+)?)/i);
+            if (deleteMatch?.[1]) {
+                const deleteTicker = deleteMatch[1].toUpperCase();
+                const { error } = await supabase
+                    .from('positions')
+                    .delete()
+                    .eq('ticker', deleteTicker)
+                    .eq('status', 'open');
+                if (!error) {
+                    setMessages(prev => [...prev, {
+                        role: 'system',
+                        content: `Position deleted: ${deleteTicker}`,
+                        timestamp: new Date(),
+                    }]);
+                } else {
+                    setMessages(prev => [...prev, {
+                        role: 'system',
+                        content: `Failed to delete ${deleteTicker}: ${error.message}`,
+                        timestamp: new Date(),
+                    }]);
+                }
+            }
+        }
+
+        // ACTION: Add to Watchlist
+        if (messageText.includes('[ACTION:ADD_WATCHLIST]')) {
+            const watchMatch = messageText.match(/\[ACTION:ADD_WATCHLIST\]\s*(\w+(?:\.\w+)?)/i);
+            if (watchMatch?.[1]) {
+                const watchTicker = watchMatch[1].toUpperCase();
+                await supabase.from('watchlist').upsert(
+                    { ticker: watchTicker, is_active: true, sector: 'Other', company_name: watchTicker } as any,
+                    { onConflict: 'ticker' }
+                );
+                setMessages(prev => [...prev, {
+                    role: 'system',
+                    content: `Added ${watchTicker} to watchlist`,
+                    timestamp: new Date(),
+                }]);
+            }
+        }
+
+        // ACTION: Remove from Watchlist
+        if (messageText.includes('[ACTION:REMOVE_WATCHLIST]')) {
+            const removeMatch = messageText.match(/\[ACTION:REMOVE_WATCHLIST\]\s*(\w+(?:\.\w+)?)/i);
+            if (removeMatch?.[1]) {
+                const removeTicker = removeMatch[1].toUpperCase();
+                const { error } = await supabase.from('watchlist')
+                    .update({ is_active: false } as any)
+                    .eq('ticker', removeTicker);
+                if (!error) {
+                    setMessages(prev => [...prev, {
+                        role: 'system',
+                        content: `Removed ${removeTicker} from watchlist`,
+                        timestamp: new Date(),
+                    }]);
+                }
+            }
+        }
+
+        // ACTION: Run Scanner
+        if (messageText.includes('[ACTION:RUN_SCAN]')) {
+            const scanMatch = messageText.match(/\[ACTION:RUN_SCAN\]\s*(\w+(?:\.\w+)?)/i);
+            if (scanMatch?.[1]) {
+                const scanTicker = scanMatch[1].toUpperCase();
+                setMessages(prev => [...prev, {
+                    role: 'system',
+                    content: `Opening scanner for ${scanTicker}...`,
+                    timestamp: new Date(),
+                }]);
+                setTimeout(() => {
+                    window.location.href = `/scanner?ticker=${scanTicker}`;
+                }, 500);
+            }
+        }
+
+        // ACTION: Run Agent (Overreaction, Sanity Check, Earnings)
+        if (messageText.includes('[ACTION:RUN_AGENT]')) {
+            const agentMatch = messageText.match(/\[ACTION:RUN_AGENT\]\s*(\w+)\s+(\w+(?:\.\w+)?)/i);
+            if (agentMatch?.[1] && agentMatch?.[2]) {
+                const agentType = agentMatch[1].toUpperCase();
+                const agentTicker = agentMatch[2].toUpperCase();
+
+                setMessages(prev => [...prev, {
+                    role: 'system',
+                    content: `Running ${agentType} agent on ${agentTicker}...`,
+                    timestamp: new Date(),
+                }]);
+
+                try {
+                    let agentResult: any = null;
+                    const agentQuote = await MarketDataService.getQuote(agentTicker);
+                    const currentPrice = agentQuote?.price || 0;
+
+                    // Fetch latest event for context
+                    const { data: latestEvent } = await supabase
+                        .from('market_events')
+                        .select('headline, description, price_change_pct')
+                        .eq('ticker', agentTicker)
+                        .order('detected_at', { ascending: false })
+                        .limit(1)
+                        .single();
+
+                    if (agentType === 'OVERREACTION') {
+                        agentResult = await AgentService.evaluateOverreaction(
+                            agentTicker,
+                            latestEvent?.headline || `Analyzing ${agentTicker}`,
+                            latestEvent?.description || 'User-requested analysis',
+                            currentPrice,
+                            Math.abs(latestEvent?.price_change_pct || 0),
+                        );
+                    } else if (agentType === 'SANITY_CHECK') {
+                        // Get the latest signal thesis for this ticker
+                        const { data: signal } = await supabase
+                            .from('signals')
+                            .select('thesis, target_price, stop_loss, signal_type')
+                            .eq('ticker', agentTicker)
+                            .eq('status', 'active')
+                            .order('created_at', { ascending: false })
+                            .limit(1)
+                            .single();
+
+                        if (signal) {
+                            agentResult = await AgentService.runSanityCheck(
+                                agentTicker,
+                                signal.thesis || '',
+                                signal.target_price || currentPrice * 1.1,
+                                signal.stop_loss || currentPrice * 0.9,
+                                signal.signal_type || 'overreaction',
+                            );
+                        } else {
+                            setMessages(prev => [...prev, {
+                                role: 'system',
+                                content: `No active signal found for ${agentTicker} — sanity check requires an existing thesis to red-team.`,
+                                timestamp: new Date(),
+                            }]);
+                        }
+                    } else if (agentType === 'EARNINGS') {
+                        agentResult = await AgentService.evaluateEarnings(
+                            agentTicker, 0, 0, 0, 0,
+                            latestEvent?.description || 'User-requested earnings analysis',
+                            Math.abs(latestEvent?.price_change_pct || 0),
+                        );
+                    }
+
+                    if (agentResult?.success && agentResult.data) {
+                        const data = agentResult.data;
+                        let summary = `**${agentType} Agent Result for ${agentTicker}:**\n`;
+
+                        if (agentType === 'OVERREACTION' && data.reasoning) {
+                            summary += `Overreaction: ${data.is_overreaction ? 'YES' : 'NO'} | Confidence: ${data.confidence_score}/100\n`;
+                            summary += `Thesis: ${data.thesis || 'N/A'}\n`;
+                            if (data.target_price) summary += `Target: $${data.target_price} | Stop: $${data.stop_loss}\n`;
+                            summary += `Reasoning: ${data.reasoning.slice(0, 300)}`;
+                        } else if (agentType === 'SANITY_CHECK') {
+                            summary += `Passes: ${data.passes_sanity_check ? 'YES' : 'NO'} | Risk: ${data.risk_score}/100\n`;
+                            if (data.fatal_flaws?.length) summary += `Fatal Flaws: ${data.fatal_flaws.join('; ')}\n`;
+                            summary += `Counter-thesis: ${data.counter_thesis || 'N/A'}`;
+                        } else if (agentType === 'EARNINGS') {
+                            summary += JSON.stringify(data, null, 2).slice(0, 500);
+                        }
+
+                        setMessages(prev => [...prev, {
+                            role: 'system',
+                            content: summary,
+                            timestamp: new Date(),
+                        }]);
+                    } else if (agentResult && !agentResult.success) {
+                        setMessages(prev => [...prev, {
+                            role: 'system',
+                            content: `Agent ${agentType} failed: ${agentResult.error || 'Unknown error'}`,
+                            timestamp: new Date(),
+                        }]);
+                    }
+                } catch (agentErr: any) {
+                    setMessages(prev => [...prev, {
+                        role: 'system',
+                        content: `Agent error: ${agentErr.message}`,
+                        timestamp: new Date(),
+                    }]);
+                }
+            }
+        }
+
+        // ACTION: Position Size calculation
+        if (messageText.includes('[ACTION:POSITION_SIZE]')) {
+            const sizeMatch = messageText.match(/\[ACTION:POSITION_SIZE\]\s*(\w+(?:\.\w+)?)\s*@?\s*\$?([\d.]+)\s*TARGET=([\d.]+)\s*STOP=([\d.]+)\s*(\w+)?/i);
+            if (sizeMatch?.[1] && sizeMatch?.[2]) {
+                const sizeTicker = sizeMatch[1].toUpperCase();
+                const entryPrice = parseFloat(sizeMatch[2]);
+                const targetPrice = sizeMatch[3] ? parseFloat(sizeMatch[3]) : null;
+                // sizeMatch[4] is the user-provided stop loss (for reference in prompt context)
+                const signalType = sizeMatch[5] || 'overreaction';
+
+                setMessages(prev => [...prev, {
+                    role: 'system',
+                    content: `Calculating position size for ${sizeTicker}...`,
+                    timestamp: new Date(),
+                }]);
+
+                try {
+                    // Fetch TA snapshot if available
+                    const { data: signalData } = await supabase
+                        .from('signals')
+                        .select('ta_snapshot, confidence_score, confluence_score, conviction_score')
+                        .eq('ticker', sizeTicker)
+                        .eq('status', 'active')
+                        .order('created_at', { ascending: false })
+                        .limit(1)
+                        .single();
+
+                    const taSnapshot = signalData?.ta_snapshot as TASnapshot | null;
+                    const confidence = signalData?.confidence_score || 65;
+                    const confluenceScore = signalData?.confluence_score || undefined;
+                    const convictionScore = signalData?.conviction_score || undefined;
+
+                    const result = await PositionSizer.calculateSizeV2(
+                        confidence,
+                        entryPrice,
+                        targetPrice,
+                        signalType,
+                        taSnapshot,
+                        sizeTicker,
+                        confluenceScore,
+                        convictionScore,
+                    );
+
+                    let sizeMsg = `**Position Size for ${sizeTicker}:**\n`;
+                    sizeMsg += `Recommended: ${result.recommendedPct.toFixed(2)}% ($${result.usdValue.toFixed(2)})`;
+                    if (result.shares) sizeMsg += ` = ~${result.shares} shares`;
+                    sizeMsg += `\nMethod: ${result.method.replace('_', ' ')}`;
+                    if (result.stopLoss) sizeMsg += ` | Stop: $${result.stopLoss.toFixed(2)}`;
+                    if (result.riskRewardRatio) sizeMsg += ` | R:R ${result.riskRewardRatio}:1`;
+                    if (result.trailingStopRule) sizeMsg += `\n${result.trailingStopRule}`;
+                    if (result.limitReason) sizeMsg += `\nNote: ${result.limitReason}`;
+
+                    sizeMsg += `\n\nComparison: Fixed ${result.comparisons.fixedPct.pct}% ($${result.comparisons.fixedPct.usd.toFixed(0)})`;
+                    sizeMsg += ` | Risk-based ${result.comparisons.riskBased.pct}% ($${result.comparisons.riskBased.usd.toFixed(0)})`;
+                    if (result.comparisons.kelly) sizeMsg += ` | Kelly ${result.comparisons.kelly.pct}% ($${result.comparisons.kelly.usd.toFixed(0)})`;
+
+                    if (result.drawdownScaling && result.drawdownScaling.scalingFactor < 1) {
+                        sizeMsg += `\nDrawdown: ${result.drawdownScaling.currentDrawdownPct.toFixed(1)}% → sizing at ${Math.round(result.drawdownScaling.scalingFactor * 100)}%`;
+                    }
+
+                    setMessages(prev => [...prev, {
+                        role: 'system',
+                        content: sizeMsg,
+                        timestamp: new Date(),
+                    }]);
+                } catch (sizeErr: any) {
+                    setMessages(prev => [...prev, {
+                        role: 'system',
+                        content: `Position sizing error: ${sizeErr.message}`,
+                        timestamp: new Date(),
+                    }]);
+                }
+            }
+        }
+    }, [ticker, setMessages]);
 
     // ─── Send Message ────────────────────────────────────────────────────────
 
@@ -705,6 +1193,14 @@ function AnalystChatInner() {
                         break;
                     case '/clear':
                         setMessages([]);
+                        setConversationSummary('');
+                        // Clear Supabase conversation
+                        if (conversationId) {
+                            supabase.from('chat_conversations').delete().eq('id', conversationId).then(() => {
+                                setConversationId(null);
+                            });
+                        }
+                        try { sessionStorage.removeItem(`sentinel_chat_${ticker}`); } catch { /* ignore */ }
                         setIsLoading(false);
                         return;
                     default:
@@ -726,10 +1222,10 @@ function AnalystChatInner() {
             const newsContext = buildNewsContext();
             const scannerContext = buildScannerContext();
 
-            // Build conversation history with rolling memory
-            const recentMessages = messages.slice(-6);
+            // Build conversation history with rolling memory (expanded window)
+            const recentMessages = messages.slice(-12);
             const historyBlock = recentMessages.map(m =>
-                `${m.role === 'user' ? 'USER' : (m.role === 'assistant' ? 'ANALYST' : 'SYSTEM')}: ${m.content}`
+                `${m.role === 'user' ? 'USER' : (m.role === 'assistant' ? 'ANALYST' : 'SYSTEM')}: ${m.content.slice(0, 500)}`
             ).join('\n');
 
             // Include conversation summary for long-running chats
@@ -760,127 +1256,103 @@ INSTRUCTIONS:
 5. Keep responses concise but detailed (2-5 paragraphs). Be direct with numbers and specific tickers. When suggesting trades, include entry/target/stop from scanner data.
 6. AVAILABLE ACTIONS — If the user requests any of these, include the action tag in your response:
    - Log a trade: [ACTION:ADD_POSITION] TICKER @PRICE xSHARES SIDE (e.g., [ACTION:ADD_POSITION] AAPL @150.00 x100 LONG)
-   - Delete/remove a position: [ACTION:DELETE_POSITION] TICKER (e.g., [ACTION:DELETE_POSITION] AZN.L)
+   - Close a trade with exit price: [ACTION:CLOSE_POSITION] TICKER @EXIT_PRICE REASON (e.g., [ACTION:CLOSE_POSITION] AAPL @165.00 target_hit)
+   - Update a position (shares, stop, entry): [ACTION:UPDATE_POSITION] TICKER FIELD=VALUE (e.g., [ACTION:UPDATE_POSITION] AAPL shares=50 or [ACTION:UPDATE_POSITION] AAPL entry_price=148.50)
+   - Delete/remove a position (mistaken entry): [ACTION:DELETE_POSITION] TICKER (e.g., [ACTION:DELETE_POSITION] AZN.L)
    - Add to watchlist: [ACTION:ADD_WATCHLIST] TICKER (e.g., [ACTION:ADD_WATCHLIST] TSLA)
+   - Remove from watchlist: [ACTION:REMOVE_WATCHLIST] TICKER (e.g., [ACTION:REMOVE_WATCHLIST] TSLA)
    - Run scanner on a ticker: [ACTION:RUN_SCAN] TICKER (e.g., [ACTION:RUN_SCAN] NVDA)
+   - Run a specialized agent: [ACTION:RUN_AGENT] AGENT_TYPE TICKER (e.g., [ACTION:RUN_AGENT] SANITY_CHECK AAPL or [ACTION:RUN_AGENT] OVERREACTION NVDA or [ACTION:RUN_AGENT] EARNINGS MSFT)
+   - Calculate position size: [ACTION:POSITION_SIZE] TICKER @PRICE TARGET=X STOP=X SIGNAL_TYPE (e.g., [ACTION:POSITION_SIZE] AAPL @150.00 TARGET=180.00 STOP=140.00 overreaction)
+   IMPORTANT: Use CLOSE_POSITION (not DELETE) when the user wants to exit a trade — this preserves the record with P&L. Use DELETE_POSITION only for mistaken entries.
+   IMPORTANT: When the user asks about position sizing, use [ACTION:POSITION_SIZE] to get real calculations from the engine.
 7. If the user asks about something not in the provided context, use your knowledge and grounded search to answer.
 8. Do NOT add financial disclaimers. Be opinionated and direct — this is a trading intelligence system.
+9. At the END of your response, include 2-3 contextual follow-up questions the user might want to ask next, formatted as: [FOLLOWUPS] question1 | question2 | question3
 `;
 
-            const result = await GeminiService.generate<any>({
-                prompt,
-                requireGroundedSearch: true,
-                temperature: 0.4,
-            });
-
-            if (!result.success || !result.data) {
-                throw new Error(result.error || 'Failed to generate response');
-            }
-
-            // With grounded search + no responseSchema, result.data is the raw text string
-            let messageText: string;
-            if (typeof result.data === 'string') {
-                messageText = result.data;
-            } else if (result.data.message) {
-                messageText = result.data.message;
-            } else {
-                messageText = JSON.stringify(result.data);
-            }
-
+            // Add a placeholder assistant message for streaming
             const assistantMsg: ChatMessage = {
                 role: 'assistant',
-                content: messageText,
+                content: '',
                 timestamp: new Date(),
             };
             setMessages(prev => [...prev, assistantMsg]);
 
+            let messageText = '';
+            const streamResult = await GeminiService.generateStream(
+                {
+                    prompt,
+                    requireGroundedSearch: true,
+                    temperature: 0.4,
+                },
+                (chunk: string) => {
+                    messageText += chunk;
+                    // Update the last assistant message with the streamed content
+                    setMessages(prev => {
+                        const updated = [...prev];
+                        const lastIdx = updated.length - 1;
+                        if (lastIdx >= 0 && updated[lastIdx]?.role === 'assistant') {
+                            updated[lastIdx] = { ...updated[lastIdx]!, content: messageText };
+                        }
+                        return updated;
+                    });
+                },
+            );
+
+            if (streamResult.error && !messageText) {
+                // Streaming failed entirely — fall back to non-streaming
+                const result = await GeminiService.generate<any>({
+                    prompt,
+                    requireGroundedSearch: true,
+                    temperature: 0.4,
+                });
+
+                if (!result.success || !result.data) {
+                    throw new Error(result.error || 'Failed to generate response');
+                }
+
+                if (typeof result.data === 'string') {
+                    messageText = result.data;
+                } else if (result.data.message) {
+                    messageText = result.data.message;
+                } else {
+                    messageText = JSON.stringify(result.data);
+                }
+
+                setMessages(prev => {
+                    const updated = [...prev];
+                    const lastIdx = updated.length - 1;
+                    if (lastIdx >= 0 && updated[lastIdx]?.role === 'assistant') {
+                        updated[lastIdx] = { ...updated[lastIdx]!, content: messageText };
+                    }
+                    return updated;
+                });
+            }
+
             // Generate follow-up suggestions based on the response
             setSuggestedFollowups(extractFollowups(messageText));
 
+            // Strip action tags and followup tags from the displayed message for clean UX
+            const cleanedText = messageText
+                .replace(/\[ACTION:\w+\][^\n]*/g, '')
+                .replace(/\[FOLLOWUPS\][^\n]*/g, '')
+                .replace(/\n{3,}/g, '\n\n')
+                .trim();
+            if (cleanedText !== messageText) {
+                setMessages(prev => {
+                    const updated = [...prev];
+                    const lastMsg = updated[updated.length - 1];
+                    if (lastMsg && lastMsg.role === 'assistant') {
+                        updated[updated.length - 1] = { ...lastMsg, content: cleanedText };
+                    }
+                    return updated;
+                });
+            }
+
             // Check for action patterns in the response
             try {
-                // ACTION: Add Position
-                if (messageText.includes('[ACTION:ADD_POSITION]')) {
-                    const actionMatch = messageText.match(/\[ACTION:ADD_POSITION\]\s*(\w+(?:\.\w+)?)\s*@?\s*\$?([\d.]+)\s*x?\s*(\d+)?\s*(LONG|SHORT)?/i);
-                    if (actionMatch) {
-                        const [, actionTicker, price, shares, side] = actionMatch;
-                        await supabase.from('positions').insert({
-                            ticker: (actionTicker || ticker).toUpperCase(),
-                            entry_price: parseFloat(price || '0'),
-                            shares: parseInt(shares || '100', 10),
-                            side: (side || 'long').toLowerCase(),
-                            status: 'open',
-                            currency: inferCurrency((actionTicker || ticker).toUpperCase()),
-                            opened_at: new Date().toISOString(),
-                        });
-                        setMessages(prev => [...prev, {
-                            role: 'system',
-                            content: `Position added: ${(actionTicker || ticker).toUpperCase()}`,
-                            timestamp: new Date(),
-                        }]);
-                    }
-                }
-
-                // ACTION: Delete Position
-                if (messageText.includes('[ACTION:DELETE_POSITION]')) {
-                    const deleteMatch = messageText.match(/\[ACTION:DELETE_POSITION\]\s*(\w+(?:\.\w+)?)/i);
-                    if (deleteMatch?.[1]) {
-                        const deleteTicker = deleteMatch[1].toUpperCase();
-                        const { error } = await supabase
-                            .from('positions')
-                            .delete()
-                            .eq('ticker', deleteTicker)
-                            .eq('status', 'open');
-                        if (!error) {
-                            setMessages(prev => [...prev, {
-                                role: 'system',
-                                content: `Position removed: ${deleteTicker}`,
-                                timestamp: new Date(),
-                            }]);
-                        } else {
-                            setMessages(prev => [...prev, {
-                                role: 'system',
-                                content: `Failed to remove ${deleteTicker}: ${error.message}`,
-                                timestamp: new Date(),
-                            }]);
-                        }
-                    }
-                }
-
-                // ACTION: Add to Watchlist
-                if (messageText.includes('[ACTION:ADD_WATCHLIST]')) {
-                    const watchMatch = messageText.match(/\[ACTION:ADD_WATCHLIST\]\s*(\w+(?:\.\w+)?)/i);
-                    if (watchMatch?.[1]) {
-                        const watchTicker = watchMatch[1].toUpperCase();
-                        await supabase.from('watchlist').upsert(
-                            { ticker: watchTicker, is_active: true, sector: 'Other', company_name: watchTicker } as any,
-                            { onConflict: 'ticker' }
-                        );
-                        setMessages(prev => [...prev, {
-                            role: 'system',
-                            content: `Added ${watchTicker} to watchlist`,
-                            timestamp: new Date(),
-                        }]);
-                    }
-                }
-
-                // ACTION: Run Scanner
-                if (messageText.includes('[ACTION:RUN_SCAN]')) {
-                    const scanMatch = messageText.match(/\[ACTION:RUN_SCAN\]\s*(\w+(?:\.\w+)?)/i);
-                    if (scanMatch?.[1]) {
-                        const scanTicker = scanMatch[1].toUpperCase();
-                        // Navigate to scanner with the ticker pre-filled
-                        setMessages(prev => [...prev, {
-                            role: 'system',
-                            content: `Opening scanner for ${scanTicker}...`,
-                            timestamp: new Date(),
-                        }]);
-                        // Use a small delay so the system message is visible
-                        setTimeout(() => {
-                            window.location.href = `/scanner?ticker=${scanTicker}`;
-                        }, 500);
-                    }
-                }
+                await executeActions(messageText);
             } catch (actionErr: any) {
                 console.error('Failed to execute AI action:', actionErr);
             }
