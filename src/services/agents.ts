@@ -11,17 +11,19 @@ import {
     OVERREACTION_AGENT_PROMPT,
     CONTAGION_AGENT_PROMPT,
     EARNINGS_AGENT_PROMPT,
-    SANITY_CHECK_AGENT_PROMPT
+    SANITY_CHECK_AGENT_PROMPT,
+    BULLISH_CATALYST_AGENT_PROMPT
 } from './prompts';
 import {
     OVERREACTION_SCHEMA,
     CONTAGION_SCHEMA,
     EARNINGS_SCHEMA,
     SANITY_CHECK_SCHEMA,
-    SATELLITE_DISCOVERY_SCHEMA
+    SATELLITE_DISCOVERY_SCHEMA,
+    BULLISH_CATALYST_SCHEMA
 } from './schemas';
 import { GEMINI_MODEL } from '@/config/constants';
-import type { AgentResult, OverreactionResult, ContagionResult, SanityCheckResult } from '@/types/agents';
+import type { AgentResult, OverreactionResult, ContagionResult, SanityCheckResult, BullishCatalystResult } from '@/types/agents';
 
 /**
  * Extended market context for richer agent analysis.
@@ -229,6 +231,58 @@ export class AgentService {
             requireGroundedSearch: false,
             responseSchema: SANITY_CHECK_SCHEMA,
             temperature: 0.5,
+            model: GEMINI_MODEL,
+        });
+    }
+
+    /**
+     * 4b. Bullish Catalyst Agent
+     * Analyzes positive news events to determine if the market has under-reacted.
+     * Uses temperature 0.4 for creative hypothesis generation.
+     */
+    static async evaluateBullishCatalyst(
+        ticker: string,
+        eventHeadline: string,
+        eventDesc: string,
+        currentPrice: number,
+        priceChangePct: number,
+        performanceContext?: string,
+        marketContext?: MarketContext,
+        taContext?: string,
+        historicalContext?: string
+    ): Promise<AgentResult<BullishCatalystResult>> {
+        const perfBlock = performanceContext
+            ? `\n\n${performanceContext}\n\nUse the performance data above to calibrate your confidence.`
+            : '';
+
+        const marketBlock = marketContext
+            ? `\n\nMARKET CONTEXT:
+    52-Week High: $${Number(marketContext.fiftyTwoWeekHigh).toFixed(2) || 'N/A'} | 52-Week Low: $${Number(marketContext.fiftyTwoWeekLow).toFixed(2) || 'N/A'}
+    Average Volume: ${marketContext.avgVolume?.toLocaleString() ?? 'N/A'} | Current Volume: ${marketContext.currentVolume?.toLocaleString() ?? 'N/A'}
+    Sector Performance: ${marketContext.sectorPerformance ?? 'N/A'}
+    CNN Fear & Greed Index: ${marketContext.fearGreedScore ?? 'N/A'} (${marketContext.fearGreedRating ?? 'N/A'})`
+            : '';
+
+        const taBlock = taContext || '';
+        const histBlock = historicalContext || '';
+
+        const prompt = `
+    TICKER: ${ticker}
+    CURRENT PRICE: $${Number(currentPrice).toFixed(2)} (${priceChangePct >= 0 ? 'Up' : 'Down'} ${Math.abs(Number(priceChangePct)).toFixed(2)}%)
+    EVENT HEADLINE: ${eventHeadline}
+    EVENT DESCRIPTION: ${eventDesc}
+    ${marketBlock}${taBlock}${histBlock}${perfBlock}
+    Evaluate if this positive catalyst has NOT been fully priced in and there is continued upside.
+    Think step-by-step in your reasoning before reaching your verdict.
+    Return JSON perfectly matching the expected schema.
+    `;
+
+        return GeminiService.generate({
+            prompt,
+            systemInstruction: BULLISH_CATALYST_AGENT_PROMPT,
+            requireGroundedSearch: false,
+            responseSchema: BULLISH_CATALYST_SCHEMA,
+            temperature: 0.4,
             model: GEMINI_MODEL,
         });
     }

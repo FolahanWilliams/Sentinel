@@ -58,6 +58,27 @@ export interface ContagionResult {
     why_high_conviction: string;
 }
 
+export interface BullishCatalystResult {
+    reasoning: string;
+    is_underreaction: boolean;
+    confidence_score: number;
+    catalyst_type: string;
+    identified_biases: string[];
+    bias_type: import('./signals').BiasType;
+    secondary_biases: import('./signals').BiasType[];
+    thesis: string;
+    catalyst_impact_assessment: string;
+    suggested_entry_low: number;
+    suggested_entry_high: number;
+    stop_loss: number;
+    target_price: number;
+    timeframe_days: number;
+    moat_rating: number;
+    lynch_category: import('./signals').LynchCategory;
+    conviction_score: number;
+    why_high_conviction: string;
+}
+
 export interface SanityCheckResult {
     reasoning: string;
     passes_sanity_check: boolean;

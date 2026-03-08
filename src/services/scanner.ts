@@ -48,7 +48,7 @@ import { SectorRotationService } from './sectorRotation';
 import { MultiTimeframeService } from './multiTimeframe';
 import { CrossSourceValidator } from './crossSourceValidator';
 import { RetailVsNewsSentimentDetector } from './retailVsNewsSentiment';
-import { DEFAULT_MIN_CONFIDENCE, DEFAULT_MIN_PRICE_DROP_PCT, CONFIDENCE_GATE_OVERREACTION, CONFIDENCE_GATE_CONTAGION, CONFIDENCE_GATE_CRITIQUE, CONFIDENCE_FLOOR, SEVERITY_THRESHOLD } from '@/config/constants';
+import { DEFAULT_MIN_CONFIDENCE, DEFAULT_MIN_PRICE_DROP_PCT, DEFAULT_MIN_PRICE_RISE_PCT, CONFIDENCE_GATE_OVERREACTION, CONFIDENCE_GATE_CATALYST, CONFIDENCE_GATE_CONTAGION, CONFIDENCE_GATE_CRITIQUE, CONFIDENCE_FLOOR, SEVERITY_THRESHOLD } from '@/config/constants';
 import type { MultiTimeframeResult } from './technicalAnalysis';
 import type { AgentOutputsJson, LynchCategory } from '@/types/signals';
 import type { Json } from '@/types/database';
@@ -430,7 +430,7 @@ export class ScannerService {
                 // 5b. Per-Ticker Grounded Search — supplement RSS with Gemini Google Search
                 // This ensures we always have fresh context, even when RSS lacks ticker-specific news.
                 console.log(`[Scanner] Running per-ticker grounded search for ${tickers.length} tickers...`);
-                for (const ticker of tickers.slice(0, 5)) { // Cap at 5 to control API cost
+                for (const ticker of tickers.slice(0, 10)) { // Increased from 5 to 10 for broader coverage
                     try {
                         // Use grounded search WITHOUT responseSchema to avoid Supabase timeout.
                         // Google Search grounding + structured JSON causes double processing.
@@ -523,6 +523,61 @@ If there is genuinely no major news, return: {"events": []}`,
                     }
                 } catch (sentinelBridgeErr) {
                     console.warn('[Scanner] Sentinel bridge failed (non-fatal):', sentinelBridgeErr);
+                }
+
+                // 5d. EARNINGS CALENDAR PROACTIVE SCAN — inject events for tickers with earnings in next 3 days
+                // This catches pre-earnings setups before news hits RSS
+                try {
+                    const earningsSearchTickers = tickers.slice(0, 8); // Cap to control cost
+                    const earningsSearchResult = await GeminiService.generate<any>({
+                        prompt: `Check which of these stock tickers have earnings reports scheduled in the next 3 business days: ${earningsSearchTickers.join(', ')}
+
+For each ticker with upcoming earnings, provide:
+- The expected earnings date
+- Whether consensus expects a beat or miss (based on recent analyst revisions, whisper numbers, or sector trends)
+- A severity score (5 = standard earnings, 6 = historically volatile earnings, 7 = pivotal quarter)
+
+Return your answer as JSON (no markdown):
+{"upcoming_earnings": [{"ticker": "AAPL", "earnings_date": "2026-03-10", "consensus_expectation": "beat expected due to strong iPhone demand", "severity": 6}]}
+
+If none of these tickers have earnings in the next 3 days, return: {"upcoming_earnings": []}`,
+                        requireGroundedSearch: true,
+                        temperature: 0.1,
+                    });
+
+                    if (earningsSearchResult.success && earningsSearchResult.data) {
+                        try {
+                            const rawText = typeof earningsSearchResult.data === 'string'
+                                ? earningsSearchResult.data
+                                : JSON.stringify(earningsSearchResult.data);
+                            const jsonMatch = rawText.match(/\{[\s\S]*"upcoming_earnings"[\s\S]*\}/);
+                            if (jsonMatch) {
+                                const parsed = JSON.parse(jsonMatch[0]);
+                                if (parsed.upcoming_earnings?.length > 0) {
+                                    if (!extraction.data) extraction.data = { events: [] };
+                                    if (!extraction.data.events) extraction.data.events = [];
+                                    for (const earning of parsed.upcoming_earnings) {
+                                        if (!tickers.includes(earning.ticker)) continue;
+                                        // Don't duplicate if we already have an event for this ticker
+                                        const alreadyHas = extraction.data.events.some((e: any) => e.ticker === earning.ticker);
+                                        if (alreadyHas) continue;
+
+                                        extraction.data.events.push({
+                                            ticker: earning.ticker,
+                                            event_type: 'upcoming_earnings',
+                                            headline: `[Earnings] ${earning.ticker} reports earnings ~${earning.earnings_date}. ${earning.consensus_expectation}`,
+                                            severity: earning.severity || 5,
+                                        });
+                                    }
+                                    console.log(`[Scanner] Earnings calendar injected ${parsed.upcoming_earnings.length} upcoming earnings events`);
+                                }
+                            }
+                        } catch (parseErr) {
+                            console.warn('[Scanner] Earnings calendar parse failed (non-fatal):', parseErr);
+                        }
+                    }
+                } catch (earningsCalErr) {
+                    console.warn('[Scanner] Earnings calendar scan failed (non-fatal):', earningsCalErr);
                 }
 
                 // Build a lookup of article descriptions by ticker for full context
@@ -745,33 +800,79 @@ If there is genuinely no major news, return: {"events": []}`,
                                 // Combine TA + divergence + gap + earnings + fundamentals + regime + options + peers into unified context
                                 const enrichedTaContext = earlyTaContext + divergenceCtx + gapCtx + earningsCtx + fundamentalsCtx + regimeCtx + sectorRotationCtx + optionsFlowCtx + peerStrengthCtx;
 
-                                // Pipeline A: Overreaction Analysis
-                                const analysis = await AgentService.evaluateOverreaction(
-                                    ev.ticker,
-                                    ev.headline,
-                                    eventContext,
-                                    quote.price,
-                                    priceDrop,
-                                    perfContext,
-                                    marketContext,
-                                    enrichedTaContext,
-                                    historicalCtx
-                                );
+                                // Pipeline A: Overreaction Analysis (negative events)
+                                // Pipeline B: Bullish Catalyst Analysis (positive events)
+                                const isPositiveEvent = priceDrop >= 0 || ['analyst_upgrade', 'product_launch', 'fda_approval', 'partnership', 'guidance_raise', 'contract_win'].includes(ev.event_type);
+
+                                let analysis: import('@/types/agents').AgentResult<import('@/types/agents').OverreactionResult>;
+                                let signalType: import('@/types/signals').SignalType = 'long_overreaction';
+                                let catalystAgentUsed = false;
+
+                                if (isPositiveEvent && priceDrop >= DEFAULT_MIN_PRICE_RISE_PCT * -1) {
+                                    // Positive catalyst path — check if market under-reacted
+                                    const catalystResult = await AgentService.evaluateBullishCatalyst(
+                                        ev.ticker,
+                                        ev.headline,
+                                        eventContext,
+                                        quote.price,
+                                        priceDrop,
+                                        perfContext,
+                                        marketContext,
+                                        enrichedTaContext,
+                                        historicalCtx
+                                    );
+
+                                    // Normalize catalyst result to overreaction shape for unified downstream processing
+                                    if (catalystResult.success && catalystResult.data?.is_underreaction) {
+                                        analysis = {
+                                            ...catalystResult,
+                                            data: {
+                                                ...catalystResult.data,
+                                                is_overreaction: true, // normalized — signals "this is actionable"
+                                                financial_impact_assessment: catalystResult.data.catalyst_impact_assessment,
+                                            }
+                                        } as any;
+                                        signalType = 'bullish_catalyst';
+                                        catalystAgentUsed = true;
+                                        console.log(`[Scanner] Bullish catalyst result for ${ev.ticker}: is_underreaction=true, confidence=${catalystResult.data.confidence_score}, catalyst=${catalystResult.data.catalyst_type}`);
+                                    } else {
+                                        // Catalyst agent didn't fire — fall back to overreaction analysis
+                                        console.log(`[Scanner] Bullish catalyst: no underreaction for ${ev.ticker}, falling back to overreaction agent`);
+                                        analysis = await AgentService.evaluateOverreaction(
+                                            ev.ticker, ev.headline, eventContext, quote.price, priceDrop,
+                                            perfContext, marketContext, enrichedTaContext, historicalCtx
+                                        );
+                                    }
+                                } else {
+                                    // Negative event path — standard overreaction analysis
+                                    analysis = await AgentService.evaluateOverreaction(
+                                        ev.ticker,
+                                        ev.headline,
+                                        eventContext,
+                                        quote.price,
+                                        priceDrop,
+                                        perfContext,
+                                        marketContext,
+                                        enrichedTaContext,
+                                        historicalCtx
+                                    );
+                                }
 
                                 // Validate agent response before acting on it
                                 const validation = responseValidator.validate(analysis.data);
                                 if (!validation.valid) {
-                                    console.warn(`[Scanner] Overreaction response failed validation for ${ev.ticker}:`, validation.warnings);
+                                    console.warn(`[Scanner] ${catalystAgentUsed ? 'Catalyst' : 'Overreaction'} response failed validation for ${ev.ticker}:`, validation.warnings);
                                 }
 
                                 // Diagnostic logging — show WHY signals are accepted/rejected
+                                const gate = catalystAgentUsed ? CONFIDENCE_GATE_CATALYST : CONFIDENCE_GATE_OVERREACTION;
                                 if (analysis.success) {
-                                    console.log(`[Scanner] Overreaction result for ${ev.ticker}: is_overreaction=${analysis.data?.is_overreaction}, confidence=${analysis.data?.confidence_score}, thesis="${(analysis.data?.thesis || '').slice(0, 80)}..."`);
+                                    console.log(`[Scanner] ${catalystAgentUsed ? 'Catalyst' : 'Overreaction'} result for ${ev.ticker}: pass=${analysis.data?.is_overreaction}, confidence=${analysis.data?.confidence_score}, thesis="${(analysis.data?.thesis || '').slice(0, 80)}..."`);
                                 } else {
-                                    console.warn(`[Scanner] Overreaction agent FAILED for ${ev.ticker}: ${analysis.error}`);
+                                    console.warn(`[Scanner] ${catalystAgentUsed ? 'Catalyst' : 'Overreaction'} agent FAILED for ${ev.ticker}: ${analysis.error}`);
                                 }
 
-                                if (analysis.success && validation.valid && analysis.data?.is_overreaction && analysis.data.confidence_score > CONFIDENCE_GATE_OVERREACTION) {
+                                if (analysis.success && validation.valid && analysis.data?.is_overreaction && analysis.data.confidence_score > gate) {
 
                                     // 6.5. TA CONFIRMATION LAYER — use pre-fetched TA snapshot
                                     let taSnapshot = earlyTaSnapshot;
@@ -783,10 +884,13 @@ If there is genuinely no major news, return: {"events": []}`,
                                         taAlignment = TechnicalAnalysisService.evaluateAlignment(taSnapshot, 'long');
 
                                         // Block signal if TA shows buying into exhaustion
-                                        const blockCheck = TechnicalAnalysisService.shouldBlockLong(taSnapshot);
-                                        if (blockCheck.blocked) {
-                                            console.warn(`[Scanner] TA BLOCKED signal for ${ev.ticker}: ${blockCheck.reason}`);
-                                            continue;
+                                        // Bullish catalysts get a pass — breakout stocks naturally look overbought
+                                        if (!catalystAgentUsed) {
+                                            const blockCheck = TechnicalAnalysisService.shouldBlockLong(taSnapshot);
+                                            if (blockCheck.blocked) {
+                                                console.warn(`[Scanner] TA BLOCKED signal for ${ev.ticker}: ${blockCheck.reason}`);
+                                                continue;
+                                            }
                                         }
 
                                         // Reduce confidence if TA conflicts
@@ -828,7 +932,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                                 analysis.data.reasoning || analysis.data.thesis,
                                                 analysis.data.confidence_score,
                                                 sanity.data.counter_thesis,
-                                                'long_overreaction'
+                                                signalType
                                             );
                                             critiqueOutput = critique;
                                             if (critique.hasFlaws && critique.adjustedConfidence < analysis.data.confidence_score) {
@@ -894,7 +998,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                         // 7.10. BACKTEST VALIDATION — check historical performance of this signal type + ticker
                                         let backtestResult: import('./backtestValidator').BacktestResult | null = null;
                                         try {
-                                            backtestResult = await BacktestValidator.validate('long_overreaction', ev.ticker);
+                                            backtestResult = await BacktestValidator.validate(signalType, ev.ticker);
                                             if (backtestResult.shouldSuppress) {
                                                 console.warn(`[Scanner] BACKTEST suppressed ${ev.ticker}: ${backtestResult.reason}`);
                                                 continue;
@@ -967,7 +1071,7 @@ If there is genuinely no major news, return: {"events": []}`,
 
                                         // 7.13. SIGNAL FRESHNESS — skip if a fresh duplicate exists
                                         try {
-                                            const hasFresh = await SignalDecayEngine.hasFreshSignal(ev.ticker, 'long_overreaction');
+                                            const hasFresh = await SignalDecayEngine.hasFreshSignal(ev.ticker, signalType);
                                             if (hasFresh) {
                                                 console.log(`[Scanner] Skipping ${ev.ticker} — fresh active signal already exists for this type.`);
                                                 continue;
@@ -1084,17 +1188,20 @@ If there is genuinely no major news, return: {"events": []}`,
                                         }
 
                                         // 7.17. MARGIN-OF-SAFETY GUARDRAIL — Buffett hard gate
-                                        const mosCheck = ConvictionGuardrails.checkMarginOfSafety(
-                                            quote.price,
-                                            quote.fiftyTwoWeekHigh,
-                                            analysis.data.confidence_score,
-                                        );
-                                        if (!mosCheck.passed) {
-                                            console.warn(`[Scanner] Margin-of-safety gate blocked ${ev.ticker}: ${mosCheck.reason}`);
-                                            continue;
-                                        }
-                                        if (mosCheck.warnings.length > 0) {
-                                            console.log(`[Scanner] MoS warnings for ${ev.ticker}: ${mosCheck.warnings.join('; ')}`);
+                                        // Skip for bullish catalysts — breakout stocks are near highs by definition
+                                        if (!catalystAgentUsed) {
+                                            const mosCheck = ConvictionGuardrails.checkMarginOfSafety(
+                                                quote.price,
+                                                quote.fiftyTwoWeekHigh,
+                                                analysis.data.confidence_score,
+                                            );
+                                            if (!mosCheck.passed) {
+                                                console.warn(`[Scanner] Margin-of-safety gate blocked ${ev.ticker}: ${mosCheck.reason}`);
+                                                continue;
+                                            }
+                                            if (mosCheck.warnings.length > 0) {
+                                                console.log(`[Scanner] MoS warnings for ${ev.ticker}: ${mosCheck.warnings.join('; ')}`);
+                                            }
                                         }
 
                                         // Compute margin-of-safety percentage for signal record
@@ -1175,7 +1282,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                         try {
                                             const taAlignStr = typeof taAlignment === 'string' ? taAlignment : 'unavailable';
                                             const roiResult = await calculateWeightedRoi(
-                                                'long_overreaction',
+                                                signalType,
                                                 'recency_bias',
                                                 analysis.data.confidence_score,
                                                 taAlignStr,
@@ -1191,7 +1298,7 @@ If there is genuinely no major news, return: {"events": []}`,
 
                                         const { data: savedSignal, error: signalInsertErr } = await supabase.from('signals').insert({
                                             ticker: ev.ticker,
-                                            signal_type: 'long_overreaction',
+                                            signal_type: signalType,
                                             confidence_score: analysis.data.confidence_score,
                                             calibrated_confidence: calibratedConfidence,
                                             risk_level: sanity.data.risk_score > 80 ? 'low' : 'medium',
@@ -1212,7 +1319,8 @@ If there is genuinely no major news, return: {"events": []}`,
                                             similar_events_count: similarEventsCount,
                                             data_quality: 'full',
                                             agent_outputs: {
-                                                overreaction: analysis.data,
+                                                overreaction: catalystAgentUsed ? undefined : analysis.data,
+                                                bullish_catalyst: catalystAgentUsed ? analysis.data as any : undefined,
                                                 red_team: sanity.data,
                                                 self_critique: critiqueOutput,
                                                 sentiment_divergence: divergenceResult ? {
@@ -1373,7 +1481,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                                 analysis.data.confidence_score,
                                                 entryPrice,
                                                 analysis.data.target_price,
-                                                'long_overreaction',
+                                                signalType,
                                                 taSnapshot,
                                                 ev.ticker,
                                                 tickerSectorForSizing,
