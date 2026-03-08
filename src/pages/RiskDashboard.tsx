@@ -215,7 +215,14 @@ export function RiskDashboard() {
                     icon={<Shield className="w-10 h-10" />}
                     title="No open positions"
                     description="Open positions to see your portfolio risk analysis. Risk metrics will update in real-time."
-                    action={{ label: 'Go to Positions', onClick: () => navigate('/positions') }}
+                    action={
+                        <button
+                            onClick={() => navigate('/positions')}
+                            className="px-4 py-2 bg-blue-500/10 text-blue-400 rounded-xl text-sm font-medium hover:bg-blue-500/20 transition-colors cursor-pointer border border-blue-500/20"
+                        >
+                            Go to Positions
+                        </button>
+                    }
                 />
             ) : (
                 <>

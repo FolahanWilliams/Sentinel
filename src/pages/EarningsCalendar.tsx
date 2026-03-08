@@ -12,8 +12,8 @@ import { useWatchlist } from '@/hooks/useWatchlist';
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { EarningsGuard, EarningsGuardResult } from '@/services/earningsGuard';
 import {
-    Calendar, Loader2, AlertTriangle, Clock,
-    TrendingUp, Shield, Briefcase, List,
+    Calendar, Loader2, AlertTriangle,
+    Briefcase, List,
     CheckCircle2, XCircle, RefreshCw,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -98,10 +98,11 @@ export function EarningsCalendar() {
 
             batchResults.forEach((res, j) => {
                 const idx = i + j;
+                const prev = results[idx];
                 if (res.status === 'fulfilled') {
-                    results[idx] = { ...results[idx], result: res.value, loading: false };
+                    results[idx] = { ticker: prev.ticker, companyName: prev.companyName, source: prev.source, result: res.value, loading: false, error: null };
                 } else {
-                    results[idx] = { ...results[idx], error: 'Failed to check', loading: false };
+                    results[idx] = { ticker: prev.ticker, companyName: prev.companyName, source: prev.source, result: null, loading: false, error: 'Failed to check' };
                 }
             });
 
@@ -175,7 +176,14 @@ export function EarningsCalendar() {
                     icon={<Calendar className="w-10 h-10" />}
                     title="No tickers to check"
                     description="Add tickers to your watchlist or open positions to check their upcoming earnings dates."
-                    action={{ label: 'Go to Watchlist', onClick: () => navigate('/watchlist') }}
+                    action={
+                        <button
+                            onClick={() => navigate('/watchlist')}
+                            className="px-4 py-2 bg-purple-500/10 text-purple-400 rounded-xl text-sm font-medium hover:bg-purple-500/20 transition-colors cursor-pointer border border-purple-500/20"
+                        >
+                            Go to Watchlist
+                        </button>
+                    }
                 />
             ) : (
                 <>

@@ -10,7 +10,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
     Bell, Plus, X, Trash2, ToggleLeft, ToggleRight,
     TrendingUp, TrendingDown, Activity, Volume2,
-    Loader2, CheckCircle2, AlertTriangle, Zap,
+    CheckCircle2, AlertTriangle, Zap,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BrowserNotificationService, NotificationPreferences } from '@/services/browserNotifications';
@@ -299,7 +299,14 @@ export function Alerts() {
                     icon={<Bell className="w-10 h-10" />}
                     title="No alert rules"
                     description="Create your first alert rule to get notified when price targets are hit, volume spikes, or signals fire."
-                    action={{ label: 'Create Alert', onClick: () => setShowForm(true) }}
+                    action={
+                        <button
+                            onClick={() => setShowForm(true)}
+                            className="px-4 py-2 bg-blue-500/10 text-blue-400 rounded-xl text-sm font-medium hover:bg-blue-500/20 transition-colors cursor-pointer border border-blue-500/20"
+                        >
+                            Create Alert
+                        </button>
+                    }
                 />
             ) : (
                 <div className="space-y-2">
