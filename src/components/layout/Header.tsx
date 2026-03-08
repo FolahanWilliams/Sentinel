@@ -62,11 +62,19 @@ function useMarketStatus() {
 
 const PAGE_TITLES: Record<string, string> = {
     '/': 'Dashboard',
+    '/legacy': 'Legacy Dashboard',
     '/watchlist': 'Watchlist',
     '/scanner': 'Scanner',
     '/backtest': 'Backtest',
     '/journal': 'Journal',
     '/settings': 'Settings',
+    '/research': 'Research',
+    '/positions': 'Positions',
+    '/performance': 'Performance',
+    '/alerts': 'Alerts',
+    '/risk': 'Risk Dashboard',
+    '/leaderboard': 'Leaderboard',
+    '/earnings': 'Earnings Calendar',
 };
 
 export function Header() {
@@ -79,10 +87,12 @@ export function Header() {
     const browserUnread = BrowserNotificationService.getUnreadCount();
     const totalUnread = unreadCount + browserUnread;
 
-    // Match analysis routes
+    // Match dynamic routes like /analysis/:ticker and /research/:ticker
     const pageTitle = location.pathname.startsWith('/analysis/')
         ? `Analysis — ${location.pathname.split('/')[2]?.toUpperCase() ?? ''}`
-        : PAGE_TITLES[location.pathname] ?? 'Sentinel';
+        : location.pathname.startsWith('/research/')
+            ? `Research — ${location.pathname.split('/')[2]?.toUpperCase() ?? ''}`
+            : PAGE_TITLES[location.pathname] ?? 'Sentinel';
 
     const handleLock = () => {
         destroySession();

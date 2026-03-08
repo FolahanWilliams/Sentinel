@@ -47,6 +47,7 @@ export class ErrorBoundary extends Component<Props, State> {
                         </p>
                         <button
                             onClick={() => this.setState({ hasError: false, error: null })}
+                            aria-label="Dismiss error and try again"
                             className="px-4 py-2 bg-sentinel-600 text-white rounded-lg hover:bg-sentinel-500 transition-colors text-sm"
                         >
                             Try again
