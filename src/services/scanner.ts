@@ -92,7 +92,7 @@ export class ScannerService {
             supabase.from('market_events').select('ticker').in('ticker', tickerNames).gte('detected_at', oneDayAgo),
             supabase.from('signals').select('id, ticker').in('ticker', tickerNames),
             supabase.from('rss_cache').select('title').gte('fetched_at', oneDayAgo).limit(200),
-            supabase.from('sentinel_articles').select('title, summary, impact, signals, affected_tickers').gte('processed_at', oneDayAgo).limit(100).then(r => r).catch(() => ({ data: null })),
+            Promise.resolve(supabase.from('sentinel_articles').select('title, summary, impact, signals, affected_tickers').gte('processed_at', oneDayAgo).limit(100)).catch(() => ({ data: null })),
         ]);
 
         // Count recent events per ticker
@@ -102,7 +102,7 @@ export class ScannerService {
         }
 
         // Win rate per ticker from outcomes (this one depends on signals result)
-        const signalIds = (signals || []).map(s => s.id);
+        const signalIds = (signals || []).map((s: { id: string; ticker: string }) => s.id);
         const { data: outcomes } = signalIds.length > 0
             ? await supabase
                 .from('signal_outcomes')
