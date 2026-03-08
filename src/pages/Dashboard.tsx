@@ -1,10 +1,11 @@
-import { Activity, ArrowRight, Clock, Loader2, BookOpen } from 'lucide-react';
+import { Activity, ArrowRight, Clock, Loader2, BookOpen, Shield, AlertTriangle, BarChart3 } from 'lucide-react';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
 import { ScannerService } from '@/services/scanner';
 import { formatPrice } from '@/utils/formatters';
 import { TABadge } from '@/components/shared/TABadge';
+import { SignalQualityBadge } from '@/components/shared/SignalQualityBadge';
 import { MarketSnapshot } from '@/components/dashboard/MarketSnapshot';
 import { MarketTrends, PotentialSignals } from '@/components/dashboard/MarketTrends';
 import { UpcomingEvents } from '@/components/dashboard/UpcomingEvents';
@@ -15,6 +16,7 @@ import { SectorHeatMap } from '@/components/dashboard/SectorHeatMap';
 import { NewsFeed } from '@/components/dashboard/NewsFeed';
 import { DashboardConvergence } from '@/components/dashboard/DashboardConvergence';
 import { WatchlistSuggestions } from '@/components/dashboard/WatchlistSuggestions';
+import { HighConvictionSetups } from '@/components/dashboard/HighConvictionSetups';
 import { GlassMaterialize } from '@/components/shared/GlassMaterialize';
 import { useScannerLogs } from '@/hooks/useScannerLogs';
 import { SkeletonSignalFeed } from '@/components/shared/SkeletonPrimitives';
@@ -267,6 +269,7 @@ export function Dashboard() {
                                                                 compact
                                                             />
                                                         )}
+                                                        <SignalQualityBadge agentOutputs={signal.agent_outputs} compact />
                                                         <div className="px-2 py-1 bg-emerald-500/10 text-emerald-400 text-xs font-bold font-mono rounded ring-1 ring-emerald-500/20">
                                                             {signal.confidence_score}% CONF
                                                         </div>
@@ -276,8 +279,8 @@ export function Dashboard() {
                                                     {signal.thesis}
                                                 </p>
 
-                                                {/* Confluence + Projected ROI badges */}
-                                                {(signal.confluence_level || signal.projected_roi != null) && (
+                                                {/* Confluence + Projected ROI + Intelligence badges */}
+                                                {(signal.confluence_level || signal.projected_roi != null || signal.conviction_score || signal.agent_outputs?.market_regime || signal.agent_outputs?.earnings_guard) && (
                                                     <div className="mt-2 flex items-center gap-2 flex-wrap">
                                                         {signal.confluence_level && signal.confluence_level !== 'none' && (
                                                             <span className={`px-2 py-0.5 text-[10px] font-bold rounded ring-1 ${
@@ -300,6 +303,34 @@ export function Dashboard() {
                                                                 {signal.projected_win_rate != null && ` (${signal.projected_win_rate}% WR`}
                                                                 {signal.similar_events_count != null && `, ${signal.similar_events_count} similar)`}
                                                                 {signal.projected_win_rate != null && !signal.similar_events_count && ')'}
+                                                            </span>
+                                                        )}
+                                                        {signal.conviction_score != null && signal.conviction_score > 0 && (
+                                                            <span className={`px-2 py-0.5 text-[10px] font-bold font-mono rounded ring-1 ${
+                                                                signal.conviction_score >= 85
+                                                                    ? 'bg-amber-500/15 text-amber-400 ring-amber-500/30'
+                                                                    : signal.conviction_score >= 70
+                                                                        ? 'bg-blue-500/10 text-blue-400 ring-blue-500/20'
+                                                                        : 'bg-sentinel-800/50 text-sentinel-500 ring-sentinel-700/30'
+                                                            }`} title={signal.why_high_conviction || `Conviction: ${signal.conviction_score}/100`}>
+                                                                <Shield className="w-2.5 h-2.5 inline mr-0.5" />CV {signal.conviction_score}
+                                                            </span>
+                                                        )}
+                                                        {signal.agent_outputs?.market_regime && (
+                                                            <span className={`px-2 py-0.5 text-[10px] font-bold rounded ring-1 ${
+                                                                signal.agent_outputs.market_regime.regime === 'risk_on'
+                                                                    ? 'bg-emerald-500/10 text-emerald-400 ring-emerald-500/20'
+                                                                    : signal.agent_outputs.market_regime.regime === 'risk_off'
+                                                                        ? 'bg-red-500/10 text-red-400 ring-red-500/20'
+                                                                        : 'bg-sentinel-800/50 text-sentinel-400 ring-sentinel-700/30'
+                                                            }`} title={`VIX: ${signal.agent_outputs.market_regime.vix ?? '?'} | Penalty: ${signal.agent_outputs.market_regime.penalty}`}>
+                                                                <BarChart3 className="w-2.5 h-2.5 inline mr-0.5" />{signal.agent_outputs.market_regime.regime.replace('_', ' ')}
+                                                            </span>
+                                                        )}
+                                                        {signal.agent_outputs?.earnings_guard?.days_until != null && signal.agent_outputs.earnings_guard.days_until <= 14 && (
+                                                            <span className="px-2 py-0.5 text-[10px] font-bold rounded ring-1 bg-amber-500/10 text-amber-400 ring-amber-500/20"
+                                                                title={`Earnings on ${signal.agent_outputs.earnings_guard.earnings_date} | Confidence penalty: ${signal.agent_outputs.earnings_guard.penalty}`}>
+                                                                <AlertTriangle className="w-2.5 h-2.5 inline mr-0.5" />ER {signal.agent_outputs.earnings_guard.days_until}d
                                                             </span>
                                                         )}
                                                     </div>
@@ -334,6 +365,7 @@ export function Dashboard() {
                 {/* RIGHT COLUMN: Convergence, Trends, Sector Heat Map & Events */}
                 <div className="xl:col-span-1 space-y-6 flex flex-col min-h-[600px]">
                     <GlassMaterialize delay={50}><DashboardConvergence /></GlassMaterialize>
+                    <GlassMaterialize delay={65}><HighConvictionSetups /></GlassMaterialize>
                     <GlassMaterialize delay={75}><WatchlistSuggestions /></GlassMaterialize>
                     <GlassMaterialize delay={100}><SectorHeatMap /></GlassMaterialize>
                     <GlassMaterialize delay={150}><MarketTrends /></GlassMaterialize>
