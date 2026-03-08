@@ -8,7 +8,9 @@
  * - Generic PDF fallback
  *
  * Features:
+ * - Multi-file upload with drag-and-drop (merge/deduplicate across files)
  * - Auto-detects brokerage from file content
+ * - Cost basis extraction from WF Activity Detail
  * - Duplicate detection with replace option
  * - Editable quantity and price fields in preview
  * - Auto-updates portfolio total capital
@@ -18,17 +20,19 @@
 import { useState, useCallback, useRef, useMemo } from 'react';
 import { supabase } from '@/config/supabase';
 import { MarketDataService } from '@/services/marketData';
-import { Upload, X, FileText, AlertTriangle, CheckCircle2, Loader2, RefreshCw, XCircle } from 'lucide-react';
+import { Upload, X, FileText, AlertTriangle, CheckCircle2, Loader2, RefreshCw, XCircle, Plus, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatPrice } from '@/utils/formatters';
 import { inferCurrency } from '@/utils/portfolio';
 import type { Position } from '@/hooks/usePortfolio';
 import {
     parseBrokerageDocument,
+    parseMultipleBrokerageDocuments,
     type ParsedHolding,
     type AccountSummary,
     type ParseResult,
     type BrokerageType,
+    type ParsedFileInfo,
 } from '@/services/brokerageParser';
 
 interface ImportPortfolioProps {
@@ -57,17 +61,77 @@ export function ImportPortfolio({ onClose, existingTickers = [], existingPositio
     const [brokerage, setBrokerage] = useState<BrokerageType>('unknown');
     const [dragActive, setDragActive] = useState(false);
     const [parsing, setParsing] = useState(false);
+    const [stagedFiles, setStagedFiles] = useState<File[]>([]);
+    const [fileInfos, setFileInfos] = useState<ParsedFileInfo[]>([]);
     const fileRef = useRef<HTMLInputElement>(null);
 
     const existingSet = new Set(existingTickers.map(t => t.toUpperCase()));
 
-    const handleFile = useCallback(async (file: File) => {
+    /** Add files to the staged list (dedup by name) */
+    const addFiles = useCallback((newFiles: File[]) => {
+        const valid = newFiles.filter(f => {
+            const ext = f.name.toLowerCase().split('.').pop();
+            return ext === 'csv' || ext === 'pdf';
+        });
+        if (valid.length === 0) {
+            setParseErrors(['Please upload .csv or .pdf files from your brokerage.']);
+            return;
+        }
+        setStagedFiles(prev => {
+            const existingNames = new Set(prev.map(f => f.name));
+            const unique = valid.filter(f => !existingNames.has(f.name));
+            return [...prev, ...unique];
+        });
+        setParseErrors([]);
+    }, []);
+
+    /** Remove a staged file by index */
+    const removeFile = useCallback((idx: number) => {
+        setStagedFiles(prev => prev.filter((_, i) => i !== idx));
+    }, []);
+
+    /** Parse all staged files (single or multi) */
+    const parseFiles = useCallback(async () => {
+        if (stagedFiles.length === 0) return;
+        setParsing(true);
+        setParseErrors([]);
+
+        try {
+            let result: ParseResult;
+
+            if (stagedFiles.length === 1) {
+                result = await parseBrokerageDocument(stagedFiles[0]!, existingSet);
+            } else {
+                result = await parseMultipleBrokerageDocuments(
+                    stagedFiles,
+                    existingSet,
+                    (infos) => setFileInfos([...infos]),
+                );
+            }
+
+            setHoldings(result.holdings);
+            setParseErrors(result.errors);
+            setAccountSummary(result.accountSummary);
+            setExchangeRate(result.exchangeRate);
+            setIsGBPSource(result.isGBPSource);
+            setBrokerage(result.brokerage);
+            if (result.holdings.length > 0) setStep('preview');
+        } catch (err) {
+            setParseErrors([`Failed to parse: ${err instanceof Error ? err.message : 'Unknown error'}`]);
+        } finally {
+            setParsing(false);
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [stagedFiles]);
+
+    /** Single file quick-path (for drag one file and go) */
+    const handleSingleFile = useCallback(async (file: File) => {
         const ext = file.name.toLowerCase().split('.').pop();
         if (ext !== 'csv' && ext !== 'pdf') {
             setParseErrors(['Please upload a .csv or .pdf file from your brokerage.']);
             return;
         }
-
+        setStagedFiles([file]);
         setParsing(true);
         setParseErrors([]);
 
@@ -91,9 +155,15 @@ export function ImportPortfolio({ onClose, existingTickers = [], existingPositio
     const handleDrop = useCallback((e: React.DragEvent) => {
         e.preventDefault();
         setDragActive(false);
-        const file = e.dataTransfer.files[0];
-        if (file) handleFile(file);
-    }, [handleFile]);
+        const files = Array.from(e.dataTransfer.files);
+        if (files.length === 1 && stagedFiles.length === 0) {
+            // Single file quick drop — parse immediately
+            handleSingleFile(files[0]!);
+        } else {
+            // Multi-file — stage them
+            addFiles(files);
+        }
+    }, [handleSingleFile, addFiles, stagedFiles.length]);
 
     const handleDragOver = useCallback((e: React.DragEvent) => {
         e.preventDefault();
@@ -325,7 +395,7 @@ export function ImportPortfolio({ onClose, existingTickers = [], existingPositio
                                 onDragOver={handleDragOver}
                                 onDragLeave={handleDragLeave}
                                 onClick={() => !parsing && fileRef.current?.click()}
-                                className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-colors ${
+                                className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${
                                     parsing
                                         ? 'border-blue-500/40 bg-blue-500/5 cursor-wait'
                                         : dragActive
@@ -337,20 +407,41 @@ export function ImportPortfolio({ onClose, existingTickers = [], existingPositio
                                     <>
                                         <Loader2 className="w-10 h-10 mx-auto mb-3 text-blue-400 animate-spin" />
                                         <p className="text-sm text-sentinel-300 mb-1">
-                                            Parsing document...
+                                            Parsing {stagedFiles.length > 1 ? `${stagedFiles.length} documents` : 'document'}...
                                         </p>
                                         <p className="text-xs text-sentinel-500">
                                             Detecting brokerage format and extracting holdings
                                         </p>
+                                        {/* Per-file progress for multi-file */}
+                                        {fileInfos.length > 1 && (
+                                            <div className="mt-3 space-y-1 text-left max-w-sm mx-auto">
+                                                {fileInfos.map((fi, idx) => (
+                                                    <div key={idx} className="flex items-center gap-2 text-[11px]">
+                                                        {fi.status === 'parsing' && <Loader2 className="w-3 h-3 text-blue-400 animate-spin shrink-0" />}
+                                                        {fi.status === 'done' && <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />}
+                                                        {fi.status === 'error' && <XCircle className="w-3 h-3 text-red-400 shrink-0" />}
+                                                        {fi.status === 'pending' && <div className="w-3 h-3 rounded-full bg-sentinel-700 shrink-0" />}
+                                                        <span className={`truncate ${fi.status === 'parsing' ? 'text-blue-300' : 'text-sentinel-400'}`}>
+                                                            {fi.fileName}
+                                                        </span>
+                                                        {fi.status === 'done' && fi.holdingsCount > 0 && (
+                                                            <span className="text-sentinel-600 ml-auto shrink-0">{fi.holdingsCount} holdings</span>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
                                     </>
                                 ) : (
                                     <>
                                         <Upload className={`w-10 h-10 mx-auto mb-3 ${dragActive ? 'text-blue-400' : 'text-sentinel-500'}`} />
                                         <p className="text-sm text-sentinel-300 mb-1">
-                                            Drag & drop your portfolio export here
+                                            {stagedFiles.length > 0
+                                                ? 'Drop more files or click to add'
+                                                : 'Drag & drop your portfolio export here'}
                                         </p>
                                         <p className="text-xs text-sentinel-500">
-                                            CSV or PDF &middot; Supports HL, Wells Fargo, Fidelity, Schwab & more
+                                            CSV or PDF &middot; Multiple files supported &middot; HL, Wells Fargo, Fidelity, Schwab & more
                                         </p>
                                     </>
                                 )}
@@ -358,13 +449,71 @@ export function ImportPortfolio({ onClose, existingTickers = [], existingPositio
                                     ref={fileRef}
                                     type="file"
                                     accept=".csv,.pdf"
+                                    multiple
                                     className="hidden"
                                     onChange={(e) => {
-                                        const file = e.target.files?.[0];
-                                        if (file) handleFile(file);
+                                        const files = Array.from(e.target.files ?? []);
+                                        if (files.length === 1 && stagedFiles.length === 0) {
+                                            handleSingleFile(files[0]!);
+                                        } else if (files.length > 0) {
+                                            addFiles(files);
+                                        }
+                                        // Reset input so same file can be re-selected
+                                        e.target.value = '';
                                     }}
                                 />
                             </div>
+
+                            {/* Staged file list */}
+                            {stagedFiles.length > 0 && !parsing && (
+                                <div className="mt-3 space-y-1.5">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-[10px] text-sentinel-500 uppercase tracking-wider font-medium">
+                                            {stagedFiles.length} file{stagedFiles.length !== 1 ? 's' : ''} staged
+                                        </span>
+                                        <button
+                                            onClick={() => setStagedFiles([])}
+                                            className="text-[10px] text-sentinel-600 hover:text-red-400 bg-transparent border-none cursor-pointer transition-colors"
+                                        >
+                                            Clear all
+                                        </button>
+                                    </div>
+                                    {stagedFiles.map((file, idx) => (
+                                        <div key={`${file.name}-${idx}`} className="flex items-center gap-2 px-3 py-1.5 bg-sentinel-800/40 rounded-lg">
+                                            <FileText className="w-3.5 h-3.5 text-sentinel-500 shrink-0" />
+                                            <span className="text-xs text-sentinel-300 truncate flex-1">{file.name}</span>
+                                            <span className="text-[10px] text-sentinel-600 shrink-0">
+                                                {file.name.toLowerCase().endsWith('.pdf') ? 'PDF' : 'CSV'}
+                                                {' · '}
+                                                {(file.size / 1024).toFixed(0)}KB
+                                            </span>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); removeFile(idx); }}
+                                                className="text-sentinel-600 hover:text-red-400 bg-transparent border-none cursor-pointer p-0.5 transition-colors"
+                                                aria-label={`Remove ${file.name}`}
+                                            >
+                                                <Trash2 className="w-3 h-3" />
+                                            </button>
+                                        </div>
+                                    ))}
+                                    <div className="flex items-center gap-2 mt-2">
+                                        <button
+                                            onClick={() => fileRef.current?.click()}
+                                            className="flex items-center gap-1 px-2.5 py-1 text-[11px] text-sentinel-400 hover:text-sentinel-300 bg-sentinel-800/50 hover:bg-sentinel-800 border border-sentinel-700/50 rounded-lg cursor-pointer transition-colors"
+                                        >
+                                            <Plus className="w-3 h-3" />
+                                            Add more files
+                                        </button>
+                                        <button
+                                            onClick={parseFiles}
+                                            className="flex items-center gap-1.5 px-4 py-1 text-[11px] font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg cursor-pointer transition-colors border-none ml-auto"
+                                        >
+                                            <Upload className="w-3 h-3" />
+                                            Parse {stagedFiles.length > 1 ? `& Merge ${stagedFiles.length} Files` : 'File'}
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
 
                             {parseErrors.length > 0 && (
                                 <div className="mt-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg space-y-1">
@@ -382,10 +531,10 @@ export function ImportPortfolio({ onClose, existingTickers = [], existingPositio
                                     <span className="text-sentinel-500 font-medium">Hargreaves Lansdown:</span> My Accounts &rarr; Portfolio &rarr; Download CSV
                                 </p>
                                 <p className="text-[10px] text-sentinel-600 leading-relaxed">
-                                    <span className="text-sentinel-500 font-medium">Wells Fargo:</span> Upload your monthly statement PDF (Portfolio detail page)
+                                    <span className="text-sentinel-500 font-medium">Wells Fargo:</span> Upload monthly statement PDF(s) — cost basis extracted from Activity Detail
                                 </p>
                                 <p className="text-[10px] text-sentinel-600 leading-relaxed">
-                                    <span className="text-sentinel-500 font-medium">Others:</span> Export positions/holdings as CSV from your brokerage
+                                    <span className="text-sentinel-500 font-medium">Multiple files:</span> Drop several PDFs/CSVs at once — holdings are merged and deduplicated
                                 </p>
                             </div>
                         </motion.div>
@@ -415,6 +564,18 @@ export function ImportPortfolio({ onClose, existingTickers = [], existingPositio
                                             {replaceExisting ? 'Will replace duplicates' : 'Replace existing positions'}
                                         </button>
                                     )}
+                                </div>
+                            )}
+
+                            {/* Source files badge */}
+                            {stagedFiles.length > 1 && (
+                                <div className="mb-3 flex items-center gap-2 flex-wrap">
+                                    <span className="text-[9px] text-sentinel-600 uppercase tracking-wider">Sources:</span>
+                                    {stagedFiles.map((f, idx) => (
+                                        <span key={idx} className="px-2 py-0.5 text-[10px] bg-sentinel-800/50 text-sentinel-400 rounded ring-1 ring-sentinel-700/50">
+                                            {f.name}
+                                        </span>
+                                    ))}
                                 </div>
                             )}
 
@@ -591,7 +752,7 @@ export function ImportPortfolio({ onClose, existingTickers = [], existingPositio
                             <div className="flex items-center justify-between mt-4">
                                 <div className="flex items-center gap-3">
                                     <button
-                                        onClick={() => { setStep('upload'); setHoldings([]); setParseErrors([]); setBrokerage('unknown'); }}
+                                        onClick={() => { setStep('upload'); setHoldings([]); setParseErrors([]); setBrokerage('unknown'); setFileInfos([]); }}
                                         className="px-3 py-1.5 text-sentinel-400 hover:text-sentinel-200 text-xs bg-transparent border border-sentinel-700 rounded-lg cursor-pointer transition-colors"
                                     >
                                         Back
@@ -651,10 +812,15 @@ export function ImportPortfolio({ onClose, existingTickers = [], existingPositio
                                     GBP/USD rate: {exchangeRate.toFixed(4)} (from export)
                                 </p>
                             )}
-                            <div className="flex items-center justify-center gap-2">
+                            <div className="flex items-center justify-center gap-2 flex-wrap">
                                 <span className="text-[10px] text-sentinel-600">
                                     Source: {BROKERAGE_LABELS[brokerage]}
                                 </span>
+                                {stagedFiles.length > 1 && (
+                                    <span className="text-[10px] text-sentinel-600">
+                                        &middot; {stagedFiles.length} files merged
+                                    </span>
+                                )}
                             </div>
                             <button
                                 onClick={onClose}
