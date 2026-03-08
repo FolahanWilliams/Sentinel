@@ -20,13 +20,18 @@ export function Settings() {
 
     useEffect(() => {
         async function fetchConfig() {
-            const [{ data: configData }, { data: alertSetting }] = await Promise.all([
-                supabase.from('portfolio_config').select('*').limit(1).single(),
-                supabase.from('app_settings').select('value').eq('key', 'email_alerts_enabled').maybeSingle(),
-            ]);
-            if (configData) setSettings(configData);
-            if (alertSetting?.value) setEmailAlertsEnabled(true);
-            setLoading(false);
+            try {
+                const [{ data: configData }, { data: alertSetting }] = await Promise.all([
+                    supabase.from('portfolio_config').select('*').limit(1).single(),
+                    supabase.from('app_settings').select('value').eq('key', 'email_alerts_enabled').maybeSingle(),
+                ]);
+                if (configData) setSettings(configData);
+                if (alertSetting?.value) setEmailAlertsEnabled(true);
+            } catch (err) {
+                console.error('[Settings] Failed to load config:', err);
+            } finally {
+                setLoading(false);
+            }
         }
         fetchConfig();
     }, []);
@@ -45,28 +50,32 @@ export function Settings() {
         e.preventDefault();
         setSaving(true);
 
-        if (settings.id) {
-            // Update existing
-            await supabase.from('portfolio_config').update({
-                total_capital: settings.total_capital,
-                max_position_pct: settings.max_position_pct,
-                max_total_exposure_pct: settings.max_total_exposure_pct,
-                max_sector_exposure_pct: settings.max_sector_exposure_pct,
-                max_concurrent_positions: settings.max_concurrent_positions,
-                risk_per_trade_pct: settings.risk_per_trade_pct,
-                kelly_fraction: settings.kelly_fraction,
-            }).eq('id', settings.id);
-        } else {
-            // Insert first config row
-            await supabase.from('portfolio_config').insert({
-                total_capital: settings.total_capital,
-                max_position_pct: settings.max_position_pct,
-                max_total_exposure_pct: settings.max_total_exposure_pct,
-                max_sector_exposure_pct: settings.max_sector_exposure_pct,
-                max_concurrent_positions: settings.max_concurrent_positions,
-                risk_per_trade_pct: settings.risk_per_trade_pct,
-                kelly_fraction: settings.kelly_fraction,
-            });
+        try {
+            if (settings.id) {
+                const { error } = await supabase.from('portfolio_config').update({
+                    total_capital: settings.total_capital,
+                    max_position_pct: settings.max_position_pct,
+                    max_total_exposure_pct: settings.max_total_exposure_pct,
+                    max_sector_exposure_pct: settings.max_sector_exposure_pct,
+                    max_concurrent_positions: settings.max_concurrent_positions,
+                    risk_per_trade_pct: settings.risk_per_trade_pct,
+                    kelly_fraction: settings.kelly_fraction,
+                }).eq('id', settings.id);
+                if (error) throw error;
+            } else {
+                const { error } = await supabase.from('portfolio_config').insert({
+                    total_capital: settings.total_capital,
+                    max_position_pct: settings.max_position_pct,
+                    max_total_exposure_pct: settings.max_total_exposure_pct,
+                    max_sector_exposure_pct: settings.max_sector_exposure_pct,
+                    max_concurrent_positions: settings.max_concurrent_positions,
+                    risk_per_trade_pct: settings.risk_per_trade_pct,
+                    kelly_fraction: settings.kelly_fraction,
+                });
+                if (error) throw error;
+            }
+        } catch (err) {
+            console.error('[Settings] Failed to save config:', err);
         }
 
         setTimeout(() => setSaving(false), 500);

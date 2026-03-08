@@ -216,13 +216,13 @@ export class PositionSizer {
 
         // 7. Method 3: Kelly (calibrated)
         let kellyResult: { pct: number; usd: number } | null = null;
-        if (calibratedWinRate > 0 && avgLossPct > 0) {
+        if (calibratedWinRate > 0 && avgLossPct > 0 && avgWinPct > 0) {
             const winLossRatio = avgWinPct / avgLossPct;
             const rawKelly = calibratedWinRate - ((1 - calibratedWinRate) / winLossRatio);
             const kellyFraction = config.kelly_fraction || 0.25;
             let kellyPct = rawKelly * kellyFraction * 100;
 
-            if (kellyPct > 0) {
+            if (isFinite(kellyPct) && kellyPct > 0) {
                 kellyPct = Math.min(kellyPct, maxExposurePct);
                 kellyResult = {
                     pct: Math.round(kellyPct * 100) / 100,

@@ -137,11 +137,12 @@ export function Positions() {
     // Calculate live P&L for a position
     const calcPnL = useCallback((pos: Position) => {
         const livePrice = liveQuotes[pos.ticker]?.price;
-        if (!livePrice || !pos.entry_price || !pos.shares) return null;
+        if (!livePrice || !pos.entry_price || pos.entry_price <= 0 || !pos.shares) return null;
 
         const multiplier = pos.side === 'short' ? -1 : 1;
         const pnlUsd = (livePrice - pos.entry_price) * pos.shares * multiplier;
         const pnlPct = ((livePrice - pos.entry_price) / pos.entry_price) * 100 * multiplier;
+        if (!isFinite(pnlUsd) || !isFinite(pnlPct)) return null;
         return { pnlUsd, pnlPct, livePrice };
     }, [liveQuotes]);
 
@@ -197,7 +198,7 @@ export function Positions() {
             setFormNotes('');
             // Clear URL params so refresh doesn't re-open with stale data
             if (hasPrefill) navigate('/positions', { replace: true });
-            fetchPositions();
+            await fetchPositions();
         }
     }
 
@@ -228,7 +229,7 @@ export function Positions() {
             setShowCloseModal(null);
             setClosePrice('');
             setCloseReason('manual');
-            fetchPositions();
+            await fetchPositions();
 
             // Fire-and-forget AI post-mortem generation
             setGeneratingPostMortem(pos.id);
@@ -262,7 +263,7 @@ export function Positions() {
 
         if (!error) {
             setShowDeleteConfirm(null);
-            fetchPositions();
+            await fetchPositions();
         }
         setDeleting(false);
     }

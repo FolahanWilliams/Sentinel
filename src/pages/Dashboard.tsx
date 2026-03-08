@@ -55,6 +55,8 @@ export function Dashboard() {
     })();
 
     useEffect(() => {
+        let mounted = true;
+
         async function fetchRecent() {
             const { data, error } = await supabase
                 .from('signals')
@@ -62,6 +64,7 @@ export function Dashboard() {
                 .order('created_at', { ascending: false })
                 .limit(5);
 
+            if (!mounted) return;
             if (!error && data) {
                 setRecentSignals(data);
             }
@@ -72,12 +75,12 @@ export function Dashboard() {
 
         const channel = supabase.channel('recent_signals')
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'signals' }, (payload) => {
-                // Auto-prepend new signals hitting the DB from the scanner
+                if (!mounted) return;
                 setRecentSignals(prev => [payload.new, ...prev].slice(0, 5));
             })
             .subscribe();
 
-        return () => { supabase.removeChannel(channel); };
+        return () => { mounted = false; supabase.removeChannel(channel); };
     }, [])
 
     const handleForceGlobalScan = useCallback(async () => {
