@@ -214,7 +214,7 @@ export class DynamicCalibrator {
         // Always clear pendingFetch so future calls retry instead of inheriting a stale/failed promise
         this.pendingFetch = null;
       }
-    })().catch((err) => {
+    })().catch(() => {
       // Ensure a rejected promise doesn't block future calls
       this.pendingFetch = null;
       return this.emptyCurve();
