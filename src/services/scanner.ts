@@ -43,6 +43,7 @@ import { AdaptiveThresholds } from './adaptiveThresholds';
 import { DynamicCalibrator } from './dynamicCalibrator';
 import { PriceCorrelationMatrix } from './priceCorrelationMatrix';
 import { PortfolioAwareSizer } from './portfolioAwareSizer';
+import { ConvictionGuardrails } from './convictionGuardrails';
 import { SectorRotationService } from './sectorRotation';
 import { MultiTimeframeService } from './multiTimeframe';
 import { DEFAULT_MIN_CONFIDENCE, DEFAULT_MIN_PRICE_DROP_PCT, CONFIDENCE_GATE_OVERREACTION, CONFIDENCE_GATE_CONTAGION, CONFIDENCE_GATE_CRITIQUE, CONFIDENCE_FLOOR, SEVERITY_THRESHOLD } from '@/config/constants';
@@ -935,6 +936,25 @@ If there is genuinely no major news, return: {"events": []}`,
                                             continue;
                                         }
 
+                                        // 7.17. MARGIN-OF-SAFETY GUARDRAIL — Buffett hard gate
+                                        const mosCheck = ConvictionGuardrails.checkMarginOfSafety(
+                                            quote.price,
+                                            quote.fiftyTwoWeekHigh,
+                                            analysis.data.confidence_score,
+                                        );
+                                        if (!mosCheck.passed) {
+                                            console.warn(`[Scanner] Margin-of-safety gate blocked ${ev.ticker}: ${mosCheck.reason}`);
+                                            continue;
+                                        }
+                                        if (mosCheck.warnings.length > 0) {
+                                            console.log(`[Scanner] MoS warnings for ${ev.ticker}: ${mosCheck.warnings.join('; ')}`);
+                                        }
+
+                                        // Compute margin-of-safety percentage for signal record
+                                        const marginOfSafetyPct = quote.fiftyTwoWeekHigh && quote.fiftyTwoWeekHigh > 0
+                                            ? Math.round(((quote.fiftyTwoWeekHigh - quote.price) / quote.fiftyTwoWeekHigh) * 1000) / 10
+                                            : null;
+
                                         // 8. WINNER! WE HAVE A SIGNAL.
                                         signalsGenerated++;
 
@@ -1110,6 +1130,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                                     summary: conflictResult.summary,
                                                 } : null,
                                             },
+                                            margin_of_safety_pct: marginOfSafetyPct,
                                             status: 'active',
                                             secondary_biases: [],
                                             sources: [],
@@ -1232,6 +1253,21 @@ If there is genuinely no major news, return: {"events": []}`,
                                                         );
 
                                                         if (contagionSanity.success && contagionSanity.data?.passes_sanity_check) {
+                                                            // Margin-of-safety check for contagion
+                                                            const contagionMos = ConvictionGuardrails.checkMarginOfSafety(
+                                                                satQuote.price,
+                                                                satQuote.fiftyTwoWeekHigh,
+                                                                contagion.data.confidence_score,
+                                                            );
+                                                            if (!contagionMos.passed) {
+                                                                console.warn(`[Scanner] MoS gate blocked contagion ${sat.ticker}: ${contagionMos.reason}`);
+                                                                continue;
+                                                            }
+
+                                                            const contagionMarginPct = satQuote.fiftyTwoWeekHigh && satQuote.fiftyTwoWeekHigh > 0
+                                                                ? Math.round(((satQuote.fiftyTwoWeekHigh - satQuote.price) / satQuote.fiftyTwoWeekHigh) * 1000) / 10
+                                                                : null;
+
                                                             signalsGenerated++;
 
                                                             // Confluence for contagion signal
@@ -1265,6 +1301,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                                                         return ConfidenceCalibrator.getCalibratedWinRate(contagion.data.confidence_score, curve);
                                                                     } catch { return contagion.data.confidence_score; }
                                                                 })(),
+                                                                margin_of_safety_pct: contagionMarginPct,
                                                                 data_quality: 'partial',
                                                                 secondary_biases: ['herding'],
                                                                 sources: [],
@@ -1505,9 +1542,24 @@ If there is genuinely no major news, return: {"events": []}`,
                         );
                     } catch { /* non-fatal */ }
 
+                    // Margin-of-safety check
+                    const singleMosCheck = ConvictionGuardrails.checkMarginOfSafety(
+                        currentPrice,
+                        quote.fiftyTwoWeekHigh,
+                        singleConfidence,
+                    );
+                    if (!singleMosCheck.passed) {
+                        console.warn(`[Scanner] MoS gate blocked single-ticker ${ticker}: ${singleMosCheck.reason}`);
+                    }
+                    const singleMarginPct = quote.fiftyTwoWeekHigh && quote.fiftyTwoWeekHigh > 0
+                        ? Math.round(((quote.fiftyTwoWeekHigh - currentPrice) / quote.fiftyTwoWeekHigh) * 1000) / 10
+                        : null;
+
                     // Drop if self-critique pushed below threshold
                     if (singleConfidence < CONFIDENCE_GATE_CRITIQUE) {
                         console.log(`[Scanner] Single-ticker ${ticker} dropped by self-critique: ${analysis.data.confidence_score}→${singleConfidence}`);
+                    } else if (!singleMosCheck.passed) {
+                        console.log(`[Scanner] Single-ticker ${ticker} dropped by margin-of-safety gate`);
                     } else {
                         // 7c. Calibrated confidence
                         let calibratedConf = singleConfidence;
@@ -1543,6 +1595,7 @@ If there is genuinely no major news, return: {"events": []}`,
                                 red_team: sanity.data,
                                 self_critique: critiqueOutput,
                             },
+                            margin_of_safety_pct: singleMarginPct,
                             status: 'active',
                             data_quality: singleTaSnapshot ? 'full' : 'partial',
                             sources: [],

@@ -125,6 +125,7 @@ export class PortfolioAwareSizer {
         ticker: string,
         sector: string,
         confluenceScore?: number,
+        convictionScore?: number,
     ): Promise<PortfolioAwareSizeResult> {
         // 1. Get portfolio context
         const ctx = await this.getPortfolioContext();
@@ -138,6 +139,7 @@ export class PortfolioAwareSizer {
             taSnapshot,
             ticker,
             confluenceScore,
+            convictionScore,
         );
 
         const originalRecommendedPct = base.recommendedPct;
