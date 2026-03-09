@@ -276,7 +276,7 @@ export class MarketDataService {
     }
 
     /**
-     * Fetch recent news for a ticker via the Apify yahoo-finance-news-ai actor.
+     * Fetch recent news for a ticker via Yahoo Finance RSS feeds.
      * Uses the same proxy-market-data Edge Function with endpoint='news'.
      */
     static async getTickerNews(ticker: string): Promise<NewsItem[]> {

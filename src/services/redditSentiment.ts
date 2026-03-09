@@ -2,8 +2,7 @@
  * Sentinel — Reddit Sentiment Service
  *
  * Fetches retail sentiment from Reddit via the proxy-reddit Edge Function,
- * which uses the Apify Reddit Scraper actor to bypass datacenter IP blocks.
- * Apify handles proxy rotation and browser emulation internally.
+ * which uses Reddit's public JSON API (no API key required).
  *
  * Caches parsed posts into the `rss_cache` table to feed the Agent Scanner pipeline.
  */
@@ -26,8 +25,8 @@ interface RedditPost {
 }
 
 // Primary subreddit for ticker-specific searches (highest retail volume).
-// Each Apify run takes 10-30s and costs compute credits, so we limit to
-// the single most impactful sub for searches. Hot-listing still supports all.
+// We limit to the single most impactful sub for searches.
+// Hot-listing still supports all allowed subreddits.
 const SEARCH_SUBREDDIT = 'wallstreetbets';
 
 export class RedditSentimentService {
@@ -35,7 +34,7 @@ export class RedditSentimentService {
      * Fetch latest posts matching specific tickers from r/wallstreetbets
      * and cache them into the rss_cache table as 'retail_sentiment'.
      *
-     * BATCHED: Sends up to 5 tickers in a single Apify run to save costs (~$0.02 vs ~$0.005).
+     * BATCHED: Sends up to 5 tickers in a single request via the proxy-reddit Edge Function.
      *
      * @param tickers Array of tickers to search for (e.g. ['AAPL', 'NVDA'])
      */
@@ -74,7 +73,7 @@ export class RedditSentimentService {
 
             if (posts.length === 0) return 0;
 
-            // Attribute posts to tickers (since Apify returns a mixed list)
+            // Attribute posts to tickers (since the search returns a mixed list)
             const rows: any[] = [];
             const seenLinks = new Set<string>();
 
