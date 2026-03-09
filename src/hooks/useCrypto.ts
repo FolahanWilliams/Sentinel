@@ -20,9 +20,16 @@ interface CryptoGlobal {
   marketCapChangePercent24h: number;
 }
 
+interface CryptoFearGreed {
+  score: number;
+  classification: string;
+  timestamp: string;
+}
+
 export interface CryptoData {
   prices: CoinPrice[];
   global: CryptoGlobal | null;
+  cryptoFearGreed: CryptoFearGreed | null;
   lastUpdated: string;
 }
 
@@ -77,6 +84,7 @@ export function useCrypto() {
       const cryptoData: CryptoData = {
         prices: result.prices,
         global: result.global,
+        cryptoFearGreed: result.cryptoFearGreed || null,
         lastUpdated: result.lastUpdated,
       };
       setData(cryptoData);

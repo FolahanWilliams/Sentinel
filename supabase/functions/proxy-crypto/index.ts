@@ -141,10 +141,35 @@ Deno.serve(async (req) => {
         }
       }
 
+      // Fetch crypto-specific Fear & Greed index from Alternative.me (free, no key)
+      let cryptoFearGreed: { score: number; classification: string; timestamp: string } | null = null
+      try {
+        const fngRes = await fetch('https://api.alternative.me/fng/?limit=1&format=json', {
+          headers: { 'Accept': 'application/json' },
+          signal: controller.signal,
+        })
+        if (fngRes.ok) {
+          const fngData = await fngRes.json()
+          const entry = fngData?.data?.[0]
+          if (entry) {
+            cryptoFearGreed = {
+              score: parseInt(entry.value) || 50,
+              classification: entry.value_classification || 'Neutral',
+              timestamp: entry.timestamp
+                ? new Date(parseInt(entry.timestamp) * 1000).toISOString()
+                : new Date().toISOString(),
+            }
+          }
+        }
+      } catch {
+        // Crypto Fear & Greed is optional
+      }
+
       const result = {
         success: true,
         prices,
         global,
+        cryptoFearGreed,
         lastUpdated: new Date().toISOString(),
         _cacheKey: cacheKey,
       }
