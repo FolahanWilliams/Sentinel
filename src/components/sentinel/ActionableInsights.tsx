@@ -46,7 +46,7 @@ export function ActionableInsights({ articles, portfolioPositions = [], onScanTi
             const tickers = new Set<string>();
 
             // From entities (ticker-like)
-            for (const e of article.entities) {
+            for (const e of article.entities || []) {
                 if (/^[A-Z]{1,5}$/.test(e)) tickers.add(e);
             }
             // From signals
@@ -124,7 +124,7 @@ export function ActionableInsights({ articles, portfolioPositions = [], onScanTi
             let bullish = 0;
 
             for (const article of articles) {
-                const mentioned = article.entities.some(e => e.toUpperCase() === t) ||
+                const mentioned = (article.entities || []).some(e => e.toUpperCase() === t) ||
                     article.signals?.some(s => s.ticker?.toUpperCase() === t);
                 if (!mentioned) continue;
                 if (article.sentiment === 'bearish') bearish++;

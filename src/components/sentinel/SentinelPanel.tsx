@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useSentinel } from '@/hooks/useSentinel';
 import { usePortfolio } from '@/hooks/usePortfolio';
@@ -18,7 +18,9 @@ import { RefreshCw, AlertCircle, Radar } from 'lucide-react';
 import { GlassMaterialize } from '@/components/shared/GlassMaterialize';
 
 export function SentinelPanel() {
-    const { data, loading, error, isRefreshing } = useSentinel();
+    const { data, loading, error, isRefreshing, refresh } = useSentinel();
+    const searchInputRef = useRef<HTMLInputElement>(null);
+    const feedRef = useRef<HTMLDivElement>(null);
     const { openPositions } = usePortfolio();
     const [searchParams, setSearchParams] = useSearchParams();
 
@@ -106,12 +108,65 @@ export function SentinelPanel() {
         });
     }, [data, searchQuery, activeCategories, activeSentiment, highImpactOnly, activeTimeRange, portfolioOnly, portfolioTickers]);
 
+    // Check if any filters are active
+    const hasActiveFilters = searchQuery || activeCategories.size > 0 || activeSentiment !== 'all' || highImpactOnly || activeTimeRange !== 'all' || portfolioOnly;
+    const totalArticles = data?.articles?.length ?? 0;
+
+    // Keyboard shortcuts: / to focus search, Esc to clear filters
+    useEffect(() => {
+        const handleKey = (e: KeyboardEvent) => {
+            // Don't capture when typing in an input
+            const tag = (e.target as HTMLElement).tagName;
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+                if (e.key === 'Escape') {
+                    (e.target as HTMLElement).blur();
+                    setSearchQuery('');
+                }
+                return;
+            }
+
+            if (e.key === '/') {
+                e.preventDefault();
+                searchInputRef.current?.focus();
+            } else if (e.key === 'Escape') {
+                // Clear all filters
+                setSearchQuery('');
+                setActiveCategories(new Set());
+                setActiveSentiment('all');
+                setHighImpactOnly(false);
+                setActiveTimeRange('all');
+                setPortfolioOnly(false);
+            } else if (e.key === 'j' || e.key === 'k') {
+                // Scroll article feed
+                const feed = feedRef.current;
+                if (feed) {
+                    feed.scrollBy({ top: e.key === 'j' ? 300 : -300, behavior: 'smooth' });
+                }
+            }
+        };
+        window.addEventListener('keydown', handleKey);
+        return () => window.removeEventListener('keydown', handleKey);
+    }, []);
+
+    // Handler for clicking trending topics in BriefingBar
+    const handleTopicClick = useCallback((topic: string) => {
+        setSearchQuery(topic);
+    }, []);
+
     if (error) {
         return (
             <div className="flex flex-col items-center justify-center h-96 text-red-500 bg-sentinel-900/20 rounded-xl border border-red-500/20 p-8">
                 <AlertCircle className="h-12 w-12 mb-4 opacity-50" />
                 <h3 className="text-xl font-bold mb-2">Intelligence Feed Offline</h3>
-                <p className="text-sentinel-400 text-center max-w-md">{error}</p>
+                <p className="text-sentinel-400 text-center max-w-md mb-4">{error}</p>
+                <button
+                    onClick={refresh}
+                    disabled={isRefreshing}
+                    className="px-4 py-2 bg-sentinel-800 hover:bg-sentinel-700 text-sentinel-200 rounded-lg text-sm font-medium transition-colors border border-sentinel-600/50 flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                    <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                    Retry
+                </button>
             </div>
         );
     }
@@ -123,18 +178,29 @@ export function SentinelPanel() {
     return (
         <div className="flex flex-col h-full relative">
 
-            {/* Refresh Indicator */}
-            {isRefreshing && (
-                <div className="absolute top-2 right-4 z-50 flex items-center space-x-2 text-xs font-medium text-sentinel-400 bg-sentinel-800/80 backdrop-blur-md px-3 py-1.5 rounded-full border border-sentinel-700/50 shadow-lg animate-pulse">
-                    <RefreshCw className="h-3 w-3 animate-spin" />
-                    <span>Gathering Intelligence...</span>
-                </div>
-            )}
+            {/* Refresh Button / Indicator */}
+            <div className="absolute top-2 right-4 z-30">
+                {isRefreshing ? (
+                    <div className="flex items-center space-x-2 text-xs font-medium text-sentinel-400 bg-sentinel-800/80 backdrop-blur-md px-3 py-1.5 rounded-full border border-sentinel-700/50 shadow-lg animate-pulse">
+                        <RefreshCw className="h-3 w-3 animate-spin" />
+                        <span>Gathering Intelligence...</span>
+                    </div>
+                ) : (
+                    <button
+                        onClick={refresh}
+                        className="flex items-center space-x-2 text-xs font-medium text-sentinel-500 hover:text-sentinel-300 bg-sentinel-800/60 hover:bg-sentinel-800/80 backdrop-blur-md px-3 py-1.5 rounded-full border border-sentinel-700/50 transition-colors cursor-pointer"
+                        title="Refresh intelligence feed (or wait 60s)"
+                    >
+                        <RefreshCw className="h-3 w-3" />
+                        <span>Refresh</span>
+                    </button>
+                )}
+            </div>
 
             {/* Briefing Bar (Top Level Meta) */}
             {data?.briefing && (
                 <div className="mb-6 shrink-0">
-                    <BriefingBar briefing={data.briefing} meta={data.meta} />
+                    <BriefingBar briefing={data.briefing} meta={data.meta} onTopicClick={handleTopicClick} />
                 </div>
             )}
 
@@ -158,6 +224,7 @@ export function SentinelPanel() {
                                     portfolioOnly={portfolioOnly}
                                     setPortfolioOnly={setPortfolioOnly}
                                     hasPortfolioPositions={openPositions.length > 0}
+                                    searchInputRef={searchInputRef}
                                 />
                             </div>
                             <div className="shrink-0 flex items-center gap-2">
@@ -178,7 +245,14 @@ export function SentinelPanel() {
                         </div>
                     </div>
 
-                    <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
+                    {/* Article count */}
+                    {hasActiveFilters && totalArticles > 0 && (
+                        <div className="text-xs text-sentinel-500 mb-2 font-mono shrink-0">
+                            Showing {filteredArticles.length} of {totalArticles} articles
+                        </div>
+                    )}
+
+                    <div ref={feedRef} className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
                         {filteredArticles.length === 0 ? (
                             <div className="text-center py-20 text-sentinel-400 border border-dashed border-sentinel-700 rounded-xl">
                                 No intelligence briefing matches your current filters.

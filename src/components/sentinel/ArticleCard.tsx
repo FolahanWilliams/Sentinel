@@ -19,7 +19,7 @@ export function ArticleCard({ article, onScanTicker, portfolioPositions }: Artic
 
     // Portfolio awareness: check if any entity/signal ticker matches an open position
     const matchedPositions = portfolioPositions?.filter(p =>
-        article.entities.some(e => e.toUpperCase() === p.ticker.toUpperCase()) ||
+        (article.entities || []).some(e => e.toUpperCase() === p.ticker.toUpperCase()) ||
         uniqueTickers.includes(p.ticker.toUpperCase())
     ) || [];
 
@@ -171,7 +171,7 @@ export function ArticleCard({ article, onScanTicker, portfolioPositions }: Artic
                                     title={`Scan ${t}`}
                                 >
                                     <Radar className="h-3 w-3" />
-                                    Scan ${t}
+                                    Scan {t}
                                 </button>
                             ))}
                         </div>
