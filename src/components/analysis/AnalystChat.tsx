@@ -109,6 +109,9 @@ function AnalystChatInner() {
     // Follow-up suggestions after AI responses
     const [suggestedFollowups, setSuggestedFollowups] = useState<string[]>([]);
 
+    // Pending action confirmation — destructive actions require user approval
+    const [pendingAction, setPendingAction] = useState<{ type: string; description: string; rawMessage: string } | null>(null);
+
     // Fetch portfolio context (positions, config, signals, sector data)
     useEffect(() => {
         if (!isOpen) return;
@@ -1618,7 +1621,10 @@ INSTRUCTIONS:
 3. When asked about rotation opportunities or what to sell/buy — cross-reference their PORTFOLIO positions against the SCANNER INTELLIGENCE section. Recommend specific replacements with projected ROI, win rates, and confidence scores from the scanner data.
 4. When recent NEWS is provided, reference specific headlines to support your analysis. In portfolio mode, news is tagged with the ticker it affects — use this to flag positions that have negative news catalysts.
 5. Keep responses concise but detailed (2-5 paragraphs). Be direct with numbers and specific tickers. When suggesting trades, include entry/target/stop from scanner data.
-6. AVAILABLE ACTIONS — If the user requests any of these, include the action tag in your response:
+6. AVAILABLE ACTIONS — ONLY include action tags when the user EXPLICITLY and DIRECTLY asks you to perform the action. For example, "close my NBIS position" or "sell AAPL" or "add TSLA to watchlist".
+   CRITICAL: NEVER generate action tags based on your own analysis or recommendations. If you think a position should be closed, RECOMMEND it in your response text — do NOT include the action tag. The user must explicitly ask you to execute.
+   NEVER close positions, open positions, or modify the portfolio unless the user directly instructs you to do so. Discussing a trade idea or asking "what do you think about X" is NOT a request to execute.
+   Available action tags (ONLY when user explicitly requests):
    - Log a trade: [ACTION:ADD_POSITION] TICKER @PRICE xSHARES SIDE (e.g., [ACTION:ADD_POSITION] AAPL @150.00 x100 LONG)
    - Close a trade with exit price: [ACTION:CLOSE_POSITION] TICKER @EXIT_PRICE REASON (e.g., [ACTION:CLOSE_POSITION] AAPL @165.00 target_hit)
    - Update a position (shares, stop, entry): [ACTION:UPDATE_POSITION] TICKER FIELD=VALUE (e.g., [ACTION:UPDATE_POSITION] AAPL shares=50 or [ACTION:UPDATE_POSITION] AAPL entry_price=148.50)
@@ -1719,10 +1725,31 @@ INSTRUCTIONS:
             }
 
             // Check for action patterns in the response
-            try {
-                await executeActions(messageText);
-            } catch (actionErr: any) {
-                console.error('Failed to execute AI action:', actionErr);
+            // Destructive actions (close/delete/add position) require user confirmation
+            const hasDestructiveAction = /\[ACTION:(CLOSE_POSITION|DELETE_POSITION|DELETE_ALL_CLOSED|DELETE_CLOSED_TICKERS|ADD_POSITION)\]/.test(messageText);
+            if (hasDestructiveAction) {
+                // Extract a human-readable description of what the action will do
+                const closeMatch = messageText.match(/\[ACTION:CLOSE_POSITION\]\s*(\w+(?:\.\w+)?)\s*@?\s*\$?([\d.]+)/i);
+                const addMatch = messageText.match(/\[ACTION:ADD_POSITION\]\s*(\w+(?:\.\w+)?)\s*@?\s*\$?([\d.]+)/i);
+                const deleteMatch = messageText.match(/\[ACTION:DELETE_POSITION\]\s*(\w+(?:\.\w+)?)/i);
+                const deleteAllMatch = messageText.includes('[ACTION:DELETE_ALL_CLOSED]');
+                const deleteTickersMatch = messageText.match(/\[ACTION:DELETE_CLOSED_TICKERS\]\s*([\w.\s]+)/i);
+
+                let desc = 'Execute action from AI response';
+                if (closeMatch?.[1] && closeMatch[2]) desc = `Close ${closeMatch[1].toUpperCase()} position @ $${closeMatch[2]}`;
+                else if (addMatch?.[1] && addMatch[2]) desc = `Open new ${addMatch[1].toUpperCase()} position @ $${addMatch[2]}`;
+                else if (deleteMatch?.[1]) desc = `Delete ${deleteMatch[1].toUpperCase()} position record`;
+                else if (deleteAllMatch) desc = 'Delete ALL closed position records';
+                else if (deleteTickersMatch?.[1]) desc = `Delete closed records for: ${deleteTickersMatch[1].trim()}`;
+
+                setPendingAction({ type: 'destructive', description: desc, rawMessage: messageText });
+            } else {
+                // Non-destructive actions (watchlist, scan, agent, sizing) execute immediately
+                try {
+                    await executeActions(messageText);
+                } catch (actionErr: any) {
+                    console.error('Failed to execute AI action:', actionErr);
+                }
             }
 
             // Trigger conversation summary if history is getting long
@@ -2025,6 +2052,45 @@ Rules:
 
                             <div ref={messagesEndRef} />
                         </div>
+
+                        {/* Action Confirmation Banner */}
+                        {pendingAction && (
+                            <div className="p-3 border-t border-amber-500/30 bg-amber-950/40">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <span className="text-amber-400 text-xs font-semibold uppercase tracking-wider">Confirm Action</span>
+                                </div>
+                                <p className="text-sm text-sentinel-200 mb-2">{pendingAction.description}</p>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={async () => {
+                                            const raw = pendingAction.rawMessage;
+                                            setPendingAction(null);
+                                            try {
+                                                await executeActions(raw);
+                                            } catch (err: any) {
+                                                console.error('Action execution failed:', err);
+                                            }
+                                        }}
+                                        className="px-3 py-1.5 text-xs font-medium bg-amber-600/80 hover:bg-amber-500/80 text-white rounded-lg transition-colors"
+                                    >
+                                        Confirm
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            setPendingAction(null);
+                                            setMessages(prev => [...prev, {
+                                                role: 'system' as const,
+                                                content: 'Action cancelled by user.',
+                                                timestamp: new Date(),
+                                            }]);
+                                        }}
+                                        className="px-3 py-1.5 text-xs font-medium bg-sentinel-800/80 hover:bg-sentinel-700/80 text-sentinel-300 rounded-lg transition-colors"
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
+                            </div>
+                        )}
 
                         {/* Input */}
                         <div className="p-3 border-t border-sentinel-800/50 bg-sentinel-950/80 relative">
