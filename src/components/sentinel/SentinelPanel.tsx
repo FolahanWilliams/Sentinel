@@ -7,14 +7,13 @@ import { FilterBar } from './FilterBar';
 import { ArticleCard } from './ArticleCard';
 import { SignalsSidebar } from './SignalsSidebar';
 import { SentinelSkeleton } from './SentinelSkeleton';
-import { ScannerDrawer } from './ScannerDrawer';
 import { TimeRangeFilter } from './TimeRangeFilter';
 import { getTimeRangeCutoff } from '@/utils/timeRange';
 import { ConvergenceAlert } from './ConvergenceAlert';
 import { ActionableInsights } from './ActionableInsights';
 import type { TimeRange } from '@/utils/timeRange';
 import type { ArticleCategory } from '@/types/sentinel';
-import { RefreshCw, AlertCircle, Radar } from 'lucide-react';
+import { RefreshCw, AlertCircle } from 'lucide-react';
 import { GlassMaterialize } from '@/components/shared/GlassMaterialize';
 
 export function SentinelPanel() {
@@ -22,7 +21,7 @@ export function SentinelPanel() {
     const searchInputRef = useRef<HTMLInputElement>(null);
     const feedRef = useRef<HTMLDivElement>(null);
     const { openPositions } = usePortfolio();
-    const [searchParams, setSearchParams] = useSearchParams();
+    const [searchParams] = useSearchParams();
 
     // Filter State
     const [searchQuery, setSearchQuery] = useState(() => searchParams.get('q') || '');
@@ -41,24 +40,6 @@ export function SentinelPanel() {
     // Portfolio tickers set for filtering
     const portfolioTickers = useMemo(() =>
         new Set(openPositions.map(p => p.ticker.toUpperCase())), [openPositions]);
-
-    // Scanner Drawer State
-    const [drawerOpen, setDrawerOpen] = useState(() => !!searchParams.get('scan'));
-    const [drawerTicker, setDrawerTicker] = useState<string>(() => searchParams.get('scan') || '');
-
-    const openScanDrawer = useCallback((ticker?: string) => {
-        setDrawerTicker(ticker || '');
-        setDrawerOpen(true);
-        if (ticker) {
-            setSearchParams(prev => { prev.set('scan', ticker); return prev; }, { replace: true });
-        }
-    }, [setSearchParams]);
-
-    const closeScanDrawer = useCallback(() => {
-        setDrawerOpen(false);
-        setDrawerTicker('');
-        setSearchParams(prev => { prev.delete('scan'); return prev; }, { replace: true });
-    }, [setSearchParams]);
 
     // Derived Client-Side Filtering
     const filteredArticles = useMemo(() => {
@@ -232,15 +213,6 @@ export function SentinelPanel() {
                                     activeRange={activeTimeRange}
                                     setActiveRange={setActiveTimeRange}
                                 />
-                                <button
-                                    onClick={() => openScanDrawer()}
-                                    aria-label="Quick Scan"
-                                    className="shrink-0 flex items-center gap-2 px-4 py-2 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 text-sm font-medium rounded-lg border border-indigo-500/30 transition-colors cursor-pointer"
-                                    title="Open Scanner"
-                                >
-                                    <Radar className="w-4 h-4" />
-                                    <span className="hidden xl:inline">Quick Scan</span>
-                                </button>
                             </div>
                         </div>
                     </div>
@@ -263,7 +235,6 @@ export function SentinelPanel() {
                                     <GlassMaterialize delay={Math.min(index, 10) * 50}>
                                         <ArticleCard
                                             article={article}
-                                            onScanTicker={openScanDrawer}
                                             portfolioPositions={openPositions}
                                         />
                                     </GlassMaterialize>
@@ -278,19 +249,11 @@ export function SentinelPanel() {
                     <ActionableInsights
                         articles={filteredArticles}
                         portfolioPositions={openPositions}
-                        onScanTicker={openScanDrawer}
                     />
-                    <ConvergenceAlert articles={filteredArticles} onScanTicker={openScanDrawer} />
-                    <SignalsSidebar articles={filteredArticles} onScanTicker={openScanDrawer} />
+                    <ConvergenceAlert articles={filteredArticles} />
+                    <SignalsSidebar articles={filteredArticles} />
                 </div>
             </div>
-
-            {/* Scanner Drawer */}
-            <ScannerDrawer
-                isOpen={drawerOpen}
-                onClose={closeScanDrawer}
-                prefillTicker={drawerTicker}
-            />
         </div>
     );
 }
