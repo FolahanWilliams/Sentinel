@@ -394,7 +394,7 @@ export class ScannerService {
             // 5. Extract Events via Gemini Fast-Pass
             // Always initialize extraction so grounded search + earnings calendar can inject events
             const extraction: { success: boolean; data: { events: any[] } | null } = { success: true, data: { events: [] } };
-            let actionableArticles: any[] = [];
+            const actionableArticles: any[] = [];
 
             if (freshArticles && freshArticles.length > 0) {
                 // A. Semantic Deduplication (TF-IDF cosine similarity — replaces Jaccard)
