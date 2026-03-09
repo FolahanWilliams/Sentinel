@@ -268,7 +268,7 @@ export function UnifiedDashboard() {
                         <Suspense fallback={<div className="flex items-center justify-center py-16"><div className="w-6 h-6 border-2 border-sentinel-600 border-t-sentinel-300 rounded-full animate-spin" /></div>}>
                             {activeTab === 'signals' && <SignalsSection />}
                             {activeTab === 'intelligence' && (
-                                <div className="h-[calc(100vh-16rem)]">
+                                <div className="h-[calc(100vh-16rem)] overflow-hidden">
                                     <SentinelPanel />
                                 </div>
                             )}

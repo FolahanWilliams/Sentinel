@@ -76,7 +76,7 @@ export function SentinelPanel() {
                 const query = searchQuery.toLowerCase();
                 const matchesTitle = article.title.toLowerCase().includes(query);
                 const matchesSummary = article.summary.toLowerCase().includes(query);
-                const matchesEntities = article.entities.some(e => e.toLowerCase().includes(query));
+                const matchesEntities = (article.entities || []).some(e => e.toLowerCase().includes(query));
                 if (!matchesTitle && !matchesSummary && !matchesEntities) return false;
             }
 
