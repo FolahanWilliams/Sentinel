@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import type { DailyBriefing, SentinelResponse } from '@/types/sentinel';
 import { Activity, Clock, ShieldAlert, Zap, Compass, CheckCircle2 } from 'lucide-react';
 import { SENTIMENT_COLORS } from '@/utils/sentinel-helpers';
@@ -8,7 +9,7 @@ interface BriefingBarProps {
     onTopicClick?: (topic: string) => void;
 }
 
-export function BriefingBar({ briefing, meta, onTopicClick }: BriefingBarProps) {
+export const BriefingBar = memo(function BriefingBar({ briefing, meta, onTopicClick }: BriefingBarProps) {
 
     const moodConfig = {
         'risk-on': { color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20', icon: Zap },
@@ -101,4 +102,4 @@ export function BriefingBar({ briefing, meta, onTopicClick }: BriefingBarProps) 
             </div>
         </div>
     );
-}
+});

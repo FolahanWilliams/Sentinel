@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import type { ProcessedArticle } from '@/types/sentinel';
 import type { Position } from '@/hooks/usePortfolio';
 import { CATEGORY_COLORS, SENTIMENT_COLORS, IMPACT_STYLES, formatTimeAgo } from '@/utils/sentinel-helpers';
@@ -10,7 +11,7 @@ interface ArticleCardProps {
     portfolioPositions?: Position[];
 }
 
-export function ArticleCard({ article, onScanTicker, portfolioPositions }: ArticleCardProps) {
+export const ArticleCard = memo(function ArticleCard({ article, onScanTicker, portfolioPositions }: ArticleCardProps) {
     // Collect unique tickers from signals for the scan action
     const uniqueTickers = article.signals
         ?.filter(s => s.ticker)
@@ -192,4 +193,4 @@ export function ArticleCard({ article, onScanTicker, portfolioPositions }: Artic
             </div>
         </div>
     );
-}
+});

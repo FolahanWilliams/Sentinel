@@ -8,7 +8,6 @@
 import { useState, useEffect, useCallback, useMemo, Fragment } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
-import { MarketDataService } from '@/services/marketData';
 import { PostMortemService } from '@/services/postMortemService';
 import {
     Briefcase, Plus, X, TrendingUp, TrendingDown,
@@ -22,6 +21,7 @@ import { EmptyState } from '@/components/shared/EmptyState';
 import { formatPrice } from '@/utils/formatters';
 import { inferCurrency } from '@/utils/portfolio';
 import { useSentinel } from '@/hooks/useSentinel';
+import { useQuoteWorker } from '@/hooks/useQuoteWorker';
 import { checkPortfolioNewsDivergence } from '@/services/portfolioNewsDivergence';
 
 interface Position {
@@ -71,8 +71,6 @@ export function Positions() {
     const [showCloseModal, setShowCloseModal] = useState<string | null>(null);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
     const [deleting, setDeleting] = useState(false);
-    const [liveQuotes, setLiveQuotes] = useState<Record<string, LiveQuote>>({});
-    const [quotesLoading, setQuotesLoading] = useState(false);
     const [generatingPostMortem, setGeneratingPostMortem] = useState<string | null>(null);
     const [expandedNotes, setExpandedNotes] = useState<string | null>(null);
 
@@ -102,7 +100,7 @@ export function Positions() {
 
     useEffect(() => { fetchPositions(); }, [fetchPositions]);
 
-    // Get unique open tickers for live polling
+    // Get unique open tickers for live polling via shared Web Worker
     const openTickers = useMemo(() => {
         return [...new Set(
             positions
@@ -111,33 +109,18 @@ export function Positions() {
         )];
     }, [positions]);
 
-    // Poll live quotes for open positions using bulk API
-    const fetchQuotes = useCallback(async () => {
-        if (openTickers.length === 0) return;
-        setQuotesLoading(true);
-
-        try {
-            const bulkQuotes = await MarketDataService.getQuotesBulk(openTickers);
-            const newQuotes: Record<string, LiveQuote> = {};
-            for (const [ticker, q] of Object.entries(bulkQuotes)) {
-                if (q?.price) {
-                    newQuotes[ticker] = { price: q.price, changePercent: q.changePercent ?? 0 };
-                }
+    // Use shared quote worker instead of per-component polling
+    const workerQuotes = useQuoteWorker(openTickers, 60_000);
+    const liveQuotes = useMemo(() => {
+        const mapped: Record<string, LiveQuote> = {};
+        for (const [ticker, q] of Object.entries(workerQuotes)) {
+            if (q?.price) {
+                mapped[ticker] = { price: q.price, changePercent: q.changePercent ?? 0 };
             }
-            setLiveQuotes(prev => ({ ...prev, ...newQuotes }));
-        } catch {
-            // Keep previous quotes if bulk fetch fails
         }
-
-        setQuotesLoading(false);
-    }, [openTickers]);
-
-    // Initial + periodic polling (60s)
-    useEffect(() => {
-        fetchQuotes();
-        const interval = setInterval(fetchQuotes, 60_000);
-        return () => clearInterval(interval);
-    }, [fetchQuotes]);
+        return mapped;
+    }, [workerQuotes]);
+    const quotesLoading = openTickers.length > 0 && Object.keys(liveQuotes).length === 0;
 
     // Calculate live P&L for a position
     const calcPnL = useCallback((pos: Position) => {

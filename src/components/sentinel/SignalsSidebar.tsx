@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import type { ProcessedArticle, SentinelTradingSignal } from '@/types/sentinel';
 import { Target, TrendingUp, TrendingDown, Activity, Radar } from 'lucide-react';
 
@@ -7,7 +7,7 @@ interface SignalsSidebarProps {
     onScanTicker?: (ticker: string) => void;
 }
 
-export function SignalsSidebar({ articles, onScanTicker }: SignalsSidebarProps) {
+export const SignalsSidebar = memo(function SignalsSidebar({ articles, onScanTicker }: SignalsSidebarProps) {
 
     // Aggregate and sort signals from all visible articles
     const aggregatedSignals = useMemo(() => {
@@ -151,4 +151,4 @@ export function SignalsSidebar({ articles, onScanTicker }: SignalsSidebarProps) 
             </div>
         </div>
     );
-}
+});

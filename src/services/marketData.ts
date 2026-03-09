@@ -74,9 +74,9 @@ export class MarketDataService {
             if (ticker.toUpperCase().endsWith('.L') && quoteData.price != null) {
                 quoteData.price = quoteData.price / 100;
                 // Keep high/low consistent if present
-                if ((quoteData as any).dayHigh != null) (quoteData as any).dayHigh /= 100;
-                if ((quoteData as any).dayLow != null) (quoteData as any).dayLow /= 100;
-                if ((quoteData as any).previousClose != null) (quoteData as any).previousClose /= 100;
+                if (quoteData.high != null) quoteData.high /= 100;
+                if (quoteData.low != null) quoteData.low /= 100;
+                if (quoteData.previousClose != null) quoteData.previousClose /= 100;
             }
 
             // 3. Update Cache
@@ -158,9 +158,9 @@ export class MarketDataService {
                         // Normalize LSE pence → pounds
                         if (key.endsWith('.L') && quote.price != null) {
                             quote.price = quote.price / 100;
-                            if ((quote as any).dayHigh != null) (quote as any).dayHigh /= 100;
-                            if ((quote as any).dayLow != null) (quote as any).dayLow /= 100;
-                            if ((quote as any).previousClose != null) (quote as any).previousClose /= 100;
+                            if (quote.high != null) quote.high /= 100;
+                            if (quote.low != null) quote.low /= 100;
+                            if (quote.previousClose != null) quote.previousClose /= 100;
                         }
                         results[ticker] = quote;
                         cache.set(`quote_${key}`, { data: quote, timestamp: Date.now() });

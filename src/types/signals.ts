@@ -27,6 +27,8 @@ export interface TASnapshot {
     gapPct: number | null;
     gapType: GapType;
     trendDirection: 'bullish' | 'bearish' | 'neutral';
+    /** 1 = buying volume, -1 = selling volume, 0 = neutral */
+    volumeDirection?: number;
     taScore: number;
 }
 
