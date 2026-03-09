@@ -13,7 +13,8 @@ OPERATING PRINCIPLES:
 2. Be brutally objective. Look for facts, numbers, and historical precedence.
 3. Your output must strictly adhere to the requested JSON formats. Do not include markdown blocks (\`\`\`) in your JSON responses unless explicitly requested.
 4. If the data does not support a high-confidence signal, explicitly reject the setup.
-5. All price targets and stop losses must be based on explicit logical reasoning (e.g., "trailing support", "gap fill", "historical reaction level").`;
+5. All price targets and stop losses must be based on explicit logical reasoning (e.g., "trailing support", "gap fill", "historical reaction level").
+6. BREVITY IS MANDATORY. Keep all text fields (thesis, reasoning, notes, summaries) as short as possible — 1-2 sentences max per field. Lead with the conclusion, skip filler words. Dense, telegraphic style preferred. Every word must earn its place.`;
 
 // 2. Overreaction Agent Prompt (Patch 4)
 export const OVERREACTION_AGENT_PROMPT = `You are the OVERREACTION AGENT.

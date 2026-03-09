@@ -50,19 +50,34 @@ import type { Quote } from '@/types/market';
 export class ScannerService {
 
     /**
-     * Ensure a ticker exists in the watchlist table for this user.
-     * Uses upsert with ignoreDuplicates so it's safe to call multiple times.
+     * Ensure a ticker exists in the watchlist table for the current user.
+     * Uses select-then-insert to avoid partial-index ON CONFLICT issues.
      */
     private static async ensureWatchlistEntry(ticker: string): Promise<void> {
-        const { error } = await supabase.from('watchlist').upsert({
-            ticker: ticker.toUpperCase(),
-            company_name: ticker.toUpperCase(), // Placeholder — will be enriched later
-            sector: 'Unknown',
-            is_active: true,
-            notes: 'Auto-added by AI discovery scan'
-        }, { onConflict: 'ticker,user_id', ignoreDuplicates: true });
-        if (error) {
-            console.warn(`[Scanner] Failed to ensure watchlist entry for ${ticker}:`, error.message);
+        const upperTicker = ticker.toUpperCase();
+        try {
+            const { data: existing } = await supabase
+                .from('watchlist')
+                .select('id')
+                .eq('ticker', upperTicker)
+                .limit(1)
+                .maybeSingle();
+
+            if (existing) return; // Already exists for this user (RLS-scoped)
+
+            const { error } = await supabase.from('watchlist').insert({
+                ticker: upperTicker,
+                company_name: upperTicker,
+                sector: 'Unknown',
+                is_active: true,
+                notes: 'Auto-added by AI discovery scan'
+            });
+            // Ignore duplicate key errors (race condition between select and insert)
+            if (error && !error.message.includes('duplicate')) {
+                console.warn(`[Scanner] Failed to ensure watchlist entry for ${ticker}:`, error.message);
+            }
+        } catch (err) {
+            console.warn(`[Scanner] ensureWatchlistEntry failed for ${ticker}:`, err);
         }
     }
 
