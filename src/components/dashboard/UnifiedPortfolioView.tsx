@@ -170,6 +170,12 @@ export function UnifiedPortfolioView({ className = '' }: UnifiedPortfolioViewPro
         }));
     }, [openPositions, sectorMap]);
 
+    // Portfolio-news sentiment divergence detection (must be before early returns to satisfy Rules of Hooks)
+    const divergences = useMemo(() => {
+        if (!sentinelData?.articles || openPositions.length === 0) return [];
+        return checkPortfolioNewsDivergence(sentinelData.articles, openPositions);
+    }, [sentinelData?.articles, openPositions]);
+
     if (portfolioLoading) {
         return (
             <div className={`space-y-6 ${className}`}>
@@ -178,12 +184,6 @@ export function UnifiedPortfolioView({ className = '' }: UnifiedPortfolioViewPro
             </div>
         );
     }
-
-    // Portfolio-news sentiment divergence detection
-    const divergences = useMemo(() => {
-        if (!sentinelData?.articles || openPositions.length === 0) return [];
-        return checkPortfolioNewsDivergence(sentinelData.articles, openPositions);
-    }, [sentinelData?.articles, openPositions]);
 
     return (
         <ErrorBoundary>
