@@ -20,11 +20,13 @@ import { CommandPalette } from '@/components/shared/CommandPalette';
 import { OnboardingOverlay } from '@/components/shared/OnboardingOverlay';
 import { AnalystChat } from '@/components/analysis/AnalystChat';
 import { useDeviceCapability } from '@/hooks/useDeviceCapability';
+import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { OutcomeTracker } from '@/services/outcomeTracker';
 import { ExposureMonitor } from '@/services/exposureMonitor';
 
 export function AppLayout() {
     const { isLowEnd } = useDeviceCapability();
+    useKeyboardShortcuts();
     const outcomeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const exposureIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -90,8 +92,10 @@ export function AppLayout() {
         };
     }, []);
 
-    // Continuous sector/total exposure drift monitoring — every 5 minutes
+    // Continuous sector/total exposure drift monitoring — configurable interval
     useEffect(() => {
+        const intervalMs = ExposureMonitor.getCheckInterval();
+
         // Initial check after 90s (after outcome tracker starts)
         const startupTimeout = setTimeout(() => {
             ExposureMonitor.checkAndAlert().catch(() => {});
@@ -99,7 +103,7 @@ export function AppLayout() {
 
         exposureIntervalRef.current = setInterval(() => {
             ExposureMonitor.checkAndAlert().catch(() => {});
-        }, 5 * 60 * 1000); // 5 minutes
+        }, intervalMs);
 
         return () => {
             clearTimeout(startupTimeout);

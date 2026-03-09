@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, Filter, AlertTriangle } from 'lucide-react';
+import { Search, Filter, AlertTriangle, Briefcase } from 'lucide-react';
 import { motion } from 'framer-motion';
 import type { ArticleCategory } from '@/types/sentinel';
 import { CATEGORY_COLORS } from '@/utils/sentinel-helpers';
@@ -13,13 +13,18 @@ interface FilterBarProps {
     setActiveSentiment: (s: 'all' | 'bullish' | 'bearish') => void;
     highImpactOnly: boolean;
     setHighImpactOnly: (val: boolean) => void;
+    portfolioOnly?: boolean;
+    setPortfolioOnly?: (val: boolean) => void;
+    hasPortfolioPositions?: boolean;
 }
 
 export function FilterBar({
     searchQuery, setSearchQuery,
     activeCategories, setActiveCategories,
     activeSentiment, setActiveSentiment,
-    highImpactOnly, setHighImpactOnly
+    highImpactOnly, setHighImpactOnly,
+    portfolioOnly = false, setPortfolioOnly,
+    hasPortfolioPositions = false,
 }: FilterBarProps) {
     // Debounce search input — avoids filtering 1000+ articles on every keystroke
     const [searchInput, setSearchInput] = useState(searchQuery);
@@ -82,6 +87,21 @@ export function FilterBar({
                         <AlertTriangle className="h-4 w-4" />
                         High Impact
                     </motion.button>
+
+                    {hasPortfolioPositions && setPortfolioOnly && (
+                        <motion.button
+                            onClick={() => setPortfolioOnly(!portfolioOnly)}
+                            whileTap={{ scale: 0.985 }}
+                            transition={{ type: 'spring', stiffness: 600, damping: 15, duration: 0.15 }}
+                            className={`flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-colors flex-1 sm:flex-none glass-pressable ${portfolioOnly
+                                    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50'
+                                    : 'bg-sentinel-900/50 text-sentinel-400 border-sentinel-700/50 hover:bg-sentinel-800'
+                                }`}
+                        >
+                            <Briefcase className="h-4 w-4" />
+                            Portfolio
+                        </motion.button>
+                    )}
                 </div>
             </div>
 

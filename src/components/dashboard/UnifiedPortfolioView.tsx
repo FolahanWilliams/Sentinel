@@ -10,7 +10,10 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
 import { MarketDataService } from '@/services/marketData';
 import { usePortfolio } from '@/hooks/usePortfolio';
+import { useSentinel } from '@/hooks/useSentinel';
+import { checkPortfolioNewsDivergence } from '@/services/portfolioNewsDivergence';
 import { formatPrice, formatPercent } from '@/utils/formatters';
+import { TickerLink } from '@/components/shared/TickerLink';
 import { DonutChart } from '@/components/shared/DonutChart';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 import { EmptyState } from '@/components/shared/EmptyState';
@@ -18,6 +21,7 @@ import { SkeletonSummaryCards, SkeletonTable } from '@/components/shared/Skeleto
 import {
     DollarSign, TrendingUp, TrendingDown, ShieldAlert, PieChart,
     Plus, X, RefreshCw, Briefcase, ArrowUpRight, ArrowDownRight, FileUp,
+    AlertTriangle, Newspaper,
 } from 'lucide-react';
 import { ImportPortfolio } from './ImportPortfolio';
 import { calcUnrealizedPnl, calcUnrealizedPnlPct, getPositionPrice, getPositionExposure, inferCurrency } from '@/utils/portfolio';
@@ -47,6 +51,7 @@ const SECTOR_COLORS: Record<string, string> = {
 export function UnifiedPortfolioView({ className = '' }: UnifiedPortfolioViewProps) {
     const navigate = useNavigate();
     const { config, openPositions, closedPositions, loading: portfolioLoading, refetch } = usePortfolio();
+    const { data: sentinelData } = useSentinel();
     const [quotes, setQuotes] = useState<Record<string, Quote>>({});
     const [sectorMap, setSectorMap] = useState<Record<string, string>>({});
     const [refreshing, setRefreshing] = useState(false);
@@ -174,9 +179,44 @@ export function UnifiedPortfolioView({ className = '' }: UnifiedPortfolioViewPro
         );
     }
 
+    // Portfolio-news sentiment divergence detection
+    const divergences = useMemo(() => {
+        if (!sentinelData?.articles || openPositions.length === 0) return [];
+        return checkPortfolioNewsDivergence(sentinelData.articles, openPositions);
+    }, [sentinelData?.articles, openPositions]);
+
     return (
         <ErrorBoundary>
             <div className={`space-y-6 ${className}`}>
+                {/* Sentiment Divergence Banner */}
+                {divergences.length > 0 && (
+                    <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                        <div className="flex items-center gap-2 mb-2">
+                            <AlertTriangle className="w-4 h-4 text-amber-400" />
+                            <span className="text-sm font-semibold text-amber-400">
+                                {divergences.length} position{divergences.length !== 1 ? 's have' : ' has'} conflicting news sentiment
+                            </span>
+                        </div>
+                        <div className="space-y-1.5">
+                            {divergences.map(d => (
+                                <div key={d.ticker} className="flex items-center justify-between text-xs">
+                                    <span className="text-sentinel-300">
+                                        <TickerLink ticker={d.ticker} className="text-xs" />
+                                        {' — '}{d.message}
+                                    </span>
+                                    <button
+                                        onClick={() => navigate(`/?tab=intelligence&q=${d.ticker}`)}
+                                        className="flex items-center gap-1 text-amber-400 hover:text-amber-300 transition-colors shrink-0 ml-3"
+                                    >
+                                        <Newspaper className="w-3 h-3" />
+                                        View News
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
                 {/* Summary cards */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                     <SummaryCard
@@ -339,7 +379,7 @@ export function UnifiedPortfolioView({ className = '' }: UnifiedPortfolioViewPro
                                                 onClick={() => navigate(`/analysis/${pos.ticker}`)}
                                             >
                                                 <td className="px-5 py-3">
-                                                    <span className="font-mono font-bold text-sentinel-200">{pos.ticker}</span>
+                                                    <TickerLink ticker={pos.ticker} className="text-sm" />
                                                     <span className="ml-2 text-[10px] text-sentinel-500 uppercase">{pos.side}</span>
                                                 </td>
                                                 <td className="text-right px-3 py-3 font-mono text-sentinel-300">{shares}</td>

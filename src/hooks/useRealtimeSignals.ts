@@ -7,6 +7,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/config/supabase';
+import { BrowserNotificationService } from '@/services/browserNotifications';
 
 export interface RealtimeSignal {
     id: string;
@@ -49,6 +50,22 @@ export function useRealtimeSignals() {
                             created_at: signal.created_at,
                         };
                         setPendingSignals(prev => [newSignal, ...prev].slice(0, 5)); // Keep max 5
+
+                        // Fire browser notifications
+                        BrowserNotificationService.notifyNewSignal(
+                            signal.ticker,
+                            signal.signal_type,
+                            signal.confidence_score,
+                        ).catch(() => {});
+
+                        // Extra notification for high-confidence signals
+                        if (signal.confidence_score > 85 && signal.thesis) {
+                            BrowserNotificationService.notifyHighConfidenceSignal(
+                                signal.ticker,
+                                signal.confidence_score,
+                                signal.thesis,
+                            ).catch(() => {});
+                        }
                     }
                 }
             )

@@ -6,17 +6,19 @@
  */
 
 import { useState, useEffect } from 'react';
-import { RefreshCw, TrendingUp, TrendingDown, Minus, BarChart3, Gauge, ChevronDown, ArrowRight, Layers } from 'lucide-react';
+import { RefreshCw, TrendingUp, TrendingDown, Minus, BarChart3, Gauge, ChevronDown, ArrowRight, Layers, Activity } from 'lucide-react';
 import { useMarketSnapshot } from '@/hooks/useMarketSnapshot';
 import { useFearGreed } from '@/hooks/useFearGreed';
 import { FEAR_GREED_INDICATOR_LABELS } from '@/types/fearGreed';
 import type { FearGreedData, FearGreedIndicator } from '@/types/fearGreed';
 import { Sparkline } from '@/components/shared/Sparkline';
 import { SectorRotationService, type SectorRotationSnapshot } from '@/services/sectorRotation';
+import { useMarketRegime } from '@/hooks/useMarketRegime';
 
 export function MarketSnapshot() {
     const { data, loading, refetch } = useMarketSnapshot();
     const { data: fgData } = useFearGreed();
+    const { regime: marketRegime } = useMarketRegime();
     const [showIndicators, setShowIndicators] = useState(false);
     const [rotationSnapshot, setRotationSnapshot] = useState<SectorRotationSnapshot | null>(null);
 
@@ -115,6 +117,32 @@ export function MarketSnapshot() {
                         <p className="text-sm text-sentinel-300 leading-relaxed mb-4">
                             {description}
                         </p>
+
+                        {/* Market Regime Badge */}
+                        {marketRegime && (
+                            <div className="flex items-center gap-3 mb-4 px-3 py-2.5 rounded-lg bg-sentinel-950/50 border border-sentinel-800/40">
+                                <Activity className="w-4 h-4 text-sentinel-400 shrink-0" />
+                                <div className="flex items-center gap-2 flex-1 min-w-0">
+                                    <span className="text-[10px] text-sentinel-500 uppercase tracking-wider font-bold">Regime</span>
+                                    <span className={`text-xs font-bold ${
+                                        marketRegime.regime === 'bull' ? 'text-emerald-400' :
+                                        marketRegime.regime === 'crisis' ? 'text-red-400' :
+                                        marketRegime.regime === 'correction' ? 'text-amber-400' :
+                                        'text-sentinel-400'
+                                    }`}>
+                                        {marketRegime.regime.charAt(0).toUpperCase() + marketRegime.regime.slice(1)}
+                                    </span>
+                                    {marketRegime.vixLevel !== null && (
+                                        <span className="text-[10px] font-mono text-sentinel-500">VIX {marketRegime.vixLevel.toFixed(1)}</span>
+                                    )}
+                                    {marketRegime.confidencePenalty !== 0 && (
+                                        <span className={`text-[10px] font-mono ${marketRegime.confidencePenalty < 0 ? 'text-red-400' : 'text-emerald-400'}`}>
+                                            {marketRegime.confidencePenalty > 0 ? '+' : ''}{marketRegime.confidencePenalty}% signals
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+                        )}
 
                         {/* Fear & Greed Gauge + Sub-Indicators */}
                         <div className="bg-sentinel-950/50 rounded-xl border border-sentinel-800/40 mb-4 overflow-hidden">

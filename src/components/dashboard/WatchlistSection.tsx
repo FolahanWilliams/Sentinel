@@ -8,6 +8,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
+import { TickerLink } from '@/components/shared/TickerLink';
 import { MarketDataService } from '@/services/marketData';
 import { useWatchlistStore } from '@/stores/watchlistStore';
 import { formatPrice, formatPercent } from '@/utils/formatters';
@@ -171,7 +172,7 @@ export function WatchlistSection({ className = '' }: WatchlistSectionProps) {
                                         <div className="flex items-start justify-between">
                                             <div>
                                                 <div className="flex items-center gap-2">
-                                                    <span className="text-sm font-bold font-mono text-sentinel-100">{item.ticker}</span>
+                                                    <TickerLink ticker={item.ticker} className="text-sm" />
                                                     {item.sector && (
                                                         <span className="text-[10px] text-sentinel-500 bg-sentinel-800/50 px-1.5 py-0.5 rounded">{item.sector}</span>
                                                     )}
