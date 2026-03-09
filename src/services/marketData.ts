@@ -153,7 +153,7 @@ export class MarketDataService {
                 for (const ticker of cacheMisses) {
                     const key = ticker.toUpperCase();
                     const quoteData = bulkData[key];
-                    if (quoteData && quoteData.price) {
+                    if (quoteData && quoteData.price != null) {
                         const quote = quoteData as Quote;
                         // Normalize LSE pence → pounds
                         if (key.endsWith('.L') && quote.price != null) {
