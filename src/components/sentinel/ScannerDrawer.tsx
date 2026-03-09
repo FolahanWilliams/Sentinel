@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Radar, Search, Loader2, AlertCircle, CheckCircle, Activity, Clock, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { ScannerService } from '@/services/scanner';
@@ -61,7 +62,9 @@ export function ScannerDrawer({ isOpen, onClose, prefillTicker }: ScannerDrawerP
         return () => window.removeEventListener('keydown', handleKey);
     }, [isOpen, onClose]);
 
-    return (
+    // Use a portal to render at document.body level, escaping any CSS
+    // transform ancestors (e.g. framer-motion) that break fixed positioning.
+    return createPortal(
         <>
             {/* Backdrop */}
             {isOpen && (
@@ -202,6 +205,7 @@ export function ScannerDrawer({ isOpen, onClose, prefillTicker }: ScannerDrawerP
                     </Link>
                 </div>
             </div>
-        </>
+        </>,
+        document.body
     );
 }
