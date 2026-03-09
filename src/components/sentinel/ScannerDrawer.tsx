@@ -76,7 +76,7 @@ export function ScannerDrawer({ isOpen, onClose, prefillTicker }: ScannerDrawerP
                 fixed top-0 right-0 h-full w-full max-w-md z-50
                 glass-panel-light border-l border-sentinel-700/50
                 transform transition-all duration-300 ease-in-out
-                ${isOpen ? 'translate-x-0' : 'translate-x-full'}
+                ${isOpen ? 'translate-x-0' : 'translate-x-full pointer-events-none'}
                 flex flex-col
             `}>
                 {/* Header */}
