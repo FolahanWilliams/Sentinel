@@ -37,15 +37,8 @@ const corsHeaders = {
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// ─── Apify Config ────────────────────────────────────────────────────────────
-// Cost-saving: batch quotes into a single Apify run (~$0.005/run) instead of
-// multiple Yahoo Finance direct calls that get IP-blocked from cloud environments.
-const APIFY_BASE = 'https://api.apify.com/v2'
-const APIFY_QUOTE_ACTOR = 'automation-lab~yahoo-finance-scraper'
-const APIFY_NEWS_ACTOR = 'desmond-dev~yahoo-finance-news-ai'
-
 // ─── Per-user rate limiting ──────────────────────────────────────────────────
-// Prevents runaway costs from rapid Apify calls. TTLs: quote=10s, news=30s
+// Prevents excessive API calls. TTLs: quote=10s, news=30s
 const rateLimitMap = new Map<string, number>()
 const RATE_LIMIT_TTL = { quote: 10_000, news: 30_000 } as const
 
@@ -100,151 +93,259 @@ function setCache(key: string, data: any, endpoint: string): void {
     }
 }
 
-// ─── Apify Helpers ───────────────────────────────────────────────────────────
+// ─── Yahoo Finance Helpers (free, no API key required) ──────────────────────
 
 /**
- * Run an Apify actor synchronously and return dataset items directly.
- * Uses the `run-sync-get-dataset-items` endpoint — single HTTP call.
- * Apify supports up to 300s sync timeout; we cap at `timeoutMs` via AbortController.
+ * Yahoo crumb/cookie auth — required for V7 quote API from server IPs.
+ * Mimics the approach used by the Python yfinance library.
+ * Cached in-memory since crumbs are valid for ~30 minutes.
  */
-async function runApifyActor(
-    actorId: string,
-    input: Record<string, unknown>,
-    apifyToken: string,
-    timeoutMs = 25_000,
-): Promise<any[]> {
-    const url = `${APIFY_BASE}/acts/${actorId}/run-sync-get-dataset-items?format=json`
+let _yahooCrumb: { crumb: string; cookie: string; expiresAt: number } | null = null
+
+async function getYahooCrumbAndCookie(): Promise<{ crumb: string; cookie: string }> {
+    if (_yahooCrumb && Date.now() < _yahooCrumb.expiresAt) {
+        return { crumb: _yahooCrumb.crumb, cookie: _yahooCrumb.cookie }
+    }
 
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), timeoutMs)
+    const timeout = setTimeout(() => controller.abort(), 10_000)
 
     try {
-        const res = await fetch(url, {
-            method: 'POST',
+        // Step 1: Hit Yahoo Finance to get a session cookie
+        const initRes = await fetch('https://fc.yahoo.com/curated', {
+            method: 'GET',
             headers: {
-                'Authorization': `Bearer ${apifyToken}`,
-                'Content-Type': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
             },
-            body: JSON.stringify(input),
+            redirect: 'manual',
+            signal: controller.signal,
+        })
+        // fc.yahoo.com returns 404 but sets the A3 cookie we need
+        const setCookieHeaders = initRes.headers.getSetCookie?.() || []
+        let cookie = ''
+        for (const sc of setCookieHeaders) {
+            const match = sc.match(/^([^;]+)/)
+            if (match) cookie += (cookie ? '; ' : '') + match[1]
+        }
+
+        if (!cookie) {
+            // Fallback: try getting cookie from finance.yahoo.com
+            const fallbackRes = await fetch('https://finance.yahoo.com/', {
+                method: 'GET',
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                },
+                redirect: 'follow',
+                signal: controller.signal,
+            })
+            const fb = fallbackRes.headers.getSetCookie?.() || []
+            for (const sc of fb) {
+                const match = sc.match(/^([^;]+)/)
+                if (match) cookie += (cookie ? '; ' : '') + match[1]
+            }
+            // Consume body
+            await fallbackRes.text().catch(() => {})
+        }
+
+        // Step 2: Use the cookie to get a crumb
+        const crumbRes = await fetch('https://query2.finance.yahoo.com/v1/test/getcrumb', {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                'Cookie': cookie,
+            },
             signal: controller.signal,
         })
 
-        if (res.status === 408) {
-            throw new Error(`Apify actor ${actorId} timed out (sync limit exceeded)`)
-        }
-        if (!res.ok) {
-            const errText = await res.text()
-            throw new Error(`Apify ${actorId} failed: ${res.status} ${errText.substring(0, 300)}`)
+        if (!crumbRes.ok) {
+            throw new Error(`Crumb fetch failed: ${crumbRes.status}`)
         }
 
-        return await res.json()
+        const crumb = await crumbRes.text()
+        if (!crumb || crumb.length > 50) {
+            throw new Error('Invalid crumb response')
+        }
+
+        _yahooCrumb = { crumb, cookie, expiresAt: Date.now() + 20 * 60 * 1000 } // Cache 20min
+        console.log(`[proxy-market-data] Yahoo crumb obtained successfully`)
+        return { crumb, cookie }
     } finally {
         clearTimeout(timeout)
     }
 }
 
 /**
- * Fetch a quote via Apify's yahoo-finance-scraper actor.
- * Supports international tickers natively (FRES.L, AAF.L, THX.V, ^VIX).
- * Cost-saving: batch up to 20 tickers per run (~$0.005/run vs per-ticker).
+ * Fetch quotes for multiple tickers in a single Yahoo V7 API call.
+ * Uses crumb/cookie auth to avoid IP blocking.
+ * This is the same approach used by the Python yfinance library.
  */
-async function fetchQuoteViaApify(
-    tickers: string[],
-    apifyToken: string,
-): Promise<Map<string, Quote>> {
-    const items = await runApifyActor(
-        APIFY_QUOTE_ACTOR,
-        {
-            tickers,
-            includeHistory: false,  // We only need current quotes — saves compute
-        },
-        apifyToken,
-        25_000,
-    )
-
-    console.log(`[proxy-market-data] Apify quote actor returned ${items.length} items for ${tickers.join(',')}`)
-
+async function fetchQuotesBatchYahoo(tickers: string[]): Promise<Map<string, Quote>> {
     const quotes = new Map<string, Quote>()
 
-    for (const item of items) {
-        // The actor returns Yahoo Finance data — field names follow the Yahoo Finance convention.
-        // Handle both flat (regularMarketPrice) and nested (quote.regularMarketPrice) layouts.
-        const data = item.quote || item
+    // Try with crumb/cookie auth first
+    try {
+        const { crumb, cookie } = await getYahooCrumbAndCookie()
+        const symbols = tickers.join(',')
+        const url = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbols)}&crumb=${encodeURIComponent(crumb)}`
 
-        const symbol = (data.symbol || item.symbol || item.ticker || '').toUpperCase()
-        if (!symbol) continue
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), 12_000)
 
-        const price = data.regularMarketPrice ?? data.price ?? 0
-        if (!price) continue
+        try {
+            const res = await fetch(url, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                    'Accept': 'application/json',
+                    'Cookie': cookie,
+                },
+                signal: controller.signal,
+            })
+            clearTimeout(timeout)
 
-        const prevClose = data.regularMarketPreviousClose ?? data.previousClose ?? price
-        const change = data.regularMarketChange ?? data.change ?? (price - prevClose)
-        const changePct = data.regularMarketChangePercent ?? data.changePercent ?? (prevClose ? (change / prevClose) * 100 : 0)
+            if (res.ok) {
+                const data = await res.json()
+                const results = data?.quoteResponse?.result || []
+                console.log(`[proxy-market-data] Yahoo V7 batch returned ${results.length} results for ${tickers.length} tickers`)
 
-        quotes.set(symbol, {
-            ticker: symbol,
-            price,
-            change,
-            changePercent: changePct,
-            volume: data.regularMarketVolume ?? data.volume ?? 0,
-            previousClose: prevClose,
-            open: data.regularMarketOpen ?? data.open ?? 0,
-            high: data.regularMarketDayHigh ?? data.dayHigh ?? data.high ?? 0,
-            low: data.regularMarketDayLow ?? data.dayLow ?? data.low ?? 0,
-            marketCap: data.marketCap ?? undefined,
-            peRatio: data.trailingPE ?? data.peRatio ?? undefined,
-            pegRatio: data.pegRatio ?? data.trailingPegRatio ?? undefined,
-            debtToEquity: data.debtToEquity ?? undefined,
-            roe: data.returnOnEquity ?? data.roe ?? undefined,
-            freeCashFlow: data.freeCashflow ?? data.freeCashFlow ?? undefined,
-            fiftyTwoWeekHigh: data.fiftyTwoWeekHigh ?? undefined,
-            fiftyTwoWeekLow: data.fiftyTwoWeekLow ?? undefined,
-            lastUpdated: new Date().toISOString(),
-        })
+                for (const result of results) {
+                    if (!result.symbol || !result.regularMarketPrice) continue
+
+                    const symbol = result.symbol.toUpperCase()
+                    quotes.set(symbol, {
+                        ticker: symbol,
+                        price: result.regularMarketPrice,
+                        change: result.regularMarketChange ?? 0,
+                        changePercent: result.regularMarketChangePercent ?? 0,
+                        volume: result.regularMarketVolume ?? 0,
+                        previousClose: result.regularMarketPreviousClose ?? result.regularMarketPrice,
+                        open: result.regularMarketOpen ?? 0,
+                        high: result.regularMarketDayHigh ?? 0,
+                        low: result.regularMarketDayLow ?? 0,
+                        marketCap: result.marketCap ?? undefined,
+                        peRatio: result.trailingPE ?? undefined,
+                        pegRatio: result.pegRatio ?? result.trailingPegRatio ?? undefined,
+                        debtToEquity: result.debtToEquity ?? undefined,
+                        roe: result.returnOnEquity ?? undefined,
+                        freeCashFlow: result.freeCashflow ?? undefined,
+                        fiftyTwoWeekHigh: result.fiftyTwoWeekHigh ?? undefined,
+                        fiftyTwoWeekLow: result.fiftyTwoWeekLow ?? undefined,
+                        lastUpdated: new Date().toISOString(),
+                    })
+                }
+            } else {
+                console.warn(`[proxy-market-data] Yahoo V7 batch returned ${res.status}, invalidating crumb`)
+                _yahooCrumb = null // Force crumb refresh on next call
+            }
+        } finally {
+            clearTimeout(timeout)
+        }
+    } catch (err: any) {
+        console.warn(`[proxy-market-data] Yahoo V7 batch with crumb failed:`, err.message)
+        _yahooCrumb = null
+    }
+
+    // Fallback: try without crumb (works for some server IPs)
+    if (quotes.size === 0) {
+        try {
+            const symbols = tickers.join(',')
+            const url = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbols)}`
+
+            const controller = new AbortController()
+            const timeout = setTimeout(() => controller.abort(), 10_000)
+
+            const res = await fetch(url, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                    'Accept': 'application/json',
+                },
+                signal: controller.signal,
+            })
+            clearTimeout(timeout)
+
+            if (res.ok) {
+                const data = await res.json()
+                const results = data?.quoteResponse?.result || []
+                console.log(`[proxy-market-data] Yahoo V7 batch (no crumb) returned ${results.length} results`)
+
+                for (const result of results) {
+                    if (!result.symbol || !result.regularMarketPrice) continue
+
+                    const symbol = result.symbol.toUpperCase()
+                    quotes.set(symbol, {
+                        ticker: symbol,
+                        price: result.regularMarketPrice,
+                        change: result.regularMarketChange ?? 0,
+                        changePercent: result.regularMarketChangePercent ?? 0,
+                        volume: result.regularMarketVolume ?? 0,
+                        previousClose: result.regularMarketPreviousClose ?? result.regularMarketPrice,
+                        open: result.regularMarketOpen ?? 0,
+                        high: result.regularMarketDayHigh ?? 0,
+                        low: result.regularMarketDayLow ?? 0,
+                        lastUpdated: new Date().toISOString(),
+                    })
+                }
+            }
+        } catch (err: any) {
+            console.warn(`[proxy-market-data] Yahoo V7 batch (no crumb) failed:`, err.message)
+        }
     }
 
     return quotes
 }
 
 /**
- * Fetch ticker news via Apify's yahoo-finance-news-ai actor.
- * Returns clean headline + link + summary for each article.
+ * Fetch ticker news via Yahoo Finance RSS feeds (free, no API key needed).
+ * Returns headlines from Yahoo's RSS feed for each ticker.
  */
-async function fetchNewsViaApify(
-    tickers: string[],
-    apifyToken: string,
-): Promise<NewsItem[]> {
-    const items = await runApifyActor(
-        APIFY_NEWS_ACTOR,
-        { tickers },
-        apifyToken,
-        30_000,  // News actor may take longer due to AI summarization
-    )
-
-    console.log(`[proxy-market-data] Apify news actor returned ${items.length} items for ${tickers.join(',')}`)
-
+async function fetchNewsViaYahooRSS(tickers: string[]): Promise<NewsItem[]> {
     const news: NewsItem[] = []
     const seenLinks = new Set<string>()
 
-    for (const item of items) {
-        const title = item.title || ''
-        const link = item.link || item.url || ''
-        if (!title || !link || seenLinks.has(link)) continue
-        seenLinks.add(link)
+    for (const ticker of tickers.slice(0, 5)) { // Cap at 5 tickers
+        try {
+            const url = `https://feeds.finance.yahoo.com/rss/2.0/headline?s=${encodeURIComponent(ticker)}&region=US&lang=en-US`
+            const controller = new AbortController()
+            const timeout = setTimeout(() => controller.abort(), 8_000)
 
-        news.push({
-            title,
-            link,
-            source: item.publisher || item.source || item.providerName || 'Yahoo Finance',
-            publishedAt: item.providerPublishTime
-                ? new Date(typeof item.providerPublishTime === 'number'
-                    ? item.providerPublishTime * 1000
-                    : item.providerPublishTime
-                ).toISOString()
-                : item.publishedAt || item.pubDate || new Date().toISOString(),
-            summary: item.summary || item.description || item.text || '',
-            relatedTickers: item.relatedTickers || item.tickers || tickers,
-        })
+            const res = await fetch(url, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    'Accept': 'application/xml, text/xml',
+                },
+                signal: controller.signal,
+            })
+            clearTimeout(timeout)
+
+            if (!res.ok) continue
+
+            const xml = await res.text()
+
+            // Simple XML parsing — extract <item> elements
+            const itemRegex = /<item>([\s\S]*?)<\/item>/g
+            let match
+            while ((match = itemRegex.exec(xml)) !== null) {
+                const itemXml = match[1]
+                const title = itemXml.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/)?.[1]
+                    || itemXml.match(/<title>(.*?)<\/title>/)?.[1] || ''
+                const link = itemXml.match(/<link>(.*?)<\/link>/)?.[1] || ''
+                const pubDate = itemXml.match(/<pubDate>(.*?)<\/pubDate>/)?.[1] || ''
+                const description = itemXml.match(/<description><!\[CDATA\[(.*?)\]\]><\/description>/)?.[1]
+                    || itemXml.match(/<description>(.*?)<\/description>/)?.[1] || ''
+
+                if (!title || !link || seenLinks.has(link)) continue
+                seenLinks.add(link)
+
+                news.push({
+                    title,
+                    link,
+                    source: 'Yahoo Finance',
+                    publishedAt: pubDate ? new Date(pubDate).toISOString() : new Date().toISOString(),
+                    summary: description.replace(/<[^>]*>/g, '').substring(0, 500),
+                    relatedTickers: [ticker],
+                })
+            }
+        } catch (err: any) {
+            console.warn(`[proxy-market-data] Yahoo RSS failed for ${ticker}:`, err.message)
+        }
     }
 
     return news
@@ -279,7 +380,7 @@ Deno.serve(async (req) => {
 
         // 2. Parse Request
         const body = await req.json()
-        const { endpoint, ticker, tickers: tickersParam, tickerParam, useApify = true } = body
+        const { endpoint, ticker, tickers: tickersParam, tickerParam } = body
         if (!endpoint) {
             return new Response(
                 JSON.stringify({ success: false, error: 'Missing endpoint' }),
@@ -306,7 +407,6 @@ Deno.serve(async (req) => {
         // 4. Load Secrets
         const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
         const ALPHA_VANTAGE_KEY = Deno.env.get('MARKET_DATA_API_KEY') || Deno.env.get('ALPHA_VANTAGE_KEY') || ''
-        const APIFY_TOKEN = Deno.env.get('APIFY_TOKEN') || ''
 
         if (!ALPHA_VANTAGE_KEY) {
             console.warn('[proxy-market-data] No Alpha Vantage key found, will use Yahoo Finance fallback')
@@ -350,16 +450,15 @@ Deno.serve(async (req) => {
 
             console.log(`[proxy-market-data] bulk_quote: ${bulkTickers.length} requested, ${cacheMisses.length} cache misses`)
 
-            // Fetch all misses in a single Apify batch call
-            if (cacheMisses.length > 0 && APIFY_TOKEN) {
+            // Fetch all misses in a single Yahoo Finance batch call (free, no API key)
+            if (cacheMisses.length > 0) {
                 try {
-                    const quotes = await fetchQuoteViaApify(cacheMisses, APIFY_TOKEN)
+                    const quotes = await fetchQuotesBatchYahoo(cacheMisses)
 
                     for (const t of cacheMisses) {
                         // Try exact match, then any key that starts with the base ticker
                         let quote = quotes.get(t)
                         if (!quote) {
-                            // Apify may resolve e.g. "FRES" → "FRES.L"
                             for (const [resolvedKey, q] of quotes) {
                                 if (resolvedKey.startsWith(t.replace(/\.[A-Z]+$/, ''))) {
                                     quote = q
@@ -394,11 +493,11 @@ Deno.serve(async (req) => {
                         }
                     }
                 } catch (batchErr: any) {
-                    console.warn(`[proxy-market-data] Apify batch quote failed, falling back to sequential:`, batchErr.message)
+                    console.warn(`[proxy-market-data] Yahoo batch quote failed, falling back to sequential:`, batchErr.message)
                 }
             }
 
-            // For any remaining misses (Apify failed or no token), try Yahoo direct sequentially
+            // For any remaining misses, try Yahoo direct sequentially
             const stillMissing = cacheMisses.filter(t => !results[t])
             for (const t of stillMissing) {
                 try {
@@ -451,12 +550,12 @@ Deno.serve(async (req) => {
 
             const durationMs = Date.now() - startTime
             await supabaseAdmin.from('api_usage').insert({
-                provider: APIFY_TOKEN ? 'apify-yahoo-finance' : 'yahoo-finance-v7',
+                provider: 'yahoo-finance-v7',
                 endpoint: 'bulk_quote',
                 ticker: bulkTickers.join(',').substring(0, 50),
                 latency_ms: durationMs,
                 success: true,
-                estimated_cost_usd: APIFY_TOKEN ? 0.005 : 0
+                estimated_cost_usd: 0
             })
 
         // ─── QUOTE endpoint (single ticker) ─────────────────────────────
@@ -474,18 +573,16 @@ Deno.serve(async (req) => {
             let actualProvider = 'unknown'
             let resolvedTicker = tickerUpper
 
-            // ── Strategy 0: Apify yahoo-finance-scraper (PRIMARY) ──
-            // Handles international tickers natively, no IP blocks, batch-capable.
-            // Cost: ~$0.005 per run. Falls through to Yahoo direct if token missing or Apify fails.
-            if (APIFY_TOKEN && !quoteResult && useApify) {
+            // ── Strategy 0: Yahoo Finance V7 batch with crumb/cookie auth (PRIMARY) ──
+            // Uses the same approach as Python's yfinance library. Free, no API key.
+            if (!quoteResult) {
                 try {
-                    console.log(`[proxy-market-data] Trying Apify yahoo-finance-scraper for ${tickerUpper}`)
-                    const quotes = await fetchQuoteViaApify([tickerUpper], APIFY_TOKEN)
+                    console.log(`[proxy-market-data] Trying Yahoo V7 batch with crumb for ${tickerUpper}`)
+                    const quotes = await fetchQuotesBatchYahoo([tickerUpper])
 
-                    // Try exact match first, then try with common suffixes
                     let quote = quotes.get(tickerUpper)
                     if (!quote) {
-                        // Actor may have resolved the ticker to a different symbol
+                        // May have resolved to a different symbol
                         for (const [, q] of quotes) {
                             quote = q
                             break
@@ -511,14 +608,14 @@ Deno.serve(async (req) => {
                             fiftyTwoWeekHigh: quote.fiftyTwoWeekHigh,
                             fiftyTwoWeekLow: quote.fiftyTwoWeekLow,
                         }
-                        actualProvider = 'apify-yahoo-finance'
+                        actualProvider = 'yahoo-finance-v7-crumb'
                         resolvedTicker = quote.ticker
-                        console.log(`[proxy-market-data] Apify success: ${resolvedTicker} @ $${quoteResult.price}`)
+                        console.log(`[proxy-market-data] Yahoo V7 crumb success: ${resolvedTicker} @ $${quoteResult.price}`)
                     } else {
-                        console.warn(`[proxy-market-data] Apify returned no quote for ${tickerUpper}`)
+                        console.warn(`[proxy-market-data] Yahoo V7 crumb returned no quote for ${tickerUpper}`)
                     }
-                } catch (apifyErr: any) {
-                    console.warn(`[proxy-market-data] Apify quote failed, falling back to Yahoo direct:`, apifyErr.message)
+                } catch (crumbErr: any) {
+                    console.warn(`[proxy-market-data] Yahoo V7 crumb quote failed, falling back to direct:`, crumbErr.message)
                 }
             }
 
@@ -665,11 +762,11 @@ Deno.serve(async (req) => {
                         }
                     }
                 }
-                // Strategy 3: Apify (Final fallback for international or missing quotes)
-                if (!quoteResult && APIFY_TOKEN && useApify) {
-                    console.log(`[proxy-market-data] Falling back to Apify for ${tickerUpper}`)
+                // Strategy 3: Yahoo V7 batch with crumb (final fallback)
+                if (!quoteResult) {
+                    console.log(`[proxy-market-data] Falling back to Yahoo V7 batch for ${tickerUpper}`)
                     try {
-                        const quotes = await fetchQuoteViaApify([tickerUpper], APIFY_TOKEN)
+                        const quotes = await fetchQuotesBatchYahoo([tickerUpper])
                         if (quotes.has(tickerUpper)) {
                             const quote = quotes.get(tickerUpper)!
                             quoteResult = {
@@ -690,14 +787,14 @@ Deno.serve(async (req) => {
                                 fiftyTwoWeekHigh: quote.fiftyTwoWeekHigh,
                                 fiftyTwoWeekLow: quote.fiftyTwoWeekLow,
                             }
-                            actualProvider = 'apify-yahoo-finance'
+                            actualProvider = 'yahoo-finance-v7'
                             resolvedTicker = tickerUpper
-                            console.log(`[proxy-market-data] Apify fallback success: ${resolvedTicker} @ $${quoteResult.price}`)
+                            console.log(`[proxy-market-data] Yahoo V7 fallback success: ${resolvedTicker} @ $${quoteResult.price}`)
                         } else {
-                            console.warn(`[proxy-market-data] Apify fallback returned no quote for ${tickerUpper}`)
+                            console.warn(`[proxy-market-data] Yahoo V7 fallback returned no quote for ${tickerUpper}`)
                         }
-                    } catch (apifyErr: any) {
-                        console.warn('[proxy-market-data] Apify quote fetch failed:', apifyErr.message)
+                    } catch (yahooErr: any) {
+                        console.warn('[proxy-market-data] Yahoo V7 quote fetch failed:', yahooErr.message)
                     }
                 }
             }
@@ -727,10 +824,10 @@ Deno.serve(async (req) => {
                 ticker,
                 latency_ms: durationMs,
                 success: true,
-                estimated_cost_usd: actualProvider === 'apify-yahoo-finance' ? 0.005 : (actualProvider === 'alpha-vantage' ? 0.0001 : 0)
+                estimated_cost_usd: actualProvider === 'alpha-vantage' ? 0.0001 : 0
             })
 
-            // ─── NEWS endpoint (NEW — powered by Apify) ─────────────────────
+            // ─── NEWS endpoint (Yahoo RSS — free) ─────────────────────────
         } else if (endpoint === 'news') {
             // Accept single ticker or array of tickers
             const newsTickers: string[] = tickersParam
@@ -743,13 +840,6 @@ Deno.serve(async (req) => {
                 return new Response(
                     JSON.stringify({ success: false, error: 'Missing ticker(s) for news endpoint' }),
                     { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
-                )
-            }
-
-            if (!APIFY_TOKEN) {
-                return new Response(
-                    JSON.stringify({ success: false, error: 'News endpoint requires APIFY_TOKEN to be configured' }),
-                    { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
                 )
             }
 
@@ -766,36 +856,29 @@ Deno.serve(async (req) => {
                 }
             }
 
-            console.log(`[proxy-market-data] Fetching news via Apify for ${newsTickers.join(',')}`)
+            console.log(`[proxy-market-data] Fetching news via Yahoo RSS for ${newsTickers.join(',')}`)
 
             try {
-                if (!useApify) {
-                    return new Response(
-                        JSON.stringify({ success: false, error: 'Apify news fetch disabled by request (useApify: false)' }),
-                        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
-                    )
-                }
-                const newsItems = await fetchNewsViaApify(
+                const newsItems = await fetchNewsViaYahooRSS(
                     newsTickers.map(t => t.toUpperCase()),
-                    APIFY_TOKEN,
                 )
 
                 responseData = { success: true, data: newsItems }
 
                 const durationMs = Date.now() - startTime
                 await supabaseAdmin.from('api_usage').insert({
-                    provider: 'apify-yahoo-news',
+                    provider: 'yahoo-finance-rss',
                     endpoint: 'news',
                     ticker: newsTickers[0] || null,
                     latency_ms: durationMs,
                     success: true,
-                    estimated_cost_usd: 0.005
+                    estimated_cost_usd: 0
                 })
 
             } catch (newsErr: any) {
-                console.error(`[proxy-market-data] Apify news failed:`, newsErr.message)
+                console.error(`[proxy-market-data] Yahoo RSS news failed:`, newsErr.message)
                 return new Response(
-                    JSON.stringify({ success: false, error: 'Failed to fetch news via Apify' }),
+                    JSON.stringify({ success: false, error: 'Failed to fetch news via Yahoo RSS' }),
                     { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 502 }
                 )
             }

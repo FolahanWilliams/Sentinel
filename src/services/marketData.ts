@@ -153,7 +153,7 @@ export class MarketDataService {
                 for (const ticker of cacheMisses) {
                     const key = ticker.toUpperCase();
                     const quoteData = bulkData[key];
-                    if (quoteData && quoteData.price) {
+                    if (quoteData && quoteData.price != null) {
                         const quote = quoteData as Quote;
                         // Normalize LSE pence → pounds
                         if (key.endsWith('.L') && quote.price != null) {
@@ -276,7 +276,7 @@ export class MarketDataService {
     }
 
     /**
-     * Fetch recent news for a ticker via the Apify yahoo-finance-news-ai actor.
+     * Fetch recent news for a ticker via Yahoo Finance RSS feeds.
      * Uses the same proxy-market-data Edge Function with endpoint='news'.
      */
     static async getTickerNews(ticker: string): Promise<NewsItem[]> {
