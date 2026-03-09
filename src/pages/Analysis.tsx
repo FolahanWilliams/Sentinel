@@ -11,10 +11,8 @@ import { useParams, Link } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
 import { Filter, ChevronDown, ChevronRight, Clock, ArrowLeft, Radar } from 'lucide-react';
 import { formatPrice } from '@/utils/formatters';
-import { BiasBreakdown } from '@/components/analysis/BiasBreakdown';
-import { EventTimeline } from '@/components/analysis/EventTimeline';
 import { PositionSizeCard } from '@/components/analysis/PositionSizeCard';
-import { FundamentalSnapshot } from '@/components/analysis/FundamentalSnapshot';
+import { TickerAnalysisPanel } from '@/components/analysis/TickerAnalysisPanel';
 import { HistoricalPrecedent } from '@/components/analysis/HistoricalPrecedent';
 import { AgentReasoning } from '@/components/analysis/AgentReasoning';
 import { AgentReasoningSurface } from '@/components/analysis/AgentReasoningSurface';
@@ -348,27 +346,24 @@ export function Analysis() {
                                             />
                                         </div>
 
-                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                            {/* Left column */}
-                                            <div className="space-y-6">
-                                                <BiasBreakdown
-                                                    biasType={signal.bias_type}
-                                                    secondaryBiases={signal.secondary_biases}
-                                                    biasExplanation={signal.bias_explanation}
-                                                    counterArgument={signal.counter_argument}
-                                                    confidenceScore={signal.confidence_score}
-                                                    agentOutputs={agentOutputs}
-                                                    biasWeights={tickerAnalysis?.biasWeights}
-                                                    weightsLoading={isLoadingAnalysis}
-                                                />
-
-                                                <FundamentalSnapshot
-                                                    sanityCheck={agentOutputs.sanity_checker || agentOutputs.red_team}
-                                                    fundamentals={tickerAnalysis?.fundamentals}
-                                                    fundamentalsLoading={isLoadingAnalysis}
-                                                    onRefresh={() => fetchAnalysis(signal.ticker)}
-                                                />
-
+                                        <TickerAnalysisPanel
+                                            ticker={signal.ticker}
+                                            biasType={signal.bias_type}
+                                            secondaryBiases={signal.secondary_biases}
+                                            biasExplanation={signal.bias_explanation}
+                                            counterArgument={signal.counter_argument}
+                                            confidenceScore={signal.confidence_score}
+                                            agentOutputs={agentOutputs}
+                                            biasWeights={tickerAnalysis?.biasWeights}
+                                            weightsLoading={isLoadingAnalysis}
+                                            sanityCheck={agentOutputs.sanity_checker || agentOutputs.red_team}
+                                            fundamentals={tickerAnalysis?.fundamentals}
+                                            fundamentalsLoading={isLoadingAnalysis}
+                                            onRefresh={() => fetchAnalysis(signal.ticker)}
+                                            events={tickerEvents}
+                                            aiEvents={tickerAnalysis?.events}
+                                            aiEventsLoading={isLoadingAnalysis}
+                                            leftExtra={
                                                 <PositionSizeCard
                                                     ticker={signal.ticker}
                                                     currentPrice={signal.suggested_entry_high || 100}
@@ -376,30 +371,23 @@ export function Analysis() {
                                                     targetPrice={signal.target_price}
                                                     confidenceScore={signal.confidence_score}
                                                 />
-                                            </div>
-
-                                            {/* Right column */}
-                                            <div className="space-y-6">
-                                                <EventTimeline
-                                                    events={tickerEvents}
-                                                    aiEvents={tickerAnalysis?.events}
-                                                    aiEventsLoading={isLoadingAnalysis}
-                                                />
-                                                {tickerAnalysis?.groundingSources && tickerAnalysis.groundingSources.length > 0 && (
-                                                    <SourceCitations sources={tickerAnalysis.groundingSources} />
-                                                )}
-
-                                                <HistoricalPrecedent
-                                                    matches={agentOutputs.historical_matcher?.matches}
-                                                    aggregateStats={agentOutputs.historical_matcher?.aggregate_stats}
-                                                    patternConfidence={agentOutputs.historical_matcher?.pattern_confidence}
-                                                    caveats={agentOutputs.historical_matcher?.caveats}
-                                                    source={agentOutputs.historical_matcher?.source}
-                                                />
-
-                                                <AgentReasoning agentOutputs={agentOutputs} />
-                                            </div>
-                                        </div>
+                                            }
+                                            rightExtra={
+                                                <>
+                                                    {tickerAnalysis?.groundingSources && tickerAnalysis.groundingSources.length > 0 && (
+                                                        <SourceCitations sources={tickerAnalysis.groundingSources} />
+                                                    )}
+                                                    <HistoricalPrecedent
+                                                        matches={agentOutputs.historical_matcher?.matches}
+                                                        aggregateStats={agentOutputs.historical_matcher?.aggregate_stats}
+                                                        patternConfidence={agentOutputs.historical_matcher?.pattern_confidence}
+                                                        caveats={agentOutputs.historical_matcher?.caveats}
+                                                        source={agentOutputs.historical_matcher?.source}
+                                                    />
+                                                    <AgentReasoning agentOutputs={agentOutputs} />
+                                                </>
+                                            }
+                                        />
 
                                         {/* Outcome data */}
                                         {outcomeData && (

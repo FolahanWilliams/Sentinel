@@ -11,10 +11,8 @@ import { useParams } from 'react-router-dom';
 import { Search, ExternalLink, Loader2, TrendingUp, TrendingDown, BarChart3, Target, RefreshCw } from 'lucide-react';
 import { useTickerAnalysis } from '@/hooks/useTickerAnalysis';
 import { MarketDataService } from '@/services/marketData';
-import { BiasBreakdown } from '@/components/analysis/BiasBreakdown';
-import { EventTimeline } from '@/components/analysis/EventTimeline';
-import { FundamentalSnapshot } from '@/components/analysis/FundamentalSnapshot';
 import { MultiTimeframeChart } from '@/components/analysis/MultiTimeframeChart';
+import { TickerAnalysisPanel } from '@/components/analysis/TickerAnalysisPanel';
 import { NewsFeed } from '@/components/dashboard/NewsFeed';
 import { formatPrice } from '@/utils/formatters';
 import type { Quote } from '@/types/market';
@@ -282,70 +280,52 @@ export function StockAnalysis() {
                     <MultiTimeframeChart ticker={activeTicker} height={600} />
 
                     {/* Analysis Grid */}
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        {/* Left column */}
-                        <div className="space-y-6">
-                            <BiasBreakdown
-                                biasType="analysis"
-                                biasWeights={tickerAnalysis?.biasWeights}
-                                weightsLoading={isLoadingAnalysis}
-                            />
-
-                            <FundamentalSnapshot
-                                fundamentals={tickerAnalysis?.fundamentals}
-                                fundamentalsLoading={isLoadingAnalysis}
-                                onRefresh={() => {
-                                    // Clear cache and refetch
-                                    fetchAnalysis(activeTicker);
-                                }}
-                            />
-                        </div>
-
-                        {/* Right column */}
-                        <div className="space-y-6">
-                            <EventTimeline
-                                events={[]}
-                                aiEvents={tickerAnalysis?.events}
-                                aiEventsLoading={isLoadingAnalysis}
-                            />
-
-                            {/* Ticker News Stream */}
-                            <NewsFeed
-                                ticker={activeTicker}
-                                limit={6}
-                                title={`${activeTicker} News`}
-                                showControls={false}
-                            />
-
-                            {/* Quick Actions */}
-                            <motion.div
-                                className="glass-panel p-5 rounded-xl"
-                                initial={{ opacity: 0, scale: 0.98 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                transition={{ duration: 0.3, delay: 0.2 }}
-                            >
-                                <h3 className="text-sm font-semibold text-sentinel-300 uppercase tracking-wider mb-3">
-                                    Quick Actions
-                                </h3>
-                                <div className="space-y-2">
-                                    <button
-                                        onClick={() => runAnalysis(activeTicker)}
-                                        className="w-full px-4 py-2.5 bg-sentinel-800 hover:bg-sentinel-700 text-sentinel-200 rounded-lg text-sm font-medium transition-colors ring-1 ring-sentinel-700 flex items-center justify-center gap-2 cursor-pointer border-none"
-                                    >
-                                        <RefreshCw className="w-4 h-4" /> Re-analyze {activeTicker}
-                                    </button>
-                                    <a
-                                        href={`https://finance.yahoo.com/quote/${activeTicker}/`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="w-full px-4 py-2.5 bg-sentinel-800 hover:bg-sentinel-700 text-sentinel-200 rounded-lg text-sm font-medium transition-colors ring-1 ring-sentinel-700 flex items-center justify-center gap-2 no-underline"
-                                    >
-                                        <ExternalLink className="w-4 h-4" /> View on Yahoo Finance
-                                    </a>
-                                </div>
-                            </motion.div>
-                        </div>
-                    </div>
+                    <TickerAnalysisPanel
+                        ticker={activeTicker}
+                        biasWeights={tickerAnalysis?.biasWeights}
+                        weightsLoading={isLoadingAnalysis}
+                        fundamentals={tickerAnalysis?.fundamentals}
+                        fundamentalsLoading={isLoadingAnalysis}
+                        onRefresh={() => fetchAnalysis(activeTicker)}
+                        aiEvents={tickerAnalysis?.events}
+                        aiEventsLoading={isLoadingAnalysis}
+                        rightExtra={
+                            <>
+                                <NewsFeed
+                                    ticker={activeTicker}
+                                    limit={6}
+                                    title={`${activeTicker} News`}
+                                    showControls={false}
+                                />
+                                <motion.div
+                                    className="glass-panel p-5 rounded-xl"
+                                    initial={{ opacity: 0, scale: 0.98 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    transition={{ duration: 0.3, delay: 0.2 }}
+                                >
+                                    <h3 className="text-sm font-semibold text-sentinel-300 uppercase tracking-wider mb-3">
+                                        Quick Actions
+                                    </h3>
+                                    <div className="space-y-2">
+                                        <button
+                                            onClick={() => runAnalysis(activeTicker)}
+                                            className="w-full px-4 py-2.5 bg-sentinel-800 hover:bg-sentinel-700 text-sentinel-200 rounded-lg text-sm font-medium transition-colors ring-1 ring-sentinel-700 flex items-center justify-center gap-2 cursor-pointer border-none"
+                                        >
+                                            <RefreshCw className="w-4 h-4" /> Re-analyze {activeTicker}
+                                        </button>
+                                        <a
+                                            href={`https://finance.yahoo.com/quote/${activeTicker}/`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="w-full px-4 py-2.5 bg-sentinel-800 hover:bg-sentinel-700 text-sentinel-200 rounded-lg text-sm font-medium transition-colors ring-1 ring-sentinel-700 flex items-center justify-center gap-2 no-underline"
+                                        >
+                                            <ExternalLink className="w-4 h-4" /> View on Yahoo Finance
+                                        </a>
+                                    </div>
+                                </motion.div>
+                            </>
+                        }
+                    />
                 </div>
             )}
 

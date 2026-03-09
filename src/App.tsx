@@ -40,7 +40,6 @@ function lazyWithRetry<T extends Record<string, unknown>>(
 }
 
 // ── Lazy-loaded routes ──────────────────────────────────────────────
-const Dashboard = lazyWithRetry(() => import('@/pages/Dashboard'), 'Dashboard');
 const Analysis = lazyWithRetry(() => import('@/pages/Analysis'), 'Analysis');
 const Watchlist = lazyWithRetry(() => import('@/pages/Watchlist'), 'Watchlist');
 const Backtest = lazyWithRetry(() => import('@/pages/Backtest'), 'Backtest');
@@ -49,7 +48,6 @@ const Settings = lazyWithRetry(() => import('@/pages/Settings'), 'Settings');
 const Journal = lazyWithRetry(() => import('@/pages/Journal'), 'Journal');
 const StockAnalysis = lazyWithRetry(() => import('@/pages/StockAnalysis'), 'StockAnalysis');
 const Positions = lazyWithRetry(() => import('@/pages/Positions'), 'Positions');
-const Performance = lazyWithRetry(() => import('@/pages/Performance'), 'Performance');
 const Alerts = lazyWithRetry(() => import('@/pages/Alerts'), 'Alerts');
 const RiskDashboard = lazyWithRetry(() => import('@/pages/RiskDashboard'), 'RiskDashboard');
 const Leaderboard = lazyWithRetry(() => import('@/pages/Leaderboard'), 'Leaderboard');
@@ -136,7 +134,6 @@ export default function App() {
                         <Routes>
                             <Route element={<AppLayout />}>
                                 <Route path="/" element={<UnifiedDashboard />} />
-                                <Route path="/legacy" element={<Dashboard />} />
                                 {/* Phase 3 fix (Audit C16): /analysis base route redirects to dashboard */}
                                 <Route path="/analysis" element={<Navigate to="/" replace />} />
                                 <Route path="/analysis/:ticker" element={<Analysis />} />
@@ -145,11 +142,10 @@ export default function App() {
                                 <Route path="/scanner" element={<Scanner />} />
                                 <Route path="/research" element={<StockAnalysis />} />
                                 <Route path="/research/:ticker" element={<StockAnalysis />} />
-                                <Route path="/intelligence" element={<Navigate to="/?tab=intelligence" replace />} />
                                 <Route path="/settings" element={<Settings />} />
                                 <Route path="/journal" element={<Journal />} />
                                 <Route path="/positions" element={<Positions />} />
-                                <Route path="/performance" element={<Performance />} />
+                                <Route path="/performance" element={<Navigate to="/backtest?tab=performance" replace />} />
                                 <Route path="/alerts" element={<Alerts />} />
                                 <Route path="/risk" element={<RiskDashboard />} />
                                 <Route path="/leaderboard" element={<Leaderboard />} />

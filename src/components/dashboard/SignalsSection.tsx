@@ -22,9 +22,12 @@ import {
     TrendingUp, ChevronDown, ChevronUp, X, Calculator, Shield,
     XCircle, MessageSquare, CheckCircle2, BarChart3, Newspaper, Radar,
 } from 'lucide-react';
+import {
+    ConfluenceBadge, ConvictionBadge, LynchBadge, MoatBadge, RoiBadge,
+} from '@/components/shared/SignalBadges';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePortfolio } from '@/hooks/usePortfolio';
-import type { Signal, ConfluenceLevel } from '@/types/signals';
+import type { Signal } from '@/types/signals';
 import type { Quote } from '@/types/market';
 
 interface SignalsSectionProps {
@@ -258,14 +261,6 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
         }
     }, []);
 
-    const confluenceColor = (level: ConfluenceLevel | null): string => {
-        switch (level) {
-            case 'strong': return 'bg-emerald-500/15 text-emerald-400 ring-emerald-500/30';
-            case 'moderate': return 'bg-blue-500/15 text-blue-400 ring-blue-500/30';
-            case 'weak': return 'bg-amber-500/15 text-amber-400 ring-amber-500/30';
-            default: return 'bg-sentinel-800/50 text-sentinel-500 ring-sentinel-700/30';
-        }
-    };
 
     /** Compute portfolio impact if this signal were taken at 2% risk */
     const getPortfolioImpact = useCallback((signal: Signal) => {
@@ -598,41 +593,11 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
 
                                         {/* Badges row: confluence + projected ROI */}
                                         <div className="mt-3 flex items-center gap-2 flex-wrap">
-                                            {signal.confluence_level && signal.confluence_level !== 'none' && (
-                                                <span className={`px-2 py-0.5 text-[10px] font-bold rounded ring-1 ${confluenceColor(signal.confluence_level)}`}>
-                                                    {signal.confluence_level.toUpperCase()} CONFLUENCE
-                                                </span>
-                                            )}
-                                            {signal.conviction_score != null && signal.conviction_score > 0 && (
-                                                <span className={`px-2 py-0.5 text-[10px] font-bold font-mono rounded ring-1 ${signal.conviction_score >= 85
-                                                    ? 'bg-amber-500/15 text-amber-400 ring-amber-500/30'
-                                                    : signal.conviction_score >= 70
-                                                        ? 'bg-blue-500/10 text-blue-400 ring-blue-500/20'
-                                                        : 'bg-sentinel-800/50 text-sentinel-500 ring-sentinel-700/30'
-                                                    }`} title={signal.why_high_conviction || `Conviction: ${signal.conviction_score}/100`}>
-                                                    CV {signal.conviction_score}
-                                                </span>
-                                            )}
-                                            {signal.lynch_category && (
-                                                <span className="px-2 py-0.5 text-[10px] font-bold rounded ring-1 bg-violet-500/10 text-violet-400 ring-violet-500/20"
-                                                    title={`Lynch: ${signal.lynch_category.replace('_', ' ')}`}>
-                                                    {signal.lynch_category.replace('_', ' ').toUpperCase()}
-                                                </span>
-                                            )}
-                                            {signal.moat_rating != null && signal.moat_rating >= 7 && (
-                                                <span className="px-2 py-0.5 text-[10px] font-bold rounded ring-1 bg-amber-500/10 text-amber-300 ring-amber-500/20"
-                                                    title={`Buffett Moat Rating: ${signal.moat_rating}/10`}>
-                                                    MOAT {signal.moat_rating}/10
-                                                </span>
-                                            )}
-                                            {signal.projected_roi != null && (
-                                                <span className={`px-2 py-0.5 text-[10px] font-bold font-mono rounded ring-1 ${signal.projected_roi > 0
-                                                    ? 'bg-emerald-500/10 text-emerald-400 ring-emerald-500/20'
-                                                    : 'bg-red-500/10 text-red-400 ring-red-500/20'
-                                                    }`}>
-                                                    ROI {signal.projected_roi > 0 ? '+' : ''}{signal.projected_roi}%
-                                                </span>
-                                            )}
+                                            <ConfluenceBadge level={signal.confluence_level} />
+                                            <ConvictionBadge score={signal.conviction_score} reason={signal.why_high_conviction} />
+                                            <LynchBadge category={signal.lynch_category} />
+                                            <MoatBadge rating={signal.moat_rating} />
+                                            <RoiBadge roi={signal.projected_roi} />
                                             {signal.projected_win_rate != null && (
                                                 <span className="px-2 py-0.5 text-[10px] font-bold font-mono rounded ring-1 bg-sentinel-800/50 text-sentinel-400 ring-sentinel-700/30">
                                                     {signal.projected_win_rate}% WR

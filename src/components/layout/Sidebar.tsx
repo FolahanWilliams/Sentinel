@@ -33,13 +33,12 @@ import {
 
 const NAV_ITEMS = [
     { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
-    { to: '/intelligence', icon: Newspaper, label: 'Intelligence' },
+    { to: '/?tab=intelligence', icon: Newspaper, label: 'Intelligence' },
     { to: '/watchlist', icon: List, label: 'Watchlist' },
     { to: '/positions', icon: Briefcase, label: 'Positions' },
     { to: '/scanner', icon: Radar, label: 'Scanner' },
     { to: '/research', icon: Microscope, label: 'Research' },
     { to: '/backtest', icon: FlaskConical, label: 'Backtest' },
-    { to: '/performance', icon: BarChart3, label: 'Performance' },
     { to: '/journal', icon: BookOpen, label: 'Journal' },
     { to: '/alerts', icon: Bell, label: 'Alerts' },
     { to: '/risk', icon: Shield, label: 'Risk' },

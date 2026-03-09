@@ -1,9 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/config/supabase';
-import { TrendingUp, TrendingDown, Target, ShieldAlert, ChevronRight, RefreshCw, Zap, Shield, AlertTriangle, BarChart3 } from 'lucide-react';
+import { TrendingUp, TrendingDown, Target, ShieldAlert, ChevronRight, RefreshCw, Zap } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { TABadge } from '@/components/shared/TABadge';
 import { SignalQualityBadge } from '@/components/shared/SignalQualityBadge';
+import {
+    formatSignalType, isLongSignal, getConfidenceColor, getConfidenceBg,
+    ConfluenceBadge, RoiBadge, ConvictionBadge, MarketRegimeBadge, EarningsWarningBadge,
+} from '@/components/shared/SignalBadges';
 import type { AgentOutputsJson, TASnapshot } from '@/types/signals';
 
 interface RecentSignal {
@@ -34,10 +38,7 @@ export const ScanResults: React.FC = () => {
     const fetchRecent = useCallback(async () => {
         try {
             setLoading(true);
-            // Show signals from the last 24 hours
             const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-            // Use select('*') because columns like confluence_level, ta_alignment exist
-            // in Postgres (added by migrations) but aren't in the generated Supabase types yet
             const { data, error } = await supabase
                 .from('signals')
                 .select('*')
@@ -57,7 +58,6 @@ export const ScanResults: React.FC = () => {
     useEffect(() => {
         fetchRecent();
 
-        // Realtime: prepend new signals as they arrive
         const channel = supabase
             .channel('scan_results_signals')
             .on(
@@ -72,48 +72,6 @@ export const ScanResults: React.FC = () => {
 
         return () => { supabase.removeChannel(channel); };
     }, [fetchRecent]);
-
-    const confidenceColor = (score: number) => {
-        if (score >= 80) return 'text-green-400';
-        if (score >= 60) return 'text-blue-400';
-        if (score >= 40) return 'text-amber-400';
-        return 'text-red-400';
-    };
-
-    const confidenceBg = (score: number) => {
-        if (score >= 80) return 'bg-green-500/20 border-green-500/30';
-        if (score >= 60) return 'bg-blue-500/20 border-blue-500/30';
-        if (score >= 40) return 'bg-amber-500/20 border-amber-500/30';
-        return 'bg-red-500/20 border-red-500/30';
-    };
-
-    const signalTypeLabel = (type: string) => {
-        switch (type) {
-            case 'long_overreaction': return 'Long — Overreaction';
-            case 'short_overreaction': return 'Short — Overreaction';
-            case 'sector_contagion': return 'Long — Contagion';
-            case 'earnings_overreaction': return 'Long — Earnings';
-            case 'bullish_catalyst': return 'Long — Catalyst';
-            default: return type;
-        }
-    };
-
-    const isLong = (type: string) => type !== 'short_overreaction';
-
-    const confluenceBadge = (level: string | null) => {
-        if (!level) return null;
-        const colors: Record<string, string> = {
-            strong: 'bg-green-900/50 text-green-300 border-green-700/50',
-            moderate: 'bg-blue-900/50 text-blue-300 border-blue-700/50',
-            weak: 'bg-amber-900/50 text-amber-300 border-amber-700/50',
-            none: 'bg-gray-800 text-gray-400 border-gray-700',
-        };
-        return (
-            <span className={`text-xs px-2 py-0.5 rounded-full border ${colors[level] || colors.none}`}>
-                {level}
-            </span>
-        );
-    };
 
     const timeAgo = (iso: string) => {
         const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
@@ -164,24 +122,24 @@ export const ScanResults: React.FC = () => {
                                 <div className="flex items-center gap-3">
                                     <span className="text-lg font-bold text-white">{sig.ticker}</span>
                                     <span className={`flex items-center text-xs font-medium px-2 py-0.5 rounded ${
-                                        isLong(sig.signal_type)
+                                        isLongSignal(sig.signal_type)
                                             ? 'bg-green-900/40 text-green-400 border border-green-800/50'
                                             : 'bg-red-900/40 text-red-400 border border-red-800/50'
                                     }`}>
-                                        {isLong(sig.signal_type)
+                                        {isLongSignal(sig.signal_type)
                                             ? <TrendingUp className="w-3 h-3 mr-1" />
                                             : <TrendingDown className="w-3 h-3 mr-1" />
                                         }
-                                        {signalTypeLabel(sig.signal_type)}
+                                        {formatSignalType(sig.signal_type)}
                                     </span>
-                                    {confluenceBadge(sig.confluence_level)}
+                                    <ConfluenceBadge level={sig.confluence_level} />
                                 </div>
                                 <div className="flex items-center gap-3">
                                     {sig.ta_alignment && (
                                         <TABadge taAlignment={sig.ta_alignment as any} taSnapshot={sig.ta_snapshot} compact />
                                     )}
                                     <SignalQualityBadge agentOutputs={sig.agent_outputs} compact />
-                                    <span className={`text-sm font-semibold px-2 py-0.5 rounded border ${confidenceBg(sig.confidence_score)} ${confidenceColor(sig.confidence_score)}`}>
+                                    <span className={`text-sm font-semibold px-2 py-0.5 rounded border ${getConfidenceBg(sig.confidence_score)} ${getConfidenceColor(sig.confidence_score)}`}>
                                         {sig.confidence_score}%
                                     </span>
                                     <span className="text-xs text-gray-500">{timeAgo(sig.created_at)}</span>
@@ -193,43 +151,10 @@ export const ScanResults: React.FC = () => {
 
                             {/* Intelligence badges row */}
                             <div className="flex items-center gap-2 flex-wrap mb-2">
-                                {sig.projected_roi != null && (
-                                    <span className={`px-2 py-0.5 text-[10px] font-bold font-mono rounded ring-1 ${
-                                        sig.projected_roi > 0
-                                            ? 'bg-emerald-500/10 text-emerald-400 ring-emerald-500/20'
-                                            : 'bg-red-500/10 text-red-400 ring-red-500/20'
-                                    }`}>
-                                        ROI {sig.projected_roi > 0 ? '+' : ''}{sig.projected_roi}%
-                                    </span>
-                                )}
-                                {sig.conviction_score != null && sig.conviction_score > 0 && (
-                                    <span className={`px-2 py-0.5 text-[10px] font-bold font-mono rounded ring-1 ${
-                                        sig.conviction_score >= 85
-                                            ? 'bg-amber-500/15 text-amber-400 ring-amber-500/30'
-                                            : sig.conviction_score >= 70
-                                                ? 'bg-blue-500/10 text-blue-400 ring-blue-500/20'
-                                                : 'bg-gray-800 text-gray-400 ring-gray-700'
-                                    }`} title={sig.why_high_conviction || `Conviction: ${sig.conviction_score}/100`}>
-                                        <Shield className="w-2.5 h-2.5 inline mr-0.5" />CV {sig.conviction_score}
-                                    </span>
-                                )}
-                                {sig.agent_outputs?.market_regime && (
-                                    <span className={`px-2 py-0.5 text-[10px] font-bold rounded ring-1 ${
-                                        sig.agent_outputs.market_regime.regime === 'risk_on'
-                                            ? 'bg-emerald-500/10 text-emerald-400 ring-emerald-500/20'
-                                            : sig.agent_outputs.market_regime.regime === 'risk_off'
-                                                ? 'bg-red-500/10 text-red-400 ring-red-500/20'
-                                                : 'bg-gray-800 text-gray-400 ring-gray-700'
-                                    }`} title={`VIX: ${sig.agent_outputs.market_regime.vix ?? '?'}`}>
-                                        <BarChart3 className="w-2.5 h-2.5 inline mr-0.5" />{sig.agent_outputs.market_regime.regime.replace('_', ' ')}
-                                    </span>
-                                )}
-                                {sig.agent_outputs?.earnings_guard?.days_until != null && sig.agent_outputs.earnings_guard.days_until <= 14 && (
-                                    <span className="px-2 py-0.5 text-[10px] font-bold rounded ring-1 bg-amber-500/10 text-amber-400 ring-amber-500/20"
-                                        title={`Earnings on ${sig.agent_outputs.earnings_guard.earnings_date}`}>
-                                        <AlertTriangle className="w-2.5 h-2.5 inline mr-0.5" />ER {sig.agent_outputs.earnings_guard.days_until}d
-                                    </span>
-                                )}
+                                <RoiBadge roi={sig.projected_roi} />
+                                <ConvictionBadge score={sig.conviction_score} reason={sig.why_high_conviction} />
+                                <MarketRegimeBadge regime={sig.agent_outputs?.market_regime} />
+                                <EarningsWarningBadge guard={sig.agent_outputs?.earnings_guard} />
                             </div>
 
                             {/* Price levels */}
