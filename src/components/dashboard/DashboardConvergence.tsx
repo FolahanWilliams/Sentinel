@@ -157,7 +157,7 @@ export function DashboardConvergence() {
 
             {convergences.length > 5 && (
                 <button
-                    onClick={() => navigate('/intelligence')}
+                    onClick={() => navigate('/?tab=intelligence')}
                     className="mt-2 text-xs text-amber-400/70 hover:text-amber-300 transition-colors bg-transparent border-none cursor-pointer"
                 >
                     View all {convergences.length} convergences →

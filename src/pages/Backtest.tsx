@@ -1,26 +1,26 @@
 /**
- * Backtest — Historical signal verification engine.
+ * Backtest & Performance — Unified signal evaluation page.
  *
- * Queries signal_outcomes + signals, runs a simulated backtest
- * using configurable parameters, and renders an equity curve,
- * summary statistics, win-rate breakdowns, confidence calibration,
- * monthly return heatmap, and a trade log table.
+ * Two tabs:
+ * - "Live Performance" — real outcome tracking (from Performance page)
+ * - "Backtest Engine"  — configurable historical replay
  */
 
 import { DEFAULT_STARTING_CAPITAL, DEFAULT_MIN_CONFIDENCE } from '@/config/constants';
 import { useState, useMemo, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
     History, Play, BarChart3, TrendingUp, TrendingDown,
     Target, Shield, DollarSign, Activity, Download,
     AlertTriangle, Loader2, Award, Flame, Zap,
-    Calendar, Filter, ArrowUpRight, ArrowDownRight, Radar,
+    Calendar, Filter, ArrowUpRight, ArrowDownRight,
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
 import { runBacktest, BacktestResult, BacktestParams, WinRateBreakdown, ConfidenceCalibrationPoint, MonthlyReturn } from '@/services/backtestEngine';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { exportBacktestToCSV, downloadCSV } from '@/utils/exportData';
+import { Performance } from '@/pages/Performance';
 
 // ────────────── helpers ──────────────
 
@@ -168,7 +168,67 @@ function MonthlyHeatmap({ data }: { data: MonthlyReturn[] }) {
 
 // ────────────── Main Component ──────────────
 
+type ActiveTab = 'performance' | 'backtest';
+
 export function Backtest() {
+    const [searchParams, setSearchParams] = useSearchParams();
+    const [activeTab, setActiveTab] = useState<ActiveTab>(
+        (searchParams.get('tab') as ActiveTab) || 'backtest'
+    );
+
+    const handleTabChange = (tab: ActiveTab) => {
+        setActiveTab(tab);
+        setSearchParams(tab === 'backtest' ? {} : { tab });
+    };
+
+    return (
+        <div className="space-y-6 animate-in fade-in duration-500">
+            {/* Tab Header */}
+            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+                <div>
+                    <h1 className="text-3xl font-bold font-display tracking-tight text-sentinel-100 flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center ring-1 ring-purple-500/20">
+                            {activeTab === 'performance' ? <BarChart3 className="w-5 h-5 text-emerald-400" /> : <History className="w-5 h-5 text-purple-400" />}
+                        </div>
+                        {activeTab === 'performance' ? 'Signal Performance' : 'Backtest Engine'}
+                    </h1>
+                    <p className="text-sentinel-400 mt-1.5 text-sm">
+                        {activeTab === 'performance'
+                            ? 'How Sentinel\'s AI signals have performed over time'
+                            : 'Replay historical signal outcomes to evaluate AI agent accuracy and calibration'}
+                    </p>
+                </div>
+                <div className="flex gap-1 bg-sentinel-900/50 rounded-xl p-1 ring-1 ring-sentinel-800/50">
+                    <button
+                        onClick={() => handleTabChange('performance')}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors border-none cursor-pointer flex items-center gap-2 ${
+                            activeTab === 'performance'
+                                ? 'bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/30'
+                                : 'text-sentinel-400 hover:text-sentinel-200'
+                        }`}
+                    >
+                        <BarChart3 className="w-4 h-4" /> Live Performance
+                    </button>
+                    <button
+                        onClick={() => handleTabChange('backtest')}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors border-none cursor-pointer flex items-center gap-2 ${
+                            activeTab === 'backtest'
+                                ? 'bg-purple-500/15 text-purple-400 ring-1 ring-purple-500/30'
+                                : 'text-sentinel-400 hover:text-sentinel-200'
+                        }`}
+                    >
+                        <History className="w-4 h-4" /> Backtest Engine
+                    </button>
+                </div>
+            </div>
+
+            {/* Tab Content */}
+            {activeTab === 'performance' ? <Performance embedded /> : <BacktestEngine />}
+        </div>
+    );
+}
+
+function BacktestEngine() {
     // Parameters
     const [agentFilter, setAgentFilter] = useState<BacktestParams['agentFilter']>('all');
     const [minConfidence, setMinConfidence] = useState(DEFAULT_MIN_CONFIDENCE);
@@ -283,38 +343,7 @@ export function Backtest() {
     const totalPages = results ? Math.ceil(results.trades.length / TRADES_PER_PAGE) : 0;
 
     return (
-        <div className="space-y-6 animate-in fade-in duration-500">
-            {/* ── Header ── */}
-            <div className="flex flex-col md:flex-row justify-between gap-4">
-                <div>
-                    <h1 className="text-3xl font-bold font-display tracking-tight text-sentinel-100 flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center ring-1 ring-purple-500/20">
-                            <History className="w-5 h-5 text-purple-400" />
-                        </div>
-                        Backtest Engine
-                    </h1>
-                    <p className="text-sentinel-400 mt-1.5 text-sm">
-                        Replay historical signal outcomes to evaluate AI agent accuracy and calibration
-                    </p>
-                </div>
-                <div className="flex items-center gap-2">
-                    <Link
-                        to="/"
-                        className="flex items-center gap-2 px-4 py-2 bg-sentinel-800/60 hover:bg-sentinel-800 text-sentinel-200 text-sm font-medium rounded-lg border border-sentinel-700/50 transition-colors no-underline"
-                    >
-                        <Zap className="w-4 h-4" />
-                        Live Signals
-                    </Link>
-                    <Link
-                        to="/scanner"
-                        className="flex items-center gap-2 px-4 py-2 bg-sentinel-800/60 hover:bg-sentinel-800 text-sentinel-200 text-sm font-medium rounded-lg border border-sentinel-700/50 transition-colors no-underline"
-                    >
-                        <Radar className="w-4 h-4" />
-                        Scanner
-                    </Link>
-                </div>
-            </div>
-
+        <div className="space-y-6">
             {/* ── Parameter Panel ── */}
             <motion.div {...fadeUp} className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 p-5 backdrop-blur-sm relative overflow-hidden">
                 <div className="absolute inset-0 bg-gradient-to-br from-purple-500/[0.03] to-transparent pointer-events-none" />

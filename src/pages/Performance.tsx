@@ -69,7 +69,7 @@ function StatCard({ label, value, sub, icon: Icon, color }: {
     );
 }
 
-export function Performance() {
+export function Performance({ embedded = false }: { embedded?: boolean }) {
     const [loading, setLoading] = useState(true);
     const [outcomes, setOutcomes] = useState<OutcomeWithSignal[]>([]);
     const [selectedRange, setSelectedRange] = useState(90);
@@ -230,11 +230,13 @@ export function Performance() {
     if (outcomes.length === 0) {
         return (
             <div className="space-y-6 animate-in fade-in duration-500">
-                <div>
-                    <h1 className="text-2xl sm:text-3xl font-bold font-display tracking-tight text-sentinel-100 flex items-center gap-3">
-                        <BarChart3 className="w-7 h-7 sm:w-8 sm:h-8 text-emerald-400" /> Signal Performance
-                    </h1>
-                </div>
+                {!embedded && (
+                    <div>
+                        <h1 className="text-2xl sm:text-3xl font-bold font-display tracking-tight text-sentinel-100 flex items-center gap-3">
+                            <BarChart3 className="w-7 h-7 sm:w-8 sm:h-8 text-emerald-400" /> Signal Performance
+                        </h1>
+                    </div>
+                )}
                 <EmptyState
                     icon={<BarChart3 className="w-8 h-8 text-emerald-400" />}
                     title="No Performance Data Yet"
@@ -251,8 +253,8 @@ export function Performance() {
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
-            {/* Header */}
-            <div className="flex flex-col sm:flex-row justify-between gap-4">
+            {/* Header — hidden when embedded in Backtest page */}
+            {!embedded && <div className="flex flex-col sm:flex-row justify-between gap-4">
                 <div>
                     <h1 className="text-2xl sm:text-3xl font-bold font-display tracking-tight text-sentinel-100 flex items-center gap-3">
                         <BarChart3 className="w-7 h-7 sm:w-8 sm:h-8 text-emerald-400" /> Signal Performance
@@ -276,7 +278,26 @@ export function Performance() {
                         </button>
                     ))}
                 </div>
-            </div>
+            </div>}
+
+            {/* Time range selector when embedded */}
+            {embedded && (
+                <div className="flex gap-2">
+                    {TIME_RANGES.map(r => (
+                        <button
+                            key={r.days}
+                            onClick={() => setSelectedRange(r.days)}
+                            className={`px-3 py-1.5 text-xs rounded-lg transition-colors border-none cursor-pointer ${
+                                selectedRange === r.days
+                                    ? 'bg-emerald-600/20 text-emerald-400 ring-1 ring-emerald-500/50'
+                                    : 'bg-white/5 text-sentinel-400 hover:text-sentinel-200'
+                            }`}
+                        >
+                            {r.label}
+                        </button>
+                    ))}
+                </div>
+            )}
 
             {/* Summary Stats */}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">

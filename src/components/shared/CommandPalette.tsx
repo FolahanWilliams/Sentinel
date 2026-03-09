@@ -91,7 +91,7 @@ export function CommandPalette() {
             description: 'News & Research',
             icon: <FileText className="w-4 h-4" />,
             group: 'Pages',
-            action: () => navigate('/intelligence'),
+            action: () => navigate('/?tab=intelligence'),
         },
         {
             id: 'nav-settings',

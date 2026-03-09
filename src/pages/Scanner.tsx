@@ -36,7 +36,7 @@ export function Scanner() {
                         Backtest
                     </Link>
                     <Link
-                        to="/intelligence"
+                        to="/?tab=intelligence"
                         className="flex items-center gap-2 px-4 py-2 bg-sentinel-800/60 hover:bg-sentinel-800 text-sentinel-200 text-sm font-medium rounded-lg border border-sentinel-700/50 transition-colors no-underline"
                     >
                         <Newspaper className="w-4 h-4" />
