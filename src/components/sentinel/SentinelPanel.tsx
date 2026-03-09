@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useSentinel } from '@/hooks/useSentinel';
 import { usePortfolio } from '@/hooks/usePortfolio';
@@ -11,6 +11,7 @@ import { ScannerDrawer } from './ScannerDrawer';
 import { TimeRangeFilter } from './TimeRangeFilter';
 import { getTimeRangeCutoff } from '@/utils/timeRange';
 import { ConvergenceAlert } from './ConvergenceAlert';
+import { ActionableInsights } from './ActionableInsights';
 import type { TimeRange } from '@/utils/timeRange';
 import type { ArticleCategory } from '@/types/sentinel';
 import { RefreshCw, AlertCircle, Radar } from 'lucide-react';
@@ -23,6 +24,12 @@ export function SentinelPanel() {
 
     // Filter State
     const [searchQuery, setSearchQuery] = useState(() => searchParams.get('q') || '');
+    // Sync URL ?q= param into search state when navigating from other pages
+    useEffect(() => {
+        const urlQ = searchParams.get('q') || '';
+        if (urlQ && urlQ !== searchQuery) setSearchQuery(urlQ);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [searchParams]);
     const [activeCategories, setActiveCategories] = useState<Set<ArticleCategory>>(new Set());
     const [activeSentiment, setActiveSentiment] = useState<'all' | 'bullish' | 'bearish'>('all');
     const [highImpactOnly, setHighImpactOnly] = useState(false);
@@ -114,7 +121,7 @@ export function SentinelPanel() {
     }
 
     return (
-        <div className="flex flex-col h-[calc(100vh-8rem)] relative">
+        <div className="flex flex-col h-full relative">
 
             {/* Refresh Indicator */}
             {isRefreshing && (
@@ -192,8 +199,13 @@ export function SentinelPanel() {
                     </div>
                 </div>
 
-                {/* Right Column: Convergence Alerts + Signals Sidebar */}
+                {/* Right Column: Insights + Convergence + Signals */}
                 <div className="w-80 shrink-0 hidden lg:block overflow-y-auto custom-scrollbar">
+                    <ActionableInsights
+                        articles={filteredArticles}
+                        portfolioPositions={openPositions}
+                        onScanTicker={openScanDrawer}
+                    />
                     <ConvergenceAlert articles={filteredArticles} onScanTicker={openScanDrawer} />
                     <SignalsSidebar articles={filteredArticles} onScanTicker={openScanDrawer} />
                 </div>
