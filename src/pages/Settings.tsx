@@ -46,6 +46,7 @@ export function Settings() {
             key: 'email_alerts_enabled',
             value: newValue,
             updated_at: new Date().toISOString(),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         } as any, { onConflict: 'key,user_id' });
     }
 

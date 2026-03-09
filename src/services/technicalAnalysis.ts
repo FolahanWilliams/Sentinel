@@ -400,7 +400,7 @@ export class TechnicalAnalysisService {
             // Volume: for longs, high volume on up day confirms; high volume on down day conflicts
             if (volumeRatio !== null && volumeRatio > 1.2) {
                 // Check if the snapshot has volumeDirection (added in improvement 3)
-                const volDir = (snapshot as any).volumeDirection;
+                const volDir = snapshot.volumeDirection;
                 if (volDir === 1) confirmations++;        // buying volume
                 else if (volDir === -1) conflicts++;      // selling volume
                 else if (volumeRatio > 0.8) confirmations++; // decent volume, neutral direction
@@ -419,7 +419,7 @@ export class TechnicalAnalysisService {
             else if (trendDirection === 'bullish') conflicts++;
             // Volume: for shorts, high volume on down day confirms
             if (volumeRatio !== null && volumeRatio > 1.2) {
-                const volDir = (snapshot as any).volumeDirection;
+                const volDir = snapshot.volumeDirection;
                 if (volDir === -1) confirmations++;       // selling volume confirms short
                 else if (volDir === 1) conflicts++;       // buying volume conflicts with short
             }
@@ -658,7 +658,7 @@ export class TechnicalAnalysisService {
         const macdLabel = snapshot.macd
             ? (snapshot.macd.histogram > 0 ? 'bullish momentum' : 'bearish momentum')
             : 'N/A';
-        const volDir = (snapshot as any).volumeDirection;
+        const volDir = snapshot.volumeDirection;
         const volDirLabel = volDir === 1 ? 'BUYING pressure' : volDir === -1 ? 'SELLING pressure' : 'neutral';
         const volLabel = snapshot.volumeRatio !== null
             ? `${Number(snapshot.volumeRatio).toFixed(1)}x avg — ${volDirLabel} (${Number(snapshot.volumeRatio) > 1.5 ? 'surge' : Number(snapshot.volumeRatio) > 1.2 ? 'elevated' : Number(snapshot.volumeRatio) < 0.5 ? 'weak' : 'normal'})`

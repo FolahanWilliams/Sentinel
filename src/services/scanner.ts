@@ -16,39 +16,32 @@ import { AgentService, type MarketContext } from './agents';
 import { GeminiService } from './gemini';
 import { NotificationService } from './notifications';
 import { RSSReaderService } from './rssReader';
-import { GoogleNewsService } from './googleNews';
-import { RedditSentimentService } from './redditSentiment';
 import { OutcomeTracker } from './outcomeTracker';
-import { performanceStats } from './performanceStats';
-import { ReflectionAgent } from './reflectionAgent';
 import { isBudgetExceeded } from '@/utils/costEstimator';
 import { responseValidator } from '@/utils/responseValidator';
 import { TechnicalAnalysisService } from './technicalAnalysis';
-import { ConfidenceCalibrator } from './confidenceCalibrator';
 import { SelfCritiqueAgent } from './selfCritique';
 import { SentimentDivergenceDetector } from './sentimentDivergence';
 import { EarningsGuard } from './earningsGuard';
 import { calculateWeightedRoi } from '@/utils/weightedRoi';
-import { MarketRegimeFilter } from './marketRegime';
 import { CorrelationGuard } from './correlationGuard';
 import { BacktestValidator } from './backtestValidator';
-import { SignalDecayEngine } from './signalDecay';
 import { OptionsFlowService } from './optionsFlowService';
 import { AutoLearningService } from './autoLearningService';
-import { SignalReEvaluator } from './signalReEvaluator';
+import { SignalDecayEngine } from './signalDecay';
+import { ConfidenceCalibrator } from './confidenceCalibrator';
+import { DynamicCalibrator } from './dynamicCalibrator';
 import { ConflictDetector } from './conflictDetector';
 import { PeerStrengthService } from './peerStrengthService';
 import { SemanticDeduplicator } from './semanticDeduplicator';
-import { AdaptiveThresholds } from './adaptiveThresholds';
-import { DynamicCalibrator } from './dynamicCalibrator';
 import { PriceCorrelationMatrix } from './priceCorrelationMatrix';
 import { PortfolioAwareSizer } from './portfolioAwareSizer';
 import { ConvictionGuardrails } from './convictionGuardrails';
-import { SectorRotationService } from './sectorRotation';
 import { MultiTimeframeService } from './multiTimeframe';
 import { CrossSourceValidator } from './crossSourceValidator';
 import { RetailVsNewsSentimentDetector } from './retailVsNewsSentiment';
-import { DEFAULT_MIN_CONFIDENCE, DEFAULT_MIN_PRICE_DROP_PCT, DEFAULT_MIN_PRICE_RISE_PCT, CONFIDENCE_GATE_OVERREACTION, CONFIDENCE_GATE_CATALYST, CONFIDENCE_GATE_CONTAGION, CONFIDENCE_GATE_CRITIQUE, CONFIDENCE_FLOOR, SEVERITY_THRESHOLD } from '@/config/constants';
+import { fetchExternalSentiment, buildScanContext } from './scannerPipeline/contextStage';
+import { DEFAULT_MIN_CONFIDENCE, DEFAULT_MIN_PRICE_RISE_PCT, CONFIDENCE_GATE_OVERREACTION, CONFIDENCE_GATE_CATALYST, CONFIDENCE_GATE_CONTAGION, CONFIDENCE_GATE_CRITIQUE, CONFIDENCE_FLOOR, SEVERITY_THRESHOLD } from '@/config/constants';
 import type { MultiTimeframeResult } from './technicalAnalysis';
 import type { AgentOutputsJson, LynchCategory } from '@/types/signals';
 import type { Json } from '@/types/database';
@@ -247,141 +240,15 @@ export class ScannerService {
                 return `${t.ticker}(${t.priority}${src})`;
             }).join(', '));
 
-            // 3a. Pull Google News (via Gemini grounded search) & Reddit sentiment for watched tickers
-            try {
-                const headTickers = tickers.slice(0, 5);
-                await Promise.allSettled([
-                    GoogleNewsService.fetchAndCacheNews(headTickers),
-                    RedditSentimentService.fetchAndCacheSentiment(headTickers)
-                ]);
-            } catch (extErr) {
-                console.warn('[Scanner] External sentiment fetch failed (non-fatal):', extErr);
-            }
-
-            // 3b. Build performance context from past signal outcomes
-            // This gets injected into agent prompts so they learn from accuracy history
-            let perfContext = '';
-            try {
-                perfContext = await performanceStats.buildPerformanceContext();
-                if (perfContext) {
-                    console.log('[Scanner] Performance context loaded for agent feedback loop.');
-                } else {
-                    console.warn('[Scanner] Performance context is empty — agents running without historical calibration.');
-                }
-            } catch (perfErr) {
-                console.warn('[Scanner] Failed to load performance context (non-fatal):', perfErr);
-            }
-
-            // 3c. Append self-learned lessons from Reflection Agent (RAG loop)
-            try {
-                const lessons = await ReflectionAgent.getLessonsForContext();
-                if (lessons) {
-                    perfContext += lessons;
-                    console.log('[Scanner] Reflection lessons injected into agent context.');
-                } else {
-                    console.log('[Scanner] No reflection lessons available yet — run Reflection Agent after accumulating signal outcomes.');
-                }
-            } catch (reflErr) {
-                console.warn('[Scanner] Failed to load reflection lessons (non-fatal):', reflErr);
-            }
-
-            // 3c-2. Calibration Feedback Loop — inject accuracy data into agent prompts
-            try {
-                const calibCurve = await ConfidenceCalibrator.getCachedCurve();
-                const calibCtx = ConfidenceCalibrator.formatForPrompt(calibCurve);
-                perfContext += calibCtx;
-                if (calibCurve.totalOutcomes >= 10) {
-                    console.log(`[Scanner] Calibration feedback injected (${calibCurve.totalOutcomes} outcomes, ${calibCurve.overallWinRate}% win rate).`);
-                }
-            } catch (calibErr) {
-                console.warn('[Scanner] Failed to load calibration feedback (non-fatal):', calibErr);
-            }
-
-            // 3d. Market Regime Detection — detect bull/bear/crisis environment
-            let regimeResult: import('./marketRegime').MarketRegimeResult | null = null;
-            let regimeCtx = '';
-            try {
-                regimeResult = await MarketRegimeFilter.detect();
-                regimeCtx = MarketRegimeFilter.formatForPrompt(regimeResult);
-                if (regimeResult.regime !== 'neutral') {
-                    console.log(`[Scanner] Market regime: ${regimeResult.regime.toUpperCase()} (penalty=${regimeResult.confidencePenalty})`);
-                }
-            } catch (regimeErr) {
-                console.warn('[Scanner] Market regime detection failed (non-fatal):', regimeErr);
-            }
-
-            // 3d-1a. CNN Fear & Greed Index — fetch once per scan for agent context + confidence tuning
-            let fearGreedScore: number | undefined;
-            let fearGreedRating: string | undefined;
-            try {
-                const { data: fgData, error: fgErr } = await supabase.functions.invoke('proxy-fear-greed');
-                if (!fgErr && fgData && typeof fgData.score === 'number') {
-                    fearGreedScore = Math.round(fgData.score);
-                    fearGreedRating = fgData.rating || 'Neutral';
-                    console.log(`[Scanner] CNN Fear & Greed: ${fearGreedScore} (${fearGreedRating})`);
-                }
-            } catch (fgErr) {
-                console.warn('[Scanner] Fear & Greed fetch failed (non-fatal):', fgErr);
-            }
-
-            // 3d-1b. Sector Rotation — detect money flow between sectors
-            let sectorRotationCtx = '';
-            let rotationSnapshot: import('./sectorRotation').SectorRotationSnapshot | null = null;
-            try {
-                rotationSnapshot = await SectorRotationService.getRotationSnapshot();
-                sectorRotationCtx = SectorRotationService.formatForPrompt(rotationSnapshot);
-                if (rotationSnapshot.regime !== 'neutral') {
-                    console.log(`[Scanner] Sector rotation: ${rotationSnapshot.regime.toUpperCase()} — ${rotationSnapshot.regimeReason}`);
-                }
-            } catch (rotErr) {
-                console.warn('[Scanner] Sector rotation detection failed (non-fatal):', rotErr);
-            }
-
-            // 3d-2. Adaptive Thresholds — adjust based on market regime
-            let adaptiveMinConfidence = DEFAULT_MIN_CONFIDENCE;
-            let adaptiveMinPriceDrop = DEFAULT_MIN_PRICE_DROP_PCT;
-            try {
-                const thresholds = await AdaptiveThresholds.getThresholds();
-                adaptiveMinConfidence = thresholds.minConfidence;
-                adaptiveMinPriceDrop = thresholds.minPriceDropPct;
-                console.log(`[Scanner] Adaptive thresholds: minDrop=${thresholds.minPriceDropPct}%, minConf=${thresholds.minConfidence} (${thresholds.regime})`);
-            } catch { /* non-fatal, use defaults */ }
-
-            // 3d-3. Dynamic Calibration — refit if needed
-            try {
-                await DynamicCalibrator.refitIfNeeded();
-            } catch { /* non-fatal */ }
-
-            // 3e. Signal Decay — expire stale signals before generating new ones
-            try {
-                const decayResult = await SignalDecayEngine.processActiveSignals();
-                if (decayResult.expired > 0 || decayResult.stale > 0) {
-                    console.log(`[Scanner] Signal decay: ${decayResult.expired} expired, ${decayResult.stale} stale out of ${decayResult.processed} active.`);
-                }
-            } catch (decayErr) {
-                console.warn('[Scanner] Signal decay processing failed (non-fatal):', decayErr);
-            }
-
-            // 3f. Signal Re-Evaluation — re-check active signals' TA
-            try {
-                const reEvalResult = await SignalReEvaluator.reEvaluateActiveSignals();
-                if (reEvalResult.processed > 0) {
-                    console.log(`[Scanner] Signal re-evaluation: ${reEvalResult.downgraded} downgraded, ${reEvalResult.closed} closed, ${reEvalResult.upgraded} upgraded out of ${reEvalResult.processed} checked.`);
-                }
-            } catch (reEvalErr) {
-                console.warn('[Scanner] Signal re-evaluation failed (non-fatal):', reEvalErr);
-            }
-
-            // 3g. Auto-Learning — load pipeline step weights from past outcomes
-            let autoLearnWeights: Record<string, number> = {};
-            try {
-                autoLearnWeights = await AutoLearningService.getWeights();
-                if (Object.keys(autoLearnWeights).length > 0) {
-                    console.log(`[Scanner] Auto-learning weights loaded: ${Object.entries(autoLearnWeights).map(([k, v]) => `${k}=${v}`).join(', ')}`);
-                }
-            } catch (alErr) {
-                console.warn('[Scanner] Auto-learning weights load failed (non-fatal):', alErr);
-            }
+            // 3a–3g. Build scan context (external sentiment, regime, thresholds, etc.)
+            await fetchExternalSentiment(tickers);
+            const {
+                perfContext, regimeResult, regimeCtx,
+                fearGreedScore, fearGreedRating,
+                sectorRotationCtx, rotationSnapshot,
+                adaptiveMinConfidence, adaptiveMinPriceDrop,
+                autoLearnWeights,
+            } = await buildScanContext();
 
             // 4. Find fresh unparsed articles from the cache
             // In a real flow, we'd only grab articles from the last hour

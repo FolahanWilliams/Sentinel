@@ -14,6 +14,23 @@ import { TechnicalAnalysisService } from './technicalAnalysis';
 import { MarketDataService } from './marketData';
 import type { TASnapshot } from '@/types/signals';
 
+/** Row shape returned from the select query (JSONB columns not in generated types) */
+interface ActiveSignalRow {
+    id: string;
+    ticker: string;
+    confidence_score: number;
+    ta_snapshot: TASnapshot | null;
+    signal_type: string;
+    created_at: string;
+    stop_loss: number | null;
+    target_price: number | null;
+    status: string;
+    updated_at: string | null;
+}
+
+/** Partial update shape for the signals table (includes JSONB columns) */
+type SignalUpdate = Record<string, unknown>;
+
 export interface ReEvalResult {
     signalId: string;
     ticker: string;
@@ -51,10 +68,9 @@ export class SignalReEvaluator {
 
         try {
             // Fetch active signals with their TA snapshots
-            // Use `as any` for select since ta_snapshot is a JSONB column not in generated types
-            const { data: activeSignals, error } = await (supabase
+            const { data: activeSignals, error } = await supabase
                 .from('signals')
-                .select('id, ticker, confidence_score, ta_snapshot, signal_type, created_at, stop_loss, target_price, status, updated_at') as any)
+                .select('id, ticker, confidence_score, ta_snapshot, signal_type, created_at, stop_loss, target_price, status, updated_at')
                 .eq('status', 'active')
                 .order('created_at', { ascending: true });
 
@@ -63,7 +79,7 @@ export class SignalReEvaluator {
                 return { processed: 0, downgraded: 0, closed: 0, upgraded: 0, results: [] };
             }
 
-            for (const signal of activeSignals as any[]) {
+            for (const signal of activeSignals as unknown as ActiveSignalRow[]) {
                 const createdAt = new Date(signal.created_at).getTime();
                 const updatedAt = new Date(signal.updated_at || signal.created_at).getTime();
                 const now = Date.now();
@@ -110,7 +126,7 @@ export class SignalReEvaluator {
     /**
      * Re-evaluate a single signal by comparing original TA snapshot with current.
      */
-    private static async reEvaluateSignal(signal: any): Promise<ReEvalResult> {
+    private static async reEvaluateSignal(signal: ActiveSignalRow): Promise<ReEvalResult> {
         const ticker = signal.ticker;
         const originalTa: TASnapshot | null = signal.ta_snapshot;
         const originalConfidence = signal.confidence_score;
@@ -148,7 +164,7 @@ export class SignalReEvaluator {
                 status: 'stopped_out',
                 user_notes: `[Auto-closed] Price $${currentPrice.toFixed(2)} hit stop-loss $${signal.stop_loss.toFixed(2)}.`,
                 updated_at: new Date().toISOString(),
-            } as any).eq('id', signal.id);
+            } as SignalUpdate).eq('id', signal.id);
 
             return {
                 signalId: signal.id,
@@ -167,7 +183,7 @@ export class SignalReEvaluator {
                 status: 'target_hit',
                 user_notes: `[Auto-closed] Price $${currentPrice.toFixed(2)} hit target $${signal.target_price.toFixed(2)}.`,
                 updated_at: new Date().toISOString(),
-            } as any).eq('id', signal.id);
+            } as SignalUpdate).eq('id', signal.id);
 
             return {
                 signalId: signal.id,
@@ -276,7 +292,7 @@ export class SignalReEvaluator {
                 ta_snapshot: currentTa,
                 user_notes: `[Re-evaluated] ${reasons.join('. ')}.`,
                 updated_at: new Date().toISOString(),
-            } as any).eq('id', signal.id);
+            } as SignalUpdate).eq('id', signal.id);
 
         } else if (confidenceDelta <= -10) {
             action = 'downgraded';
@@ -286,7 +302,7 @@ export class SignalReEvaluator {
                 ta_snapshot: currentTa,
                 user_notes: `[Re-evaluated] Confidence ${originalConfidence}→${newConfidence}: ${reasons.join('. ')}.`,
                 updated_at: new Date().toISOString(),
-            } as any).eq('id', signal.id);
+            } as SignalUpdate).eq('id', signal.id);
 
         } else if (confidenceDelta >= 5) {
             action = 'upgraded';
@@ -296,12 +312,12 @@ export class SignalReEvaluator {
                 ta_snapshot: currentTa,
                 user_notes: `[Re-evaluated] Confidence ${originalConfidence}→${newConfidence}: ${reasons.join('. ')}.`,
                 updated_at: new Date().toISOString(),
-            } as any).eq('id', signal.id);
+            } as SignalUpdate).eq('id', signal.id);
         } else {
             // Mark as re-evaluated even if unchanged
             await supabase.from('signals').update({
                 updated_at: new Date().toISOString(),
-            } as any).eq('id', signal.id);
+            } as SignalUpdate).eq('id', signal.id);
         }
 
         return {

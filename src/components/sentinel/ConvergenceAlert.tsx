@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import type { ProcessedArticle, SentinelTradingSignal } from '@/types/sentinel';
 import { Zap, TrendingUp, TrendingDown, Activity, Radar } from 'lucide-react';
 
@@ -71,7 +71,7 @@ function detectConvergence(articles: ProcessedArticle[]): ConvergenceSignal[] {
     });
 }
 
-export function ConvergenceAlert({ articles, onScanTicker }: ConvergenceAlertProps) {
+export const ConvergenceAlert = memo(function ConvergenceAlert({ articles, onScanTicker }: ConvergenceAlertProps) {
     const convergences = useMemo(() => detectConvergence(articles), [articles]);
 
     if (convergences.length === 0) return null;
@@ -161,4 +161,4 @@ export function ConvergenceAlert({ articles, onScanTicker }: ConvergenceAlertPro
             </div>
         </div>
     );
-}
+});
