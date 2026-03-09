@@ -819,7 +819,7 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                                         <button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
-                                                                navigate(`/intelligence?q=${signal.ticker}`);
+                                                                navigate(`/?tab=intelligence&q=${signal.ticker}`);
                                                             }}
                                                             className="px-3 py-1.5 bg-purple-600/15 hover:bg-purple-600/25 text-purple-400 rounded-lg text-xs font-medium transition-colors ring-1 ring-purple-500/30 flex items-center gap-1.5 border-none cursor-pointer"
                                                         >

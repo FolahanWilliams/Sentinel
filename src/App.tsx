@@ -146,6 +146,7 @@ export default function App() {
                                 <Route path="/journal" element={<Journal />} />
                                 <Route path="/positions" element={<Positions />} />
                                 <Route path="/performance" element={<Navigate to="/backtest?tab=performance" replace />} />
+                                <Route path="/intelligence" element={<Navigate to="/?tab=intelligence" replace />} />
                                 <Route path="/alerts" element={<Alerts />} />
                                 <Route path="/risk" element={<RiskDashboard />} />
                                 <Route path="/leaderboard" element={<Leaderboard />} />

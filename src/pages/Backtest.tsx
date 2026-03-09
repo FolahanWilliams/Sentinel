@@ -13,9 +13,8 @@ import {
     History, Play, BarChart3, TrendingUp, TrendingDown,
     Target, Shield, DollarSign, Activity, Download,
     AlertTriangle, Loader2, Award, Flame, Zap,
-    Calendar, Filter, ArrowUpRight, ArrowDownRight, Radar,
+    Calendar, Filter, ArrowUpRight, ArrowDownRight,
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
 import { runBacktest, BacktestResult, BacktestParams, WinRateBreakdown, ConfidenceCalibrationPoint, MonthlyReturn } from '@/services/backtestEngine';

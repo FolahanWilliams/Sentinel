@@ -21,7 +21,6 @@ import {
     BookOpen,
     Newspaper,
     Briefcase,
-    BarChart3,
     Bell,
     Shield,
     Trophy,
