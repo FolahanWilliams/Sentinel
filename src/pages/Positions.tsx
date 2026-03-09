@@ -12,7 +12,7 @@ import { MarketDataService } from '@/services/marketData';
 import { PostMortemService } from '@/services/postMortemService';
 import {
     Briefcase, Plus, X, TrendingUp, TrendingDown,
-    AlertTriangle, DollarSign, Zap,
+    AlertTriangle, DollarSign, Zap, Newspaper,
     Loader2, BarChart3, ArrowUpRight, ArrowDownRight,
     CheckCircle2, Trash2
 } from 'lucide-react';
@@ -21,6 +21,8 @@ import { SkeletonTable } from '@/components/shared/SkeletonPrimitives';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { formatPrice } from '@/utils/formatters';
 import { inferCurrency } from '@/utils/portfolio';
+import { useSentinel } from '@/hooks/useSentinel';
+import { checkPortfolioNewsDivergence } from '@/services/portfolioNewsDivergence';
 
 interface Position {
     id: string;
@@ -230,6 +232,28 @@ export function Positions() {
             .eq('id', showCloseModal);
 
         if (!error) {
+            // Record signal outcome if position was linked to a signal
+            if (pos.signal_id) {
+                const hitTarget = pos.side === 'long'
+                    ? realizedPnlPct > 0 && closeReason !== 'stop_loss'
+                    : realizedPnlPct > 0 && closeReason !== 'stop_loss';
+                const hitStop = closeReason === 'stop_loss';
+                const outcome = hitTarget ? 'target_hit' : hitStop ? 'stop_hit' : realizedPnl >= 0 ? 'profit' : 'loss';
+
+                supabase.from('signal_outcomes').upsert({
+                    signal_id: pos.signal_id,
+                    ticker: pos.ticker,
+                    entry_price: pos.entry_price,
+                    outcome,
+                    hit_target: hitTarget,
+                    hit_stop_loss: hitStop,
+                    completed_at: new Date().toISOString(),
+                    tracked_at: pos.opened_at || new Date().toISOString(),
+                }, { onConflict: 'signal_id' }).then(({ error: outcomeErr }) => {
+                    if (outcomeErr) console.warn('[Positions] Signal outcome tracking failed:', outcomeErr);
+                });
+            }
+
             setShowCloseModal(null);
             setClosePrice('');
             setCloseReason('manual');
@@ -276,6 +300,14 @@ export function Positions() {
 
     const openPositions = positions.filter(p => p.status === 'open');
     const closedPositions = positions.filter(p => p.status === 'closed');
+
+    // Sentiment divergence detection for open positions
+    const { data: sentinelData } = useSentinel();
+    const divergenceByTicker = useMemo(() => {
+        if (!sentinelData?.articles || openPositions.length === 0) return new Map<string, string>();
+        const divs = checkPortfolioNewsDivergence(sentinelData.articles, openPositions as any);
+        return new Map(divs.map(d => [d.ticker, d.message]));
+    }, [sentinelData?.articles, openPositions]);
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
@@ -441,15 +473,26 @@ export function Positions() {
                                                 {pnl ? `${isProfit ? '+' : ''}${pnl.pnlPct.toFixed(2)}%` : '—'}
                                             </td>
                                             <td className="px-5 py-3 text-center">
-                                                {pnl && pnl.pnlPct < -5 ? (
-                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-red-500/15 text-red-400 animate-pulse">
-                                                        <AlertTriangle className="w-3 h-3" /> RISK
-                                                    </span>
-                                                ) : (
-                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-emerald-500/10 text-emerald-400">
-                                                        <CheckCircle2 className="w-3 h-3" /> OK
-                                                    </span>
-                                                )}
+                                                <div className="flex items-center justify-center gap-1.5">
+                                                    {pnl && pnl.pnlPct < -5 ? (
+                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-red-500/15 text-red-400 animate-pulse">
+                                                            <AlertTriangle className="w-3 h-3" /> RISK
+                                                        </span>
+                                                    ) : (
+                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-emerald-500/10 text-emerald-400">
+                                                            <CheckCircle2 className="w-3 h-3" /> OK
+                                                        </span>
+                                                    )}
+                                                    {divergenceByTicker.has(pos.ticker) && (
+                                                        <button
+                                                            onClick={() => navigate(`/?tab=intelligence&q=${pos.ticker}`)}
+                                                            className="p-1 rounded bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 transition-colors border-none cursor-pointer"
+                                                            title={divergenceByTicker.get(pos.ticker)}
+                                                        >
+                                                            <Newspaper className="w-3 h-3" />
+                                                        </button>
+                                                    )}
+                                                </div>
                                             </td>
                                             <td className="px-5 py-3 text-right">
                                                 <div className="flex items-center justify-end gap-2">

@@ -6,10 +6,11 @@
  * these as actionable alerts alongside the signal feed.
  */
 
-import { useMemo } from 'react';
+import { useMemo, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TickerLink } from '@/components/shared/TickerLink';
 import { useSentinel } from '@/hooks/useSentinel';
+import { BrowserNotificationService } from '@/services/browserNotifications';
 import type { ProcessedArticle, SentinelTradingSignal } from '@/types/sentinel';
 import { Zap, TrendingUp, TrendingDown, Activity, Radar, Loader2 } from 'lucide-react';
 
@@ -77,6 +78,19 @@ export function DashboardConvergence() {
         () => data?.articles ? detectConvergence(data.articles) : [],
         [data]
     );
+
+    // Track previously seen convergences to only notify on new ones
+    const seenRef = useRef<Set<string>>(new Set());
+    useEffect(() => {
+        for (const conv of convergences) {
+            const key = `${conv.ticker}-${conv.direction}`;
+            if (!seenRef.current.has(key)) {
+                seenRef.current.add(key);
+                const level = conv.sourceCount >= 3 ? 'Strong' : 'Moderate';
+                BrowserNotificationService.notifyConvergence(conv.ticker, level, conv.signalCount);
+            }
+        }
+    }, [convergences]);
 
     // Don't render anything if no convergences and not loading
     if (!loading && convergences.length === 0) return null;

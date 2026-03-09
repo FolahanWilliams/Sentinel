@@ -6,7 +6,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
-import { TrendingUp, Crown, ChevronRight, RefreshCw } from 'lucide-react';
+import { TrendingUp, Crown, ChevronRight, RefreshCw, Calculator } from 'lucide-react';
 import { SignalQualityBadge } from '@/components/shared/SignalQualityBadge';
 import { TickerLink } from '@/components/shared/TickerLink';
 import {
@@ -111,6 +111,24 @@ export function HighConvictionSetups() {
                                 </span>
                             </div>
                             <div className="flex items-center gap-2">
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        const side = isLongSignal(sig.signal_type) ? 'long' : 'short';
+                                        const params = new URLSearchParams({
+                                            ticker: sig.ticker,
+                                            side,
+                                            ...(sig.stop_loss ? { stop: String(sig.stop_loss) } : {}),
+                                            ...(sig.target_price ? { target: String(sig.target_price) } : {}),
+                                            signal_id: sig.id,
+                                            prefill: 'true',
+                                        });
+                                        navigate(`/positions?${params.toString()}`);
+                                    }}
+                                    className="opacity-0 group-hover:opacity-100 px-2.5 py-1 bg-blue-600/15 hover:bg-blue-600/25 text-blue-400 rounded-lg text-[10px] font-medium transition-all ring-1 ring-blue-500/30 flex items-center gap-1 border-none cursor-pointer"
+                                >
+                                    <Calculator className="w-3 h-3" /> Open Position
+                                </button>
                                 <SignalQualityBadge agentOutputs={sig.agent_outputs} compact />
                                 <span className="text-sentinel-600 group-hover:text-sentinel-400 transition-colors">
                                     <ChevronRight className="w-3.5 h-3.5" />
