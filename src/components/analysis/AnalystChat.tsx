@@ -1736,11 +1736,11 @@ INSTRUCTIONS:
                 const deleteTickersMatch = messageText.match(/\[ACTION:DELETE_CLOSED_TICKERS\]\s*([\w.\s]+)/i);
 
                 let desc = 'Execute action from AI response';
-                if (closeMatch) desc = `Close ${closeMatch[1].toUpperCase()} position @ $${closeMatch[2]}`;
-                else if (addMatch) desc = `Open new ${addMatch[1].toUpperCase()} position @ $${addMatch[2]}`;
-                else if (deleteMatch) desc = `Delete ${deleteMatch[1].toUpperCase()} position record`;
+                if (closeMatch?.[1] && closeMatch[2]) desc = `Close ${closeMatch[1].toUpperCase()} position @ $${closeMatch[2]}`;
+                else if (addMatch?.[1] && addMatch[2]) desc = `Open new ${addMatch[1].toUpperCase()} position @ $${addMatch[2]}`;
+                else if (deleteMatch?.[1]) desc = `Delete ${deleteMatch[1].toUpperCase()} position record`;
                 else if (deleteAllMatch) desc = 'Delete ALL closed position records';
-                else if (deleteTickersMatch) desc = `Delete closed records for: ${deleteTickersMatch[1].trim()}`;
+                else if (deleteTickersMatch?.[1]) desc = `Delete closed records for: ${deleteTickersMatch[1].trim()}`;
 
                 setPendingAction({ type: 'destructive', description: desc, rawMessage: messageText });
             } else {
