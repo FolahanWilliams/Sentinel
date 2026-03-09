@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useSentinel } from '@/hooks/useSentinel';
+import { usePortfolio } from '@/hooks/usePortfolio';
 import { BriefingBar } from './BriefingBar';
 import { FilterBar } from './FilterBar';
 import { ArticleCard } from './ArticleCard';
@@ -17,6 +18,7 @@ import { GlassMaterialize } from '@/components/shared/GlassMaterialize';
 
 export function SentinelPanel() {
     const { data, loading, error, isRefreshing } = useSentinel();
+    const { openPositions } = usePortfolio();
     const [searchParams, setSearchParams] = useSearchParams();
 
     // Filter State
@@ -25,6 +27,11 @@ export function SentinelPanel() {
     const [activeSentiment, setActiveSentiment] = useState<'all' | 'bullish' | 'bearish'>('all');
     const [highImpactOnly, setHighImpactOnly] = useState(false);
     const [activeTimeRange, setActiveTimeRange] = useState<TimeRange>('all');
+    const [portfolioOnly, setPortfolioOnly] = useState(false);
+
+    // Portfolio tickers set for filtering
+    const portfolioTickers = useMemo(() =>
+        new Set(openPositions.map(p => p.ticker.toUpperCase())), [openPositions]);
 
     // Scanner Drawer State
     const [drawerOpen, setDrawerOpen] = useState(() => !!searchParams.get('scan'));
@@ -81,9 +88,16 @@ export function SentinelPanel() {
                 return false;
             }
 
+            // 5. Portfolio filter
+            if (portfolioOnly && portfolioTickers.size > 0) {
+                const entityMatch = article.entities?.some(e => portfolioTickers.has(e.toUpperCase()));
+                const signalMatch = article.signals?.some(s => s.ticker && portfolioTickers.has(s.ticker.toUpperCase()));
+                if (!entityMatch && !signalMatch) return false;
+            }
+
             return true;
         });
-    }, [data, searchQuery, activeCategories, activeSentiment, highImpactOnly, activeTimeRange]);
+    }, [data, searchQuery, activeCategories, activeSentiment, highImpactOnly, activeTimeRange, portfolioOnly, portfolioTickers]);
 
     if (error) {
         return (
@@ -134,6 +148,9 @@ export function SentinelPanel() {
                                     setActiveSentiment={setActiveSentiment}
                                     highImpactOnly={highImpactOnly}
                                     setHighImpactOnly={setHighImpactOnly}
+                                    portfolioOnly={portfolioOnly}
+                                    setPortfolioOnly={setPortfolioOnly}
+                                    hasPortfolioPositions={openPositions.length > 0}
                                 />
                             </div>
                             <div className="shrink-0 flex items-center gap-2">
@@ -166,6 +183,7 @@ export function SentinelPanel() {
                                         <ArticleCard
                                             article={article}
                                             onScanTicker={openScanDrawer}
+                                            portfolioPositions={openPositions}
                                         />
                                     </GlassMaterialize>
                                 </div>

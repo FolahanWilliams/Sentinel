@@ -3,8 +3,10 @@
  *
  * Features:
  * - Fuzzy search across pages, tickers, and actions
+ * - Recent tickers section for quick re-access
  * - Keyboard navigation (↑↓ to select, Enter to execute, Esc to close)
- * - Grouped results: Pages, Ticker Search, Quick Actions
+ * - Grouped results: Recent, Pages, Ticker Search, Quick Actions
+ * - Keyboard shortcut hints displayed per command
  */
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
@@ -12,11 +14,14 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Search, LayoutDashboard, Briefcase, Zap, BarChart3,
-    FileText, Activity, Settings, Command,
-    ArrowRight
+    Activity, Settings, Command,
+    ArrowRight, Clock, Newspaper, BookOpen, Shield, Bell,
+    Trophy, Calendar, FlaskConical, Radar, Plus, Microscope, List,
 } from 'lucide-react';
 import { ScannerService } from '@/services/scanner';
 import { useToast } from '@/hooks/useToast';
+import { useRecentTickers } from '@/hooks/useRecentTickers';
+import { useWatchlistStore } from '@/stores/watchlistStore';
 
 interface CommandItem {
     id: string;
@@ -25,6 +30,7 @@ interface CommandItem {
     icon: React.ReactNode;
     group: string;
     action: () => void;
+    shortcut?: string;
 }
 
 export function CommandPalette() {
@@ -34,6 +40,8 @@ export function CommandPalette() {
     const inputRef = useRef<HTMLInputElement>(null);
     const navigate = useNavigate();
     const { addToast } = useToast();
+    const { recentTickers, addRecent } = useRecentTickers();
+    const watchlistTickers = useWatchlistStore(s => s.tickers);
 
     // Global ⌘K / Ctrl+K listener
     useEffect(() => {
@@ -59,54 +67,33 @@ export function CommandPalette() {
         }
     }, [isOpen]);
 
-    // Static page / action commands
-    const staticCommands: CommandItem[] = useMemo(() => [
+    // Static page commands
+    const pageCommands: CommandItem[] = useMemo(() => [
+        { id: 'nav-dashboard', label: 'Dashboard', description: 'Intelligence Overview', icon: <LayoutDashboard className="w-4 h-4" />, group: 'Pages', action: () => navigate('/'), shortcut: 'G D' },
+        { id: 'nav-intelligence', label: 'Intelligence Feed', description: 'News & Research', icon: <Newspaper className="w-4 h-4" />, group: 'Pages', action: () => navigate('/?tab=intelligence'), shortcut: 'G I' },
+        { id: 'nav-positions', label: 'Positions', description: 'Trade Tracker & PnL', icon: <Briefcase className="w-4 h-4" />, group: 'Pages', action: () => navigate('/positions'), shortcut: 'G P' },
+        { id: 'nav-watchlist', label: 'Watchlist', description: 'Monitored Tickers', icon: <List className="w-4 h-4" />, group: 'Pages', action: () => navigate('/watchlist'), shortcut: 'G W' },
+        { id: 'nav-scanner', label: 'Scanner', description: 'AI Signal Discovery', icon: <Radar className="w-4 h-4" />, group: 'Pages', action: () => navigate('/scanner'), shortcut: 'G S' },
+        { id: 'nav-research', label: 'Research', description: 'Deep Stock Analysis', icon: <Microscope className="w-4 h-4" />, group: 'Pages', action: () => navigate('/research') },
+        { id: 'nav-backtest', label: 'Backtest', description: 'Strategy Backtesting', icon: <FlaskConical className="w-4 h-4" />, group: 'Pages', action: () => navigate('/backtest'), shortcut: 'G B' },
+        { id: 'nav-journal', label: 'Journal', description: 'Trading Journal', icon: <BookOpen className="w-4 h-4" />, group: 'Pages', action: () => navigate('/journal'), shortcut: 'G J' },
+        { id: 'nav-alerts', label: 'Alerts', description: 'Price & Signal Alerts', icon: <Bell className="w-4 h-4" />, group: 'Pages', action: () => navigate('/alerts'), shortcut: 'G A' },
+        { id: 'nav-risk', label: 'Risk Dashboard', description: 'Exposure & Risk Metrics', icon: <Shield className="w-4 h-4" />, group: 'Pages', action: () => navigate('/risk'), shortcut: 'G R' },
+        { id: 'nav-leaderboard', label: 'Leaderboard', description: 'Strategy Leaderboard', icon: <Trophy className="w-4 h-4" />, group: 'Pages', action: () => navigate('/leaderboard') },
+        { id: 'nav-earnings', label: 'Earnings Calendar', description: 'Upcoming Earnings', icon: <Calendar className="w-4 h-4" />, group: 'Pages', action: () => navigate('/earnings'), shortcut: 'G E' },
+        { id: 'nav-settings', label: 'Settings', description: 'App Configuration', icon: <Settings className="w-4 h-4" />, group: 'Pages', action: () => navigate('/settings') },
+    ], [navigate]);
+
+    // Action commands
+    const actionCommands: CommandItem[] = useMemo(() => [
         {
-            id: 'nav-dashboard',
-            label: 'Dashboard',
-            description: 'Intelligence Overview',
-            icon: <LayoutDashboard className="w-4 h-4" />,
-            group: 'Pages',
-            action: () => navigate('/'),
+            id: 'action-new-position', label: 'New Position', description: 'Create a new trade position',
+            icon: <Plus className="w-4 h-4 text-emerald-400" />, group: 'Actions',
+            action: () => navigate('/positions?prefill=true'), shortcut: 'N',
         },
         {
-            id: 'nav-positions',
-            label: 'Positions',
-            description: 'Trade Tracker & PnL',
-            icon: <Briefcase className="w-4 h-4" />,
-            group: 'Pages',
-            action: () => navigate('/positions'),
-        },
-        {
-            id: 'nav-watchlist',
-            label: 'Scanner Watchlist',
-            description: 'Monitored Tickers',
-            icon: <Zap className="w-4 h-4" />,
-            group: 'Pages',
-            action: () => navigate('/watchlist'),
-        },
-        {
-            id: 'nav-intelligence',
-            label: 'Intelligence Feed',
-            description: 'News & Research',
-            icon: <FileText className="w-4 h-4" />,
-            group: 'Pages',
-            action: () => navigate('/?tab=intelligence'),
-        },
-        {
-            id: 'nav-settings',
-            label: 'Settings',
-            description: 'App Configuration',
-            icon: <Settings className="w-4 h-4" />,
-            group: 'Pages',
-            action: () => navigate('/settings'),
-        },
-        {
-            id: 'action-scan',
-            label: 'Run AI Discovery Scan',
-            description: 'Find new trending tickers to analyze',
-            icon: <Activity className="w-4 h-4 text-emerald-400" />,
-            group: 'Actions',
+            id: 'action-scan', label: 'Run AI Discovery Scan', description: 'Find new trending tickers',
+            icon: <Activity className="w-4 h-4 text-emerald-400" />, group: 'Actions',
             action: async () => {
                 addToast('Starting AI Discovery Scan...', 'info');
                 try {
@@ -124,41 +111,123 @@ export function CommandPalette() {
         },
     ], [navigate, addToast]);
 
-    // Generate ticker search command dynamically from query
-    const tickerCommand: CommandItem | null = useMemo(() => {
+    // Recent ticker commands
+    const recentCommands: CommandItem[] = useMemo(() => {
+        if (query) return []; // Hide when searching
+        return recentTickers.slice(0, 5).map(ticker => ({
+            id: `recent-${ticker}`,
+            label: ticker,
+            description: 'Recently viewed',
+            icon: <Clock className="w-4 h-4 text-sentinel-500" />,
+            group: 'Recent',
+            action: () => { addRecent(ticker); navigate(`/analysis/${ticker}`); },
+        }));
+    }, [recentTickers, query, navigate, addRecent]);
+
+    // Dynamic ticker search commands from query
+    const tickerCommands: CommandItem[] = useMemo(() => {
         const cleanQuery = query.trim().toUpperCase();
-        if (cleanQuery.length >= 1 && cleanQuery.length <= 6 && /^[A-Z]+$/.test(cleanQuery)) {
-            return {
-                id: `ticker-${cleanQuery}`,
-                label: `Analyze ${cleanQuery}`,
-                description: `Open analysis page for ${cleanQuery}`,
-                icon: <BarChart3 className="w-4 h-4 text-blue-400" />,
-                group: 'Ticker Search',
-                action: () => navigate(`/analysis/${cleanQuery}`),
-            };
-        }
-        return null;
-    }, [query, navigate]);
+        if (cleanQuery.length < 1 || cleanQuery.length > 6 || !/^[A-Z]+$/.test(cleanQuery)) return [];
 
-    // Filter items by query
-    const filteredItems = useMemo(() => {
         const items: CommandItem[] = [];
-        const lowerQuery = query.toLowerCase();
 
-        if (tickerCommand) {
-            items.push(tickerCommand);
-        }
-
-        const matchedStatic = staticCommands.filter(
-            cmd =>
-                cmd.label.toLowerCase().includes(lowerQuery) ||
-                cmd.description?.toLowerCase().includes(lowerQuery) ||
-                cmd.group.toLowerCase().includes(lowerQuery)
+        // Check watchlist matches
+        const watchlistMatches = watchlistTickers.filter(t =>
+            t.ticker.toUpperCase().includes(cleanQuery)
         );
 
-        items.push(...matchedStatic);
+        for (const match of watchlistMatches.slice(0, 3)) {
+            items.push({
+                id: `wl-${match.ticker}`,
+                label: match.ticker,
+                description: match.company_name || 'Watchlist ticker',
+                icon: <Zap className="w-4 h-4 text-amber-400" />,
+                group: 'Tickers',
+                action: () => { addRecent(match.ticker); navigate(`/analysis/${match.ticker}`); },
+            });
+        }
+
+        // Always add a direct analyze option for the typed ticker
+        const alreadyInList = items.some(i => i.label === cleanQuery);
+        if (!alreadyInList) {
+            items.push({
+                id: `ticker-analyze-${cleanQuery}`,
+                label: `Analyze ${cleanQuery}`,
+                description: `Open analysis for ${cleanQuery}`,
+                icon: <BarChart3 className="w-4 h-4 text-blue-400" />,
+                group: 'Tickers',
+                action: () => { addRecent(cleanQuery); navigate(`/analysis/${cleanQuery}`); },
+            });
+        }
+
+        // Add contextual actions for the typed ticker
+        items.push(
+            {
+                id: `ticker-research-${cleanQuery}`,
+                label: `Research ${cleanQuery}`,
+                description: `Deep research for ${cleanQuery}`,
+                icon: <Microscope className="w-4 h-4 text-indigo-400" />,
+                group: 'Tickers',
+                action: () => { addRecent(cleanQuery); navigate(`/research/${cleanQuery}`); },
+            },
+            {
+                id: `ticker-news-${cleanQuery}`,
+                label: `News for ${cleanQuery}`,
+                description: `View intelligence feed for ${cleanQuery}`,
+                icon: <Newspaper className="w-4 h-4 text-cyan-400" />,
+                group: 'Tickers',
+                action: () => navigate(`/?tab=intelligence&q=${cleanQuery}`),
+            },
+            {
+                id: `ticker-scan-${cleanQuery}`,
+                label: `Scan ${cleanQuery}`,
+                description: `Run AI scan on ${cleanQuery}`,
+                icon: <Radar className="w-4 h-4 text-purple-400" />,
+                group: 'Tickers',
+                action: () => navigate(`/?tab=intelligence&scan=${cleanQuery}`),
+            },
+            {
+                id: `ticker-position-${cleanQuery}`,
+                label: `Create Position for ${cleanQuery}`,
+                description: `Open new trade for ${cleanQuery}`,
+                icon: <Plus className="w-4 h-4 text-emerald-400" />,
+                group: 'Tickers',
+                action: () => navigate(`/positions?ticker=${cleanQuery}&prefill=true`),
+            },
+        );
+
         return items;
-    }, [query, staticCommands, tickerCommand]);
+    }, [query, watchlistTickers, navigate, addRecent]);
+
+    // Filter and combine all items
+    const filteredItems = useMemo(() => {
+        const lowerQuery = query.toLowerCase();
+
+        // If query looks like a ticker, show ticker commands first
+        if (tickerCommands.length > 0) {
+            const matchedPages = pageCommands.filter(cmd =>
+                cmd.label.toLowerCase().includes(lowerQuery) ||
+                cmd.description?.toLowerCase().includes(lowerQuery)
+            );
+            return [...tickerCommands, ...matchedPages.slice(0, 3)];
+        }
+
+        // No query: show recent, then pages, then actions
+        if (!query) {
+            return [...recentCommands, ...pageCommands.slice(0, 6), ...actionCommands];
+        }
+
+        // Text search: filter pages and actions
+        const matchedPages = pageCommands.filter(cmd =>
+            cmd.label.toLowerCase().includes(lowerQuery) ||
+            cmd.description?.toLowerCase().includes(lowerQuery)
+        );
+        const matchedActions = actionCommands.filter(cmd =>
+            cmd.label.toLowerCase().includes(lowerQuery) ||
+            cmd.description?.toLowerCase().includes(lowerQuery)
+        );
+        return [...matchedPages, ...matchedActions];
+    }, [query, pageCommands, actionCommands, recentCommands, tickerCommands]);
 
     // Keyboard navigation
     const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -191,7 +260,6 @@ export function CommandPalette() {
         return Array.from(map.entries());
     }, [filteredItems]);
 
-    // flatIndex is calculated inside the render via a ref to avoid stale closures
     const flatIndexRef = useRef(0);
     flatIndexRef.current = -1;
 
@@ -234,10 +302,10 @@ export function CommandPalette() {
                         </div>
 
                         {/* Results */}
-                        <div className="max-h-[300px] overflow-y-auto p-2">
+                        <div className="max-h-[360px] overflow-y-auto p-2">
                             {filteredItems.length === 0 ? (
                                 <div className="py-8 text-center text-sentinel-500 text-sm">
-                                    No results found for "{query}"
+                                    No results found for &ldquo;{query}&rdquo;
                                 </div>
                             ) : (
                                 groups.map(([groupName, items]) => (
@@ -272,7 +340,12 @@ export function CommandPalette() {
                                                             <div className="text-xs text-sentinel-500 truncate">{item.description}</div>
                                                         )}
                                                     </div>
-                                                    {isSelected && (
+                                                    {item.shortcut && (
+                                                        <kbd className="hidden sm:inline-block px-1.5 py-0.5 text-[10px] font-mono text-sentinel-500 bg-sentinel-800/50 rounded border border-sentinel-700/50 flex-shrink-0">
+                                                            {item.shortcut}
+                                                        </kbd>
+                                                    )}
+                                                    {isSelected && !item.shortcut && (
                                                         <ArrowRight className="w-3.5 h-3.5 text-sentinel-500 flex-shrink-0" />
                                                     )}
                                                 </button>
@@ -293,6 +366,10 @@ export function CommandPalette() {
                                 <span className="flex items-center gap-1">
                                     <kbd className="px-1 py-0.5 font-mono bg-sentinel-800/50 rounded border border-sentinel-700/50">↵</kbd>
                                     Select
+                                </span>
+                                <span className="hidden sm:flex items-center gap-1">
+                                    <kbd className="px-1 py-0.5 font-mono bg-sentinel-800/50 rounded border border-sentinel-700/50">G</kbd>
+                                    then key for nav
                                 </span>
                             </div>
                             <div className="flex items-center gap-1">

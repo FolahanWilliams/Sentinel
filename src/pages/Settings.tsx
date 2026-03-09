@@ -3,6 +3,7 @@ import { supabase } from '@/config/supabase';
 import { Settings as SettingsIcon, Save, Bot, Shield, Bell, Mail, CheckCircle2 } from 'lucide-react';
 import { ReflectionPanel } from '@/components/analysis/ReflectionPanel';
 import { AlertRulesPanel } from '@/components/settings/AlertRulesPanel';
+import { ExposureSettingsPanel } from '@/components/settings/ExposureSettings';
 
 export function Settings() {
     const [loading, setLoading] = useState(true);
@@ -230,6 +231,11 @@ export function Settings() {
                     </div>
                 </div>
 
+            </div>
+
+            {/* Exposure Monitoring */}
+            <div className="glass-panel p-6 rounded-xl">
+                <ExposureSettingsPanel />
             </div>
 
             {/* Alert Rules */}

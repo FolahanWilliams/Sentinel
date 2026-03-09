@@ -12,7 +12,7 @@ import { MarketDataService } from '@/services/marketData';
 import { PostMortemService } from '@/services/postMortemService';
 import {
     Briefcase, Plus, X, TrendingUp, TrendingDown,
-    AlertTriangle, DollarSign,
+    AlertTriangle, DollarSign, Zap,
     Loader2, BarChart3, ArrowUpRight, ArrowDownRight,
     CheckCircle2, Trash2
 } from 'lucide-react';
@@ -58,7 +58,10 @@ export function Positions() {
     const prefillTicker = searchParams.get('ticker') || '';
     const prefillEntry = searchParams.get('entry') || '';
     const prefillSide = (searchParams.get('side') === 'short' ? 'short' : 'long') as 'long' | 'short';
-    const hasPrefill = !!prefillTicker;
+    const prefillSignalId = searchParams.get('signal_id') || '';
+    const prefillStop = searchParams.get('stop') || '';
+    const prefillTarget = searchParams.get('target') || '';
+    const hasPrefill = !!prefillTicker || searchParams.get('prefill') === 'true';
 
     const [positions, setPositions] = useState<Position[]>([]);
     const [loading, setLoading] = useState(true);
@@ -189,7 +192,8 @@ export function Positions() {
             currency: inferCurrency(ticker),
             status: 'open',
             opened_at: new Date().toISOString(),
-            notes: formNotes || null
+            notes: formNotes || null,
+            ...(prefillSignalId ? { signal_id: prefillSignalId } : {}),
         });
 
         if (!error) {
@@ -407,7 +411,17 @@ export function Positions() {
                                     return (
                                         <tr key={pos.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
                                             <td className="px-5 py-3">
-                                                <span className="font-mono font-bold text-sentinel-100">{pos.ticker}</span>
+                                                <button
+                                                    onClick={() => navigate(`/analysis/${pos.ticker}`)}
+                                                    className="font-mono font-bold text-blue-400 hover:text-blue-300 bg-transparent border-none cursor-pointer transition-colors"
+                                                >
+                                                    {pos.ticker}
+                                                </button>
+                                                {pos.signal_id && (
+                                                    <span className="ml-1.5 inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-blue-500/10 text-blue-400 text-[10px] font-medium rounded border border-blue-500/20">
+                                                        <Zap className="w-2.5 h-2.5" />AI
+                                                    </span>
+                                                )}
                                             </td>
                                             <td className="px-5 py-3">
                                                 <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${pos.side === 'long' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'}`}>
@@ -573,6 +587,16 @@ export function Positions() {
                                     <X className="w-5 h-5" />
                                 </button>
                             </div>
+
+                            {/* Signal linkage banner */}
+                            {prefillSignalId && (
+                                <div className="flex items-center gap-2 mb-4 px-3 py-2 rounded-lg bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs">
+                                    <Zap className="w-3.5 h-3.5 shrink-0" />
+                                    <span>Creating from AI Signal — position will be linked for outcome tracking</span>
+                                    {prefillStop && <span className="ml-auto font-mono">Stop: ${prefillStop}</span>}
+                                    {prefillTarget && <span className="font-mono">Target: ${prefillTarget}</span>}
+                                </div>
+                            )}
 
                             <form onSubmit={handleAddPosition} className="space-y-4">
                                 <div className="grid grid-cols-2 gap-4">

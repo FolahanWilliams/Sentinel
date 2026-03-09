@@ -4,7 +4,8 @@
  */
 
 import { useState } from 'react';
-import { Calculator, Shield } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Calculator, Shield, ArrowRight } from 'lucide-react';
 import { PositionSizer } from '@/services/positionSizer';
 import { formatPrice } from '@/utils/formatters';
 
@@ -29,6 +30,7 @@ export function PositionSizeCard({
     targetPrice,
     confidenceScore,
 }: PositionSizeCardProps) {
+    const navigate = useNavigate();
     const [result, setResult] = useState<SizeResult | null>(null);
     const [loading, setLoading] = useState(false);
     const [calculated, setCalculated] = useState(false);
@@ -112,12 +114,32 @@ export function PositionSizeCard({
                         )}
                     </div>
 
-                    <button
-                        onClick={calculate}
-                        className="w-full px-4 py-2 bg-sentinel-800 hover:bg-sentinel-700 text-sentinel-300 rounded-lg text-sm transition-colors ring-1 ring-sentinel-700"
-                    >
-                        Recalculate
-                    </button>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={calculate}
+                            className="flex-1 px-4 py-2 bg-sentinel-800 hover:bg-sentinel-700 text-sentinel-300 rounded-lg text-sm transition-colors ring-1 ring-sentinel-700"
+                        >
+                            Recalculate
+                        </button>
+                        <button
+                            onClick={() => {
+                                const shares = currentPrice > 0 ? Math.floor(result.usdValue / currentPrice) : 0;
+                                const params = new URLSearchParams({
+                                    ticker,
+                                    side: 'long',
+                                    entry: String(currentPrice),
+                                    ...(shares > 0 ? { shares: String(shares) } : {}),
+                                    ...(stopLoss ? { stop: String(stopLoss) } : {}),
+                                    ...(targetPrice ? { target: String(targetPrice) } : {}),
+                                    prefill: 'true',
+                                });
+                                navigate(`/positions?${params.toString()}`);
+                            }}
+                            className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-1.5"
+                        >
+                            Create Position <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                    </div>
                 </div>
             ) : (
                 <button

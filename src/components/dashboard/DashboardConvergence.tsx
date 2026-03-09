@@ -8,6 +8,7 @@
 
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { TickerLink } from '@/components/shared/TickerLink';
 import { useSentinel } from '@/hooks/useSentinel';
 import type { ProcessedArticle, SentinelTradingSignal } from '@/types/sentinel';
 import { Zap, TrendingUp, TrendingDown, Activity, Radar, Loader2 } from 'lucide-react';
@@ -121,9 +122,7 @@ export function DashboardConvergence() {
                         >
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
-                                    <span className="font-bold text-sentinel-100 text-sm font-mono">
-                                        {conv.ticker}
-                                    </span>
+                                    <TickerLink ticker={conv.ticker} className="text-sm" />
                                     <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${dirColor}`}>
                                         <DirIcon className="h-2.5 w-2.5" />
                                         {conv.direction.toUpperCase()}

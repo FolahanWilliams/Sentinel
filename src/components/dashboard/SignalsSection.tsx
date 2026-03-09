@@ -801,11 +801,21 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                                         <button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
-                                                                navigate(`/positions?ticker=${signal.ticker}&entry=${signal.suggested_entry_low || ''}&side=${signal.signal_type.includes('short') ? 'short' : 'long'}`);
+                                                                const side = signal.signal_type.includes('short') ? 'short' : 'long';
+                                                                const params = new URLSearchParams({
+                                                                    ticker: signal.ticker,
+                                                                    side,
+                                                                    ...(signal.suggested_entry_low ? { entry: String(signal.suggested_entry_low) } : {}),
+                                                                    ...(signal.stop_loss ? { stop: String(signal.stop_loss) } : {}),
+                                                                    ...(signal.target_price ? { target: String(signal.target_price) } : {}),
+                                                                    signal_id: signal.id,
+                                                                    prefill: 'true',
+                                                                });
+                                                                navigate(`/positions?${params.toString()}`);
                                                             }}
                                                             className="px-3 py-1.5 bg-blue-600/15 hover:bg-blue-600/25 text-blue-400 rounded-lg text-xs font-medium transition-colors ring-1 ring-blue-500/30 flex items-center gap-1.5 border-none cursor-pointer"
                                                         >
-                                                            <Calculator className="w-3 h-3" /> Simulate Trade
+                                                            <Calculator className="w-3 h-3" /> Open Position
                                                         </button>
                                                         <button
                                                             onClick={(e) => {

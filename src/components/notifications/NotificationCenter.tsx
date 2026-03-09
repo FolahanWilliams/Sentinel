@@ -6,7 +6,7 @@
 import { useState, useEffect } from 'react';
 import {
     Bell, BellOff, Settings, X, Volume2, VolumeX,
-    AlertTriangle, TrendingUp, Radar, Shield, Target, Zap,
+    AlertTriangle, TrendingUp, TrendingDown, Radar, Shield, Target, Zap, PieChart,
 } from 'lucide-react';
 import { BrowserNotificationService, type NotificationPreferences } from '@/services/browserNotifications';
 
@@ -17,6 +17,8 @@ const TRIGGER_CONFIG: { key: keyof NotificationPreferences; label: string; icon:
     { key: 'convergence_detected', label: 'Convergence', icon: Radar, description: 'When multiple signals align on a ticker' },
     { key: 'exposure_breach', label: 'Exposure Limit', icon: Shield, description: 'When portfolio exposure exceeds limits' },
     { key: 'scanner_high_confidence', label: 'High Confidence', icon: TrendingUp, description: 'When scanner finds 80%+ confidence signal' },
+    { key: 'drawdown_alert', label: 'Drawdown Alert', icon: TrendingDown, description: 'When portfolio drawdown exceeds threshold' },
+    { key: 'sector_drift', label: 'Sector Drift', icon: PieChart, description: 'When sector exposure drifts beyond limits' },
 ];
 
 interface NotificationCenterProps {

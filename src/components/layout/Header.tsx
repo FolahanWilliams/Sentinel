@@ -10,6 +10,7 @@ import { destroySession } from '@/utils/auth';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useEffect, useState, useRef } from 'react';
 import { NotificationCenter } from '@/components/notifications/NotificationCenter';
+import { MarketRegimeIndicator } from '@/components/shared/MarketRegimeIndicator';
 import { BrowserNotificationService } from '@/services/browserNotifications';
 
 function useMarketStatus() {
@@ -126,12 +127,15 @@ export function Header() {
                 {pageTitle}
             </h1>
 
-            {/* Center: Market Status (hidden on mobile) */}
-            <div className="hidden sm:flex items-center gap-2">
-                <span className={`status-dot ${marketInfo.colorClass}`} />
-                <span className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
-                    {marketInfo.label}
-                </span>
+            {/* Center: Market Status + Regime (hidden on mobile) */}
+            <div className="hidden sm:flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                    <span className={`status-dot ${marketInfo.colorClass}`} />
+                    <span className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>
+                        {marketInfo.label}
+                    </span>
+                </div>
+                <MarketRegimeIndicator />
             </div>
 
             {/* Right: Controls */}

@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
 import { TrendingUp, Crown, ChevronRight, RefreshCw } from 'lucide-react';
 import { SignalQualityBadge } from '@/components/shared/SignalQualityBadge';
+import { TickerLink } from '@/components/shared/TickerLink';
 import {
     formatSignalType, isLongSignal,
     ConfidenceBadge, ConvictionBadge, MoatBadge, LynchBadge, RoiBadge, MarketRegimeBadge, EarningsWarningBadge,
@@ -99,9 +100,7 @@ export function HighConvictionSetups() {
                     >
                         <div className="flex items-center justify-between mb-2">
                             <div className="flex items-center gap-2">
-                                <span className="px-2 py-0.5 bg-sentinel-800 text-sentinel-100 text-sm font-bold font-mono rounded ring-1 ring-sentinel-700">
-                                    {sig.ticker}
-                                </span>
+                                <TickerLink ticker={sig.ticker} className="text-sm" />
                                 <span className={`px-1.5 py-0.5 text-[10px] font-bold rounded ring-1 ${
                                     isLongSignal(sig.signal_type)
                                         ? 'bg-emerald-500/15 text-emerald-400 ring-emerald-500/30'
