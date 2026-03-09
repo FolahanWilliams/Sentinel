@@ -50,7 +50,7 @@ export function SignalsSidebar({ articles, onScanTicker }: SignalsSidebarProps) 
 
     if (aggregatedSignals.length === 0) {
         return (
-            <div className="bg-sentinel-800/40 border border-sentinel-700/50 rounded-xl p-4 sticky top-0">
+            <div className="bg-sentinel-800/40 border border-sentinel-700/50 rounded-xl p-4">
                 <div className="flex items-center text-sentinel-400 mb-4">
                     <Target className="h-4 w-4 mr-2" />
                     <h3 className="font-semibold">Extracted Signals</h3>
@@ -63,7 +63,7 @@ export function SignalsSidebar({ articles, onScanTicker }: SignalsSidebarProps) 
     }
 
     return (
-        <div className="bg-sentinel-800/40 border border-sentinel-700/50 rounded-xl p-4 sticky top-0 overflow-y-auto max-h-[calc(100vh-14rem)] custom-scrollbar">
+        <div className="bg-sentinel-800/40 border border-sentinel-700/50 rounded-xl p-4">
             <div className="flex items-center justify-between mb-4 border-b border-sentinel-700/50 pb-3">
                 <div className="flex items-center text-sentinel-100">
                     <Target className="h-4 w-4 mr-2 text-amber-400" />

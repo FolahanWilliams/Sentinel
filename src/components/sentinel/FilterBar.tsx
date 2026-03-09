@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type RefObject } from 'react';
 import { Search, Filter, AlertTriangle, Briefcase } from 'lucide-react';
 import { motion } from 'framer-motion';
 import type { ArticleCategory } from '@/types/sentinel';
@@ -16,6 +16,7 @@ interface FilterBarProps {
     portfolioOnly?: boolean;
     setPortfolioOnly?: (val: boolean) => void;
     hasPortfolioPositions?: boolean;
+    searchInputRef?: RefObject<HTMLInputElement | null>;
 }
 
 export function FilterBar({
@@ -25,6 +26,7 @@ export function FilterBar({
     highImpactOnly, setHighImpactOnly,
     portfolioOnly = false, setPortfolioOnly,
     hasPortfolioPositions = false,
+    searchInputRef,
 }: FilterBarProps) {
     // Debounce search input — avoids filtering 1000+ articles on every keystroke
     const [searchInput, setSearchInput] = useState(searchQuery);
@@ -53,8 +55,9 @@ export function FilterBar({
                 <div className="relative w-full sm:w-96 text-sentinel-400 focus-within:text-sentinel-300">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" />
                     <input
+                        ref={searchInputRef}
                         type="text"
-                        placeholder="Search briefings, entities, tickers..."
+                        placeholder="Search briefings, entities, tickers... (press /)"
                         aria-label="Search intelligence articles"
                         value={searchInput}
                         onChange={(e) => setSearchInput(e.target.value)}

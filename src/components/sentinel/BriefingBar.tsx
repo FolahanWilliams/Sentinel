@@ -5,9 +5,10 @@ import { SENTIMENT_COLORS } from '@/utils/sentinel-helpers';
 interface BriefingBarProps {
     briefing: DailyBriefing;
     meta: SentinelResponse['meta'];
+    onTopicClick?: (topic: string) => void;
 }
 
-export function BriefingBar({ briefing, meta }: BriefingBarProps) {
+export function BriefingBar({ briefing, meta, onTopicClick }: BriefingBarProps) {
 
     const moodConfig = {
         'risk-on': { color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20', icon: Zap },
@@ -81,9 +82,19 @@ export function BriefingBar({ briefing, meta }: BriefingBarProps) {
                     </h3>
                     <div className="flex flex-wrap gap-2">
                         {briefing.trending_topics.map((topic, i) => (
-                            <span key={i} className="px-3 py-1 bg-sentinel-800 border border-sentinel-700/50 rounded-full text-xs text-sentinel-300 font-medium">
-                                #{topic}
-                            </span>
+                            onTopicClick ? (
+                                <button
+                                    key={i}
+                                    onClick={() => onTopicClick(topic)}
+                                    className="px-3 py-1 bg-sentinel-800 border border-sentinel-700/50 rounded-full text-xs text-sentinel-300 font-medium hover:bg-sentinel-700 hover:text-sentinel-100 hover:border-sentinel-600 transition-colors cursor-pointer"
+                                >
+                                    #{topic}
+                                </button>
+                            ) : (
+                                <span key={i} className="px-3 py-1 bg-sentinel-800 border border-sentinel-700/50 rounded-full text-xs text-sentinel-300 font-medium">
+                                    #{topic}
+                                </span>
+                            )
                         ))}
                     </div>
                 </div>
