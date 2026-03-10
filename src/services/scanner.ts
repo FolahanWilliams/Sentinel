@@ -88,102 +88,58 @@ export class ScannerService {
      */
     static async prioritizeTickers(tickers: { ticker: string; sector: string }[]): Promise<{ ticker: string; sector: string; priority: number; prioritySources: string[] }[]> {
         const tickerNames = tickers.map(t => t.ticker);
-        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-
-        // Batch all independent DB queries in parallel instead of sequential
-        const [
-            { data: recentEvents },
-            { data: signals },
-            { data: rssMentions },
-            sentinelResult,
-        ] = await Promise.all([
-            supabase.from('market_events').select('ticker').in('ticker', tickerNames).gte('detected_at', oneDayAgo),
-            supabase.from('signals').select('id, ticker').in('ticker', tickerNames),
-            supabase.from('rss_cache').select('title').gte('fetched_at', oneDayAgo).limit(200),
-            Promise.resolve(supabase.from('sentinel_articles').select('title, summary, impact, signals, affected_tickers').gte('processed_at', oneDayAgo).limit(100)).catch(() => ({ data: null })),
-        ]);
-
-        // Count recent events per ticker
-        const eventCounts: Record<string, number> = {};
-        for (const ev of recentEvents || []) {
-            eventCounts[ev.ticker] = (eventCounts[ev.ticker] || 0) + 1;
-        }
-
-        // Win rate per ticker from outcomes (this one depends on signals result)
-        const signalIds = (signals || []).map((s: { id: string; ticker: string }) => s.id);
-        const { data: outcomes } = signalIds.length > 0
-            ? await supabase
-                .from('signal_outcomes')
-                .select('signal_id, outcome')
-                .in('signal_id', signalIds)
-                .neq('outcome', 'pending')
-            : { data: [] };
-
-        const tickerWinRates: Record<string, { wins: number; total: number }> = {};
-        const outcomeMap = new Map((outcomes || []).map(o => [o.signal_id, o.outcome]));
-        for (const s of signals || []) {
-            const outcome = outcomeMap.get(s.id);
-            if (!outcome) continue;
-            if (!tickerWinRates[s.ticker]) tickerWinRates[s.ticker] = { wins: 0, total: 0 };
-            const wr = tickerWinRates[s.ticker]!;
-            wr.total++;
-            if (outcome === 'win') wr.wins++;
-        }
-
-        // Count RSS mentions
-        const rssCounts: Record<string, number> = {};
-        for (const article of rssMentions || []) {
-            const titleLower = (article.title || '').toLowerCase();
-            for (const t of tickerNames) {
-                if (titleLower.includes(t.toLowerCase())) {
-                    rssCounts[t] = (rssCounts[t] || 0) + 1;
-                }
+        
+        try {
+            // Attempt to use the optimized RPC function
+            const { data: priorities, error } = await supabase
+                .rpc('prioritize_tickers', { p_tickers: tickerNames });
+                
+            if (error) throw error;
+            
+            if (priorities && priorities.length > 0) {
+                // Define the expected type from the RPC
+                type TickerPriorityStats = {
+                    ticker: string;
+                    events: number;
+                    signals: number;
+                    rss: number;
+                    sentinel_total: number;
+                    sentinel_high_impact: number;
+                    wins: number;
+                    total_outcomes: number;
+                };
+                
+                const priorityMap = new Map<string, TickerPriorityStats>(
+                    priorities.map((p: any) => [p.ticker, p as TickerPriorityStats])
+                );
+                
+                return tickers.map(t => {
+                    const defaultStats: TickerPriorityStats = { ticker: t.ticker, events: 0, signals: 0, rss: 0, sentinel_total: 0, sentinel_high_impact: 0, wins: 0, total_outcomes: 0 };
+                    const stats = priorityMap.get(t.ticker) || defaultStats;
+                    
+                    const winRateBonus = stats.total_outcomes > 0 ? (stats.wins / stats.total_outcomes) * 20 : 0;
+                    const sentinelBoost = (stats.sentinel_high_impact * 50) + (stats.sentinel_total * 15);
+                    const priority = (stats.events * 30) + (stats.rss * 10) + winRateBonus + sentinelBoost + 10;
+                    
+                    const sources: string[] = [];
+                    if (stats.events > 0) sources.push(`${stats.events} events`);
+                    if (stats.rss > 0) sources.push(`${stats.rss} RSS`);
+                    if (stats.sentinel_total > 0) sources.push(`${stats.sentinel_total} intel (${stats.sentinel_high_impact} high)`);
+                    if (stats.total_outcomes > 0) sources.push(`${Math.round((stats.wins / stats.total_outcomes) * 100)}% WR`);
+                    
+                    return { ...t, priority: Math.round(priority), prioritySources: sources };
+                }).sort((a, b) => b.priority - a.priority);
             }
+        } catch (err) {
+            console.warn('[Scanner] RPC prioritize_tickers failed, falling back to basic priority:', err);
         }
 
-        // News Intelligence boost from sentinel_articles
-        const sentinelCounts: Record<string, { total: number; highImpact: number }> = {};
-        const sentinelArticles = sentinelResult?.data;
-        if (sentinelArticles) {
-            for (const article of sentinelArticles) {
-                const affectedTickers = (article.affected_tickers as string[]) || [];
-                const textToScan = `${article.title || ''} ${article.summary || ''}`.toUpperCase();
-                const articleSignals = (Array.isArray(article.signals) ? article.signals : []) as Array<{ ticker?: string }>;
-
-                for (const t of tickerNames) {
-                    const mentioned = affectedTickers.includes(t)
-                        || textToScan.includes(t)
-                        || articleSignals.some(s => s.ticker?.toUpperCase() === t);
-
-                    if (mentioned) {
-                        if (!sentinelCounts[t]) sentinelCounts[t] = { total: 0, highImpact: 0 };
-                        sentinelCounts[t].total++;
-                        if (article.impact === 'high') sentinelCounts[t].highImpact++;
-                    }
-                }
-            }
-        }
-
-        // Score each ticker
-        return tickers.map(t => {
-            const events = eventCounts[t.ticker] || 0;
-            const rss = rssCounts[t.ticker] || 0;
-            const wr = tickerWinRates[t.ticker];
-            const winRateBonus = wr ? (wr.wins / wr.total) * 20 : 0;
-            const sentinel = sentinelCounts[t.ticker];
-            const sentinelBoost = sentinel ? (sentinel.highImpact * 50) + (sentinel.total * 15) : 0;
-
-            const priority = (events * 30) + (rss * 10) + winRateBonus + sentinelBoost + 10; // base 10
-
-            // Track sources for transparency in logs
-            const sources: string[] = [];
-            if (events > 0) sources.push(`${events} events`);
-            if (rss > 0) sources.push(`${rss} RSS`);
-            if (sentinel && sentinel.total > 0) sources.push(`${sentinel.total} intel (${sentinel.highImpact} high)`);
-            if (wr) sources.push(`${Math.round((wr.wins / wr.total) * 100)}% WR`);
-
-            return { ...t, priority: Math.round(priority), prioritySources: sources };
-        }).sort((a, b) => b.priority - a.priority);
+        // Fallback: if RPC fails (e.g., migration not run yet), return base priority
+        return tickers.map(t => ({
+            ...t,
+            priority: 10,
+            prioritySources: ['Base Priority (Fallback)']
+        }));
     }
 
     /**
