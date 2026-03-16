@@ -4,18 +4,20 @@
  * Uses TradingView's open-source lightweight-charts library for full programmatic
  * control over markers, price lines, and sub-chart indicators.
  *
- * Displays:
- * - Candlestick chart with volume histogram
+ * Features:
+ * - Candlestick chart with volume histogram + SMA 50/200 trend lines
  * - Buy/sell signal markers with outcome coloring (win/loss/open)
  * - Stop loss & target price lines for selected signal
- * - SMA 50/200 trend lines
  * - Backtest stats panel (win rate, profit factor, expectancy)
- * - Equity curve visualization
  * - Market regime badge (live VIX/SPY context)
  * - Per-confluence-level breakdown
+ * - Save backtest results to signal_outcomes table (Phase 2)
+ * - Position sizing recommendation per signal (Phase 2)
+ * - Sentiment divergence overlay zones (Phase 4)
+ * - Multi-timeframe confluence from weekly bars (Phase 4)
  */
 
-import { useEffect, useRef, useState, useCallback, memo } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo, memo } from 'react';
 import {
     createChart,
     type IChartApi,
@@ -28,10 +30,20 @@ import {
     type SeriesMarker,
     type Time,
 } from 'lightweight-charts';
-import { Loader2, AlertCircle, BarChart3, Activity, TrendingUp, TrendingDown, Shield } from 'lucide-react';
+import {
+    Loader2, AlertCircle, BarChart3, Activity, TrendingUp, TrendingDown,
+    Shield, Database, DollarSign, Waves, Layers, CheckCircle2,
+} from 'lucide-react';
 import { TechnicalAnalysisService } from '@/services/technicalAnalysis';
 import { MarketRegimeFilter, type MarketRegimeResult } from '@/services/marketRegime';
-import { useStrategySignals, type OHLCV, type StrategySignal, type BacktestStats } from '@/hooks/useStrategySignals';
+import { StrategyOutcomeWriter } from '@/services/strategyOutcomeWriter';
+import { PositionSizer, type PositionSizeResult } from '@/services/positionSizer';
+import { SentimentDivergenceDetector, type SentimentDivergenceResult } from '@/services/sentimentDivergence';
+import { BrowserNotificationService } from '@/services/browserNotifications';
+import {
+    useStrategySignals, computeStrategySignals,
+    type OHLCV, type StrategySignal, type BacktestStats,
+} from '@/hooks/useStrategySignals';
 
 interface StrategyChartProps {
     ticker: string;
@@ -59,6 +71,30 @@ function outcomeLabel(outcome: string): string {
         case 'expired': return 'EXPIRED';
         default: return 'OPEN';
     }
+}
+
+/** Aggregate daily bars into weekly OHLCV for multi-timeframe confluence */
+function aggregateToWeekly(bars: OHLCV[]): OHLCV[] {
+    if (bars.length === 0) return [];
+    const weeks: OHLCV[] = [];
+    let current: OHLCV | null = null;
+
+    for (const bar of bars) {
+        const d = new Date(bar.date);
+        const dayOfWeek = d.getDay(); // 0=Sun, 1=Mon
+        // Start new week on Monday (or first bar)
+        if (!current || dayOfWeek === 1) {
+            if (current) weeks.push(current);
+            current = { ...bar };
+        } else {
+            current.high = Math.max(current.high, bar.high);
+            current.low = Math.min(current.low, bar.low);
+            current.close = bar.close;
+            current.volume += bar.volume;
+        }
+    }
+    if (current) weeks.push(current);
+    return weeks;
 }
 
 // ── Stats Panel Component ──
@@ -199,6 +235,126 @@ const RegimeBadge: React.FC<{ regime: MarketRegimeResult | null; loading: boolea
     );
 };
 
+// ── Position Sizing Panel ──
+const PositionSizingPanel: React.FC<{ sizing: PositionSizeResult | null; loading: boolean }> = ({ sizing, loading }) => {
+    if (loading) {
+        return (
+            <div className="glass-panel rounded-xl p-3 border border-sentinel-800/50 flex items-center gap-2 text-xs text-sentinel-500">
+                <Loader2 className="w-3 h-3 animate-spin" /> Calculating position size...
+            </div>
+        );
+    }
+    if (!sizing) return null;
+
+    const methodLabel = sizing.method === 'kelly' ? 'Kelly' : sizing.method === 'risk_based' ? 'Risk-Based' : 'Fixed %';
+
+    return (
+        <div className="glass-panel rounded-xl p-4 border border-sentinel-800/50">
+            <div className="flex items-center gap-2 mb-3">
+                <DollarSign className="w-3.5 h-3.5 text-blue-400" />
+                <span className="text-xs font-semibold text-sentinel-300 uppercase tracking-wider">Position Sizing</span>
+                <span className="text-[10px] text-sentinel-500 ml-auto">{methodLabel}</span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <StatCell label="Size" value={`${sizing.recommendedPct.toFixed(2)}%`} color="text-blue-400" />
+                <StatCell label="USD Value" value={`$${sizing.usdValue.toLocaleString()}`} />
+                {sizing.shares != null && sizing.shares > 0 && (
+                    <StatCell label="Shares" value={sizing.shares.toString()} />
+                )}
+                {sizing.riskRewardRatio != null && (
+                    <StatCell
+                        label="R:R"
+                        value={`${sizing.riskRewardRatio.toFixed(1)}:1`}
+                        color={sizing.riskRewardRatio >= 2 ? 'text-emerald-400' : 'text-amber-400'}
+                    />
+                )}
+            </div>
+            {/* Method comparison */}
+            <div className="mt-3 flex gap-2 text-[10px]">
+                <span className="text-sentinel-500">
+                    Fixed: {sizing.comparisons.fixedPct.pct.toFixed(2)}%
+                </span>
+                <span className="text-sentinel-600">|</span>
+                <span className="text-sentinel-500">
+                    Risk: {sizing.comparisons.riskBased.pct.toFixed(2)}%
+                </span>
+                {sizing.comparisons.kelly && (
+                    <>
+                        <span className="text-sentinel-600">|</span>
+                        <span className="text-sentinel-500">
+                            Kelly: {sizing.comparisons.kelly.pct.toFixed(2)}%
+                        </span>
+                    </>
+                )}
+            </div>
+            {sizing.limitReason && (
+                <p className="mt-2 text-[10px] text-sentinel-500">{sizing.limitReason}</p>
+            )}
+            {sizing.trailingStopRule && (
+                <p className="mt-1 text-[10px] text-sentinel-600">{sizing.trailingStopRule}</p>
+            )}
+        </div>
+    );
+};
+
+// ── Sentiment Divergence Badge ──
+const SentimentBadge: React.FC<{ result: SentimentDivergenceResult | null; loading: boolean }> = ({ result, loading }) => {
+    if (loading) {
+        return (
+            <div className="px-2 py-1 bg-sentinel-900/80 backdrop-blur-sm rounded-lg border border-sentinel-700/40 text-[11px] flex items-center gap-1">
+                <Loader2 className="w-3 h-3 animate-spin text-sentinel-400" />
+                <span className="text-sentinel-500">Sentiment...</span>
+            </div>
+        );
+    }
+    if (!result || result.articleCount < 3) return null;
+
+    const typeColors: Record<string, string> = {
+        panic_exhaustion: 'bg-emerald-900/80 border-emerald-500/30 text-emerald-300',
+        euphoria_climax: 'bg-red-900/80 border-red-500/30 text-red-300',
+        rational: 'bg-blue-900/80 border-blue-500/30 text-blue-300',
+        neutral: 'bg-sentinel-900/80 border-sentinel-700/40 text-sentinel-400',
+    };
+
+    const label = result.divergenceType.replace('_', ' ').toUpperCase();
+
+    return (
+        <div className={`px-2.5 py-1.5 backdrop-blur-sm rounded-lg border text-[11px] flex items-center gap-1.5 ${typeColors[result.divergenceType] || typeColors.neutral}`}>
+            <Waves className="w-3 h-3" />
+            <span className="font-semibold">{label}</span>
+            {result.confidenceBoost !== 0 && (
+                <span className={`font-mono ${result.confidenceBoost > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {result.confidenceBoost > 0 ? '+' : ''}{result.confidenceBoost}
+                </span>
+            )}
+        </div>
+    );
+};
+
+// ── Weekly MTF Badge ──
+const WeeklyConfluenceBadge: React.FC<{ weeklySignals: StrategySignal[]; dailySignals: StrategySignal[] }> = ({ weeklySignals, dailySignals }) => {
+    if (weeklySignals.length === 0 || dailySignals.length === 0) return null;
+
+    const latestDaily = dailySignals[dailySignals.length - 1]!;
+    const latestWeekly = weeklySignals[weeklySignals.length - 1]!;
+
+    const aligned = latestDaily.direction === latestWeekly.direction;
+
+    return (
+        <div className={`px-2.5 py-1.5 backdrop-blur-sm rounded-lg border text-[11px] flex items-center gap-1.5 ${
+            aligned
+                ? 'bg-emerald-900/80 border-emerald-500/30 text-emerald-300'
+                : 'bg-amber-900/80 border-amber-500/30 text-amber-300'
+        }`}>
+            <Layers className="w-3 h-3" />
+            <span className="font-semibold">MTF {aligned ? 'ALIGNED' : 'DIVERGENT'}</span>
+            <span className="text-sentinel-400 ml-0.5">
+                W:{latestWeekly.direction === 'long' ? 'LONG' : 'SHORT'}
+            </span>
+        </div>
+    );
+};
+
 // ── Main Chart Component ──
 const StrategyChartInner: React.FC<StrategyChartProps> = ({ ticker, height = 600 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
@@ -212,10 +368,44 @@ const StrategyChartInner: React.FC<StrategyChartProps> = ({ ticker, height = 600
     const [regime, setRegime] = useState<MarketRegimeResult | null>(null);
     const [regimeLoading, setRegimeLoading] = useState(false);
 
+    // Phase 2: Save to DB state
+    const [saving, setSaving] = useState(false);
+    const [saveResult, setSaveResult] = useState<string | null>(null);
+    const [alreadySaved, setAlreadySaved] = useState(false);
+
+    // Phase 2: Position sizing
+    const [positionSizing, setPositionSizing] = useState<PositionSizeResult | null>(null);
+    const [sizingLoading, setSizingLoading] = useState(false);
+
+    // Phase 4: Sentiment divergence
+    const [sentiment, setSentiment] = useState<SentimentDivergenceResult | null>(null);
+    const [sentimentLoading, setSentimentLoading] = useState(false);
+
     // Compute signals + stats from bars
     const { signals, stats } = useStrategySignals(bars);
 
-    // Fetch historical data + market regime in parallel
+    // Phase 3: Fire browser notification for high-confluence signals on the latest bar
+    useEffect(() => {
+        if (signals.length === 0 || !ticker) return;
+        const latest = signals[signals.length - 1]!;
+        // Only notify for signals on the last 3 bars (recent signals)
+        if (latest.barIndex >= bars.length - 3 && latest.confluence >= 75) {
+            BrowserNotificationService.notifyHighConfidenceSignal(
+                ticker,
+                latest.confluence,
+                `Strategy ${latest.direction.toUpperCase()} signal — TA score ${latest.taScore}, confluence ${latest.confluence}% (${latest.confluenceLevel})`,
+            ).catch(() => {});
+        }
+    }, [signals, ticker, bars.length]);
+
+    // Phase 4: Multi-timeframe — compute weekly signals
+    const weeklyBars = useMemo(() => aggregateToWeekly(bars), [bars]);
+    const weeklySignals = useMemo(
+        () => weeklyBars.length >= 201 ? computeStrategySignals(weeklyBars) : [],
+        [weeklyBars],
+    );
+
+    // Fetch historical data + market regime + sentiment in parallel
     useEffect(() => {
         if (!ticker) return;
         let cancelled = false;
@@ -225,6 +415,9 @@ const StrategyChartInner: React.FC<StrategyChartProps> = ({ ticker, height = 600
             setError(null);
             setBars([]);
             setSelectedSignal(null);
+            setSaveResult(null);
+            setAlreadySaved(false);
+            setPositionSizing(null);
 
             try {
                 const data = await TechnicalAnalysisService.fetchHistoricalBars(ticker);
@@ -247,16 +440,90 @@ const StrategyChartInner: React.FC<StrategyChartProps> = ({ ticker, height = 600
                 const result = await MarketRegimeFilter.detect();
                 if (!cancelled) setRegime(result);
             } catch {
-                // Non-critical — regime badge just won't show
+                // Non-critical
             } finally {
                 if (!cancelled) setRegimeLoading(false);
             }
         }
 
+        async function fetchSentiment() {
+            setSentimentLoading(true);
+            try {
+                const result = await SentimentDivergenceDetector.analyze(ticker, null);
+                if (!cancelled) setSentiment(result);
+            } catch {
+                // Non-critical
+            } finally {
+                if (!cancelled) setSentimentLoading(false);
+            }
+        }
+
+        async function checkSaved() {
+            try {
+                const exists = await StrategyOutcomeWriter.hasExistingOutcomes(ticker);
+                if (!cancelled) setAlreadySaved(exists);
+            } catch { /* ignore */ }
+        }
+
         fetchData();
         fetchRegime();
+        fetchSentiment();
+        checkSaved();
         return () => { cancelled = true; };
     }, [ticker]);
+
+    // Phase 2: Compute position sizing when a signal is selected
+    useEffect(() => {
+        if (!selectedSignal || selectedSignal.outcome !== 'open') {
+            setPositionSizing(null);
+            return;
+        }
+
+        let cancelled = false;
+        setSizingLoading(true);
+
+        PositionSizer.calculateSizeV2(
+            selectedSignal.confluence,
+            selectedSignal.price,
+            selectedSignal.target,
+            selectedSignal.direction === 'long' ? 'long_overreaction' : 'short_overreaction',
+            null, // no full TASnapshot available from bar-by-bar computation
+            ticker,
+            selectedSignal.confluence,
+        ).then(result => {
+            if (!cancelled) setPositionSizing(result);
+        }).catch(() => {
+            // Non-critical
+        }).finally(() => {
+            if (!cancelled) setSizingLoading(false);
+        });
+
+        return () => { cancelled = true; };
+    }, [selectedSignal, ticker]);
+
+    // Phase 2: Save backtest results to DB
+    const handleSaveToDb = useCallback(async () => {
+        if (signals.length === 0 || saving) return;
+        setSaving(true);
+        setSaveResult(null);
+
+        try {
+            const result = await StrategyOutcomeWriter.writeOutcomes(ticker, signals);
+            if (result.error) {
+                setSaveResult(`Error: ${result.error}`);
+            } else if (result.skipped > 0 && result.inserted === 0) {
+                setSaveResult('Already saved — backtest data exists for this ticker.');
+                setAlreadySaved(true);
+            } else {
+                setSaveResult(`Saved ${result.inserted} outcomes to signal_outcomes table.`);
+                setAlreadySaved(true);
+            }
+        } catch (err: any) {
+            setSaveResult(`Error: ${err.message || 'Failed to save'}`);
+        } finally {
+            setSaving(false);
+        }
+    }, [ticker, signals, saving]);
 
     // Build and update chart
     useEffect(() => {
@@ -362,6 +629,35 @@ const StrategyChartInner: React.FC<StrategyChartProps> = ({ ticker, height = 600
         }
         sma200Series.setData(sma200Data);
 
+        // ── Phase 4: Sentiment divergence background zones ──
+        // We overlay a subtle area series to indicate sentiment regime
+        if (sentiment && sentiment.articleCount >= 3 && sentiment.divergenceType !== 'neutral') {
+            const zoneColor = sentiment.divergenceType === 'panic_exhaustion'
+                ? 'rgba(16, 185, 129, 0.04)'
+                : sentiment.divergenceType === 'euphoria_climax'
+                    ? 'rgba(239, 68, 68, 0.04)'
+                    : 'rgba(59, 130, 246, 0.04)';
+
+            const zoneSeries = chart.addAreaSeries({
+                topColor: zoneColor,
+                bottomColor: 'transparent',
+                lineColor: 'transparent',
+                priceScaleId: 'sentiment',
+                lastValueVisible: false,
+                priceLineVisible: false,
+            });
+            chart.priceScale('sentiment').applyOptions({
+                scaleMargins: { top: 0, bottom: 0 },
+                visible: false,
+            });
+            // Fill the entire chart with the zone
+            const zoneData: LineData[] = bars.map(b => ({
+                time: toTime(b.date),
+                value: 1,
+            }));
+            zoneSeries.setData(zoneData);
+        }
+
         // ── Signal markers (outcome-colored) ──
         if (signals.length > 0) {
             const markers: SeriesMarker<Time>[] = signals.map(sig => ({
@@ -420,7 +716,7 @@ const StrategyChartInner: React.FC<StrategyChartProps> = ({ ticker, height = 600
             chart.remove();
             chartRef.current = null;
         };
-    }, [bars, signals, height]);
+    }, [bars, signals, height, sentiment]);
 
     const handleSignalClick = useCallback((sig: StrategySignal) => {
         setSelectedSignal(sig);
@@ -442,6 +738,8 @@ const StrategyChartInner: React.FC<StrategyChartProps> = ({ ticker, height = 600
                 </div>
                 <div className="flex items-center gap-3 text-xs">
                     <RegimeBadge regime={regime} loading={regimeLoading} />
+                    <SentimentBadge result={sentiment} loading={sentimentLoading} />
+                    <WeeklyConfluenceBadge weeklySignals={weeklySignals} dailySignals={signals} />
                     {signals.length > 0 && (
                         <>
                             <span className="text-emerald-500 font-mono">
@@ -550,6 +848,40 @@ const StrategyChartInner: React.FC<StrategyChartProps> = ({ ticker, height = 600
 
             {/* Backtest Stats */}
             <StatsPanel stats={stats} />
+
+            {/* Phase 2: Position Sizing (only for open/latest signals) */}
+            <PositionSizingPanel sizing={positionSizing} loading={sizingLoading} />
+
+            {/* Phase 2: Save to DB + Phase 4: Sentiment summary row */}
+            {signals.length > 0 && (
+                <div className="flex flex-wrap items-center gap-3">
+                    {/* Save to DB button */}
+                    <button
+                        onClick={handleSaveToDb}
+                        disabled={saving || alreadySaved}
+                        className="px-4 py-2 bg-purple-600/20 hover:bg-purple-600/30 text-purple-400 rounded-lg text-xs font-medium transition-colors ring-1 ring-purple-500/30 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed border-none cursor-pointer"
+                    >
+                        {saving ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : alreadySaved ? (
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                        ) : (
+                            <Database className="w-3.5 h-3.5" />
+                        )}
+                        {saving ? 'Saving...' : alreadySaved ? 'Saved to DB' : 'Save Backtest to DB'}
+                    </button>
+                    {saveResult && (
+                        <span className="text-[11px] text-sentinel-500">{saveResult}</span>
+                    )}
+
+                    {/* Sentiment summary */}
+                    {sentiment && sentiment.articleCount >= 3 && (
+                        <div className="flex-1 text-[11px] text-sentinel-500 text-right">
+                            {sentiment.summary}
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* Signal list with outcomes */}
             {signals.length > 0 && (

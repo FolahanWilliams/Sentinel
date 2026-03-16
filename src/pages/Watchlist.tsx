@@ -1,11 +1,19 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
-import { ListPlus, Trash2, ShieldAlert, Zap, ArrowRight } from 'lucide-react';
+import { ListPlus, Trash2, ShieldAlert, Zap, ArrowRight, Activity, TrendingUp, TrendingDown } from 'lucide-react';
 import { MarketDataService } from '@/services/marketData';
+import { TechnicalAnalysisService } from '@/services/technicalAnalysis';
+import { computeStrategySignals, type StrategySignal } from '@/hooks/useStrategySignals';
 import { formatPrice, formatPercent } from '@/utils/formatters';
 import { SkeletonTable } from '@/components/shared/SkeletonPrimitives';
 import { EmptyState } from '@/components/shared/EmptyState';
+
+/** Cached strategy signal per ticker */
+interface TickerStrategySignal {
+    signal: StrategySignal;
+    loading: boolean;
+}
 
 export function Watchlist() {
     const [watchlist, setWatchlist] = useState<any[]>([]);
@@ -14,6 +22,9 @@ export function Watchlist() {
 
     // Realtime Market Data
     const [quotes, setQuotes] = useState<Record<string, any>>({});
+
+    // Phase 3: Strategy signals per ticker
+    const [strategySignals, setStrategySignals] = useState<Record<string, TickerStrategySignal>>({});
 
     // Form State
     const [ticker, setTicker] = useState('');
@@ -41,9 +52,52 @@ export function Watchlist() {
                 } catch (e) {
                     console.warn('Market data fetch failed on watchlist load', e);
                 }
+
+                // Phase 3: Fetch strategy signals for active tickers (async, non-blocking)
+                fetchStrategySignals(activeTickers);
             }
         }
         setLoading(false);
+    }
+
+    async function fetchStrategySignals(tickers: string[]) {
+        // Mark all as loading
+        const loadingState: Record<string, TickerStrategySignal> = {};
+        tickers.forEach(t => {
+            loadingState[t] = { signal: null as unknown as StrategySignal, loading: true };
+        });
+        setStrategySignals(prev => ({ ...prev, ...loadingState }));
+
+        // Fetch in parallel (max 5 concurrent to avoid overwhelming API)
+        const batchSize = 5;
+        for (let i = 0; i < tickers.length; i += batchSize) {
+            const batch = tickers.slice(i, i + batchSize);
+            await Promise.allSettled(
+                batch.map(async (t) => {
+                    try {
+                        const bars = await TechnicalAnalysisService.fetchHistoricalBars(t);
+                        if (bars.length < 201) {
+                            setStrategySignals(prev => ({
+                                ...prev,
+                                [t]: { signal: null as unknown as StrategySignal, loading: false },
+                            }));
+                            return;
+                        }
+                        const signals = computeStrategySignals(bars);
+                        const latest = signals.length > 0 ? signals[signals.length - 1]! : null;
+                        setStrategySignals(prev => ({
+                            ...prev,
+                            [t]: { signal: latest as StrategySignal, loading: false },
+                        }));
+                    } catch {
+                        setStrategySignals(prev => ({
+                            ...prev,
+                            [t]: { signal: null as unknown as StrategySignal, loading: false },
+                        }));
+                    }
+                })
+            );
+        }
     }
 
     async function handleAdd(e: React.FormEvent) {
@@ -63,7 +117,7 @@ export function Watchlist() {
 
     async function toggleActive(id: string, currentStatus: boolean) {
         await supabase.from('watchlist').update({ is_active: !currentStatus }).eq('id', id);
-        fetchWatchlist(); // Optimistic update would be better here, but re-fetching ensures sync
+        fetchWatchlist();
     }
 
     async function removeTicker(id: string) {
@@ -109,7 +163,7 @@ export function Watchlist() {
 
             <div className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 overflow-hidden backdrop-blur-sm">
                 {loading ? (
-                    <SkeletonTable rows={5} cols={5} />
+                    <SkeletonTable rows={5} cols={6} />
                 ) : watchlist.length === 0 ? (
                     <EmptyState
                         icon={<Zap className="w-8 h-8 text-yellow-400" />}
@@ -131,6 +185,7 @@ export function Watchlist() {
                                 <th className="px-6 py-4 font-semibold">Asset</th>
                                 <th className="px-6 py-4 font-semibold">Sector</th>
                                 <th className="px-6 py-4 font-semibold text-right">Last Price</th>
+                                <th className="px-6 py-4 font-semibold">Strategy Signal</th>
                                 <th className="px-6 py-4 font-semibold">Status</th>
                                 <th className="px-6 py-4 font-semibold text-right">Actions</th>
                             </tr>
@@ -139,6 +194,7 @@ export function Watchlist() {
                             {watchlist.map(item => {
                                 const quote = quotes[item.ticker];
                                 const isUp = quote?.changePercent >= 0;
+                                const strat = strategySignals[item.ticker];
 
                                 return (
                                     <tr
@@ -171,6 +227,36 @@ export function Watchlist() {
                                                 </div>
                                             ) : (
                                                 <span className="text-sentinel-600">--</span>
+                                            )}
+                                        </td>
+                                        {/* Phase 3: Strategy Signal column */}
+                                        <td className="px-6 py-4">
+                                            {strat?.loading ? (
+                                                <span className="text-[11px] text-sentinel-500 animate-pulse">Loading...</span>
+                                            ) : strat?.signal ? (
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                                        strat.signal.direction === 'long'
+                                                            ? 'bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/20'
+                                                            : 'bg-red-500/10 text-red-400 ring-1 ring-red-500/20'
+                                                    }`}>
+                                                        {strat.signal.direction === 'long' ? (
+                                                            <TrendingUp className="w-3 h-3" />
+                                                        ) : (
+                                                            <TrendingDown className="w-3 h-3" />
+                                                        )}
+                                                        {strat.signal.direction === 'long' ? 'BUY' : 'SELL'}
+                                                    </span>
+                                                    <span className={`text-[10px] font-mono ${
+                                                        strat.signal.confluenceLevel === 'strong' ? 'text-emerald-400' :
+                                                        strat.signal.confluenceLevel === 'moderate' ? 'text-blue-400' : 'text-sentinel-500'
+                                                    }`}>
+                                                        {strat.signal.confluence}%
+                                                    </span>
+                                                    <span className="text-[10px] text-sentinel-600">{strat.signal.date}</span>
+                                                </div>
+                                            ) : (
+                                                <span className="text-[11px] text-sentinel-600">—</span>
                                             )}
                                         </td>
                                         <td className="px-6 py-4">
