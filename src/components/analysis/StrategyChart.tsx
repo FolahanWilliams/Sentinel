@@ -20,6 +20,11 @@
 import { useEffect, useRef, useState, useCallback, useMemo, memo } from 'react';
 import {
     createChart,
+    createSeriesMarkers,
+    CandlestickSeries,
+    LineSeries,
+    HistogramSeries,
+    AreaSeries,
     type IChartApi,
     type ISeriesApi,
     type CandlestickData,
@@ -564,7 +569,7 @@ const StrategyChartInner: React.FC<StrategyChartProps> = ({ ticker, height = 600
         chartRef.current = chart;
 
         // ── Candlestick series ──
-        const candleSeries = chart.addCandlestickSeries({
+        const candleSeries = chart.addSeries(CandlestickSeries, {
             upColor: '#10b981',
             downColor: '#ef4444',
             borderUpColor: '#10b981',
@@ -584,7 +589,7 @@ const StrategyChartInner: React.FC<StrategyChartProps> = ({ ticker, height = 600
         candleSeries.setData(candleData);
 
         // ── Volume histogram ──
-        const volumeSeries = chart.addHistogramSeries({
+        const volumeSeries = chart.addSeries(HistogramSeries, {
             priceFormat: { type: 'volume' },
             priceScaleId: 'volume',
         });
@@ -600,7 +605,7 @@ const StrategyChartInner: React.FC<StrategyChartProps> = ({ ticker, height = 600
         volumeSeries.setData(volumeData);
 
         // ── SMA 50 line ──
-        const sma50Series = chart.addLineSeries({
+        const sma50Series = chart.addSeries(LineSeries, {
             color: 'rgba(74, 158, 255, 0.5)',
             lineWidth: 1,
             priceLineVisible: false,
@@ -615,7 +620,7 @@ const StrategyChartInner: React.FC<StrategyChartProps> = ({ ticker, height = 600
         sma50Series.setData(sma50Data);
 
         // ── SMA 200 line ──
-        const sma200Series = chart.addLineSeries({
+        const sma200Series = chart.addSeries(LineSeries, {
             color: 'rgba(245, 158, 11, 0.4)',
             lineWidth: 1,
             priceLineVisible: false,
@@ -638,7 +643,7 @@ const StrategyChartInner: React.FC<StrategyChartProps> = ({ ticker, height = 600
                     ? 'rgba(239, 68, 68, 0.04)'
                     : 'rgba(59, 130, 246, 0.04)';
 
-            const zoneSeries = chart.addAreaSeries({
+            const zoneSeries = chart.addSeries(AreaSeries, {
                 topColor: zoneColor,
                 bottomColor: 'transparent',
                 lineColor: 'transparent',
@@ -667,7 +672,7 @@ const StrategyChartInner: React.FC<StrategyChartProps> = ({ ticker, height = 600
                 shape: sig.direction === 'long' ? 'arrowUp' as const : 'arrowDown' as const,
                 text: `${sig.direction === 'long' ? 'BUY' : 'SELL'} ${sig.pnlPct >= 0 ? '+' : ''}${sig.pnlPct.toFixed(1)}%`,
             }));
-            candleSeries.setMarkers(markers);
+            createSeriesMarkers(candleSeries, markers);
 
             // Show the most recent signal's stop/target as price lines
             const lastSignal = signals[signals.length - 1]!;

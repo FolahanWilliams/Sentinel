@@ -1,7 +1,7 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
-import { ListPlus, Trash2, ShieldAlert, Zap, ArrowRight, Activity, TrendingUp, TrendingDown } from 'lucide-react';
+import { ListPlus, Trash2, ShieldAlert, Zap, ArrowRight, TrendingUp, TrendingDown } from 'lucide-react';
 import { MarketDataService } from '@/services/marketData';
 import { TechnicalAnalysisService } from '@/services/technicalAnalysis';
 import { computeStrategySignals, type StrategySignal } from '@/hooks/useStrategySignals';

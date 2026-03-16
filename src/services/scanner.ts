@@ -91,26 +91,26 @@ export class ScannerService {
         
         try {
             // Attempt to use the optimized RPC function
-            const { data: priorities, error } = await supabase
-                .rpc('prioritize_tickers', { p_tickers: tickerNames });
-                
+            // Define the expected type from the RPC
+            type TickerPriorityStats = {
+                ticker: string;
+                events: number;
+                signals: number;
+                rss: number;
+                sentinel_total: number;
+                sentinel_high_impact: number;
+                wins: number;
+                total_outcomes: number;
+            };
+
+            const { data: priorities, error } = await (supabase as any)
+                .rpc('prioritize_tickers', { p_tickers: tickerNames }) as { data: TickerPriorityStats[] | null; error: any };
+
             if (error) throw error;
-            
+
             if (priorities && priorities.length > 0) {
-                // Define the expected type from the RPC
-                type TickerPriorityStats = {
-                    ticker: string;
-                    events: number;
-                    signals: number;
-                    rss: number;
-                    sentinel_total: number;
-                    sentinel_high_impact: number;
-                    wins: number;
-                    total_outcomes: number;
-                };
-                
                 const priorityMap = new Map<string, TickerPriorityStats>(
-                    priorities.map((p: any) => [p.ticker, p as TickerPriorityStats])
+                    priorities.map((p) => [p.ticker, p])
                 );
                 
                 return tickers.map(t => {
