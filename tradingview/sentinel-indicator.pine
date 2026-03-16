@@ -1,0 +1,136 @@
+// ============================================================================
+// Sentinel Intelligence — TA Composite Score & Confluence Indicator
+// ============================================================================
+// Pine Script v6 — TradingView (Indicator-only version, separate pane)
+//
+// Shows the Sentinel TA scoring engine as an oscillator:
+//   - TA Composite Score (-100 to +100)
+//   - Long / Short Confluence (0 to 100)
+//   - Z-Score overlay
+//   - Buy/sell signal markers
+//
+// Use alongside the main Sentinel Strategy overlay for full context.
+// ============================================================================
+
+//@version=6
+indicator("Sentinel TA Score & Confluence", format=format.price, precision=1)
+
+// ─── Inputs ─────────────────────────────────────────────────────────────────
+
+i_confGate  = input.int(65, "Confidence Gate", minval=30, maxval=95, group="Filters")
+i_rsiLen    = input.int(14, "RSI Length", group="Indicators")
+i_macdFast  = input.int(12, "MACD Fast", group="Indicators")
+i_macdSlow  = input.int(26, "MACD Slow", group="Indicators")
+i_macdSig   = input.int(9, "MACD Signal", group="Indicators")
+i_smaFast   = input.int(50, "SMA Fast", group="Indicators")
+i_smaSlow   = input.int(200, "SMA Slow", group="Indicators")
+i_bbLen     = input.int(20, "BB Length", group="Indicators")
+i_bbMult    = input.float(2.0, "BB StdDev", group="Indicators")
+i_zLen      = input.int(20, "Z-Score Length", group="Indicators")
+i_volLen    = input.int(20, "Volume Avg Length", group="Indicators")
+i_showConf  = input.bool(true, "Show Confluence Lines", group="Display")
+i_showZone  = input.bool(true, "Show Signal Zones", group="Display")
+
+// ─── Calculations ───────────────────────────────────────────────────────────
+
+rsiVal = ta.rsi(close, i_rsiLen)
+[macdLine, sigLine, macdHist] = ta.macd(close, i_macdFast, i_macdSlow, i_macdSig)
+smaF = ta.sma(close, i_smaFast)
+smaS = ta.sma(close, i_smaSlow)
+bbBasis = ta.sma(close, i_bbLen)
+bbDev = ta.stdev(close, i_bbLen)
+bbUpper = bbBasis + i_bbMult * bbDev
+bbLower = bbBasis - i_bbMult * bbDev
+bbPos = bbUpper != bbLower ? (close - bbLower) / (bbUpper - bbLower) : 0.5
+zSma = ta.sma(close, i_zLen)
+zDev = ta.stdev(close, i_zLen)
+zScore = zDev != 0 ? (close - zSma) / zDev : 0.0
+avgVol = ta.sma(volume, i_volLen)
+volRatio = avgVol != 0 ? volume / avgVol : 1.0
+changePct = open != 0 ? ((close - open) / open) * 100 : 0.0
+volDir = changePct > 0.3 ? 1 : changePct < -0.3 ? -1 : 0
+gapPct = close[1] != 0 ? ((open - close[1]) / close[1]) * 100 : 0.0
+sma10 = ta.sma(close, 10)
+gapExhaust = math.abs(gapPct) >= 1.0 and volRatio > 2.0 and
+     ((gapPct > 0 and close[1] > sma10[1] * 1.02) or (gapPct < 0 and close[1] < sma10[1] * 0.98))
+
+bullTrend = close > smaF and close > smaS
+bearTrend = close < smaF and close < smaS
+
+// ─── TA Composite Score ─────────────────────────────────────────────────────
+
+taScore = 0.0
+taScore += rsiVal < 30 ? 25.0 : rsiVal < 40 ? 15.0 : rsiVal > 70 ? -25.0 : rsiVal > 60 ? -10.0 : 0.0
+taScore += macdHist > 0 ? 20.0 : -20.0
+taScore += bullTrend ? 25.0 : bearTrend ? -25.0 : 0.0
+taScore += volRatio > 1.5 and volDir > 0 ? 20.0 : volRatio > 1.5 and volDir < 0 ? -15.0 : volRatio > 1.5 ? 5.0 : volRatio < 0.5 ? -10.0 : 0.0
+taScore += bbPos < 0.1 ? 15.0 : bbPos > 0.9 ? -15.0 : 0.0
+taScore += zScore < -2.5 ? 20.0 : zScore < -2.0 ? 15.0 : zScore > 2.5 ? -20.0 : zScore > 2.0 ? -15.0 : 0.0
+taScore += gapExhaust ? (gapPct > 0 ? -10.0 : 10.0) : 0.0
+taScore := math.max(-100.0, math.min(100.0, taScore))
+
+// ─── Confluence Scores ──────────────────────────────────────────────────────
+
+baseCf = math.abs(taScore)
+
+// Long
+lC = 0.0
+lC += rsiVal < 35 ? 25.0 : rsiVal < 45 ? 10.0 : 0.0
+lC += zScore < -2.5 ? 20.0 : zScore < -2.0 ? 15.0 : 0.0
+lC += volRatio > 1.5 ? (zScore < -1.5 ? 20.0 : 10.0) : volRatio > 1.2 ? 5.0 : 0.0
+lC += taScore > 30 ? 20.0 : 0.0
+lConf = (rsiVal < 40 ? 1 : 0) + (macdHist > 0 ? 1 : 0) + (bullTrend ? 1 : 0) + (volRatio > 1.2 and volDir == 1 ? 1 : 0)
+lC += lConf >= 3 ? 15.0 : lConf >= 2 ? 5.0 : -20.0
+longCf = math.min(100.0, math.max(0.0, baseCf * 0.6 + lC * 0.4))
+
+// Short
+sC = 0.0
+sC += rsiVal > 65 ? 25.0 : rsiVal > 55 ? 10.0 : 0.0
+sC += zScore > 2.5 ? 20.0 : zScore > 2.0 ? 15.0 : 0.0
+sC += volRatio > 1.5 ? 10.0 : volRatio > 1.2 ? 5.0 : 0.0
+sC += taScore < -30 ? 20.0 : 0.0
+sCnf = (rsiVal > 60 ? 1 : 0) + (macdHist < 0 ? 1 : 0) + (bearTrend ? 1 : 0) + (volRatio > 1.2 and volDir == -1 ? 1 : 0)
+sC += sCnf >= 3 ? 15.0 : sCnf >= 2 ? 5.0 : -20.0
+shortCf = math.min(100.0, math.max(0.0, baseCf * 0.6 + sC * 0.4))
+
+// ─── Signal Conditions ──────────────────────────────────────────────────────
+
+blockLong = rsiVal > 80 and macdHist < 0
+blockShort = rsiVal < 20 and macdHist > 0
+longSig = taScore >= 30 and longCf >= i_confGate and not blockLong and lConf >= 2
+shortSig = taScore <= -30 and shortCf >= i_confGate and not blockShort and sCnf >= 2
+
+// ─── Plots ──────────────────────────────────────────────────────────────────
+
+// TA Score as histogram
+scoreColor = taScore > 30 ? color.new(#00d4aa, 20) : taScore < -30 ? color.new(#ef4444, 20) : color.new(#6366f1, 40)
+plot(taScore, "TA Score", scoreColor, 2, plot.style_columns)
+
+// Zero line
+hline(0, "Zero", color.new(color.white, 70), hline.style_dotted)
+hline(30, "Bull Gate", color.new(#00d4aa, 80), hline.style_dotted)
+hline(-30, "Bear Gate", color.new(#ef4444, 80), hline.style_dotted)
+
+// Confidence gate line
+hline(i_confGate, "Conf Gate", color.new(#f59e0b, 70), hline.style_dashed)
+
+// Confluence lines
+plot(i_showConf ? longCf : na, "Long Confluence", color.new(#00d4aa, 30), 1)
+plot(i_showConf ? shortCf : na, "Short Confluence", color.new(#ef4444, 30), 1)
+
+// Signal zones
+bgcolor(i_showZone and longSig ? color.new(#00d4aa, 85) : na, title="Long Signal Zone")
+bgcolor(i_showZone and shortSig ? color.new(#ef4444, 85) : na, title="Short Signal Zone")
+
+// Signal markers
+plotshape(longSig and not longSig[1], "Buy Signal", shape.triangleup, location.bottom, color.new(#00d4aa, 0), size=size.small)
+plotshape(shortSig and not shortSig[1], "Sell Signal", shape.triangledown, location.top, color.new(#ef4444, 0), size=size.small)
+
+// Block markers
+plotshape(blockLong, "Long Blocked", shape.xcross, location.top, color.new(#ef4444, 50), size=size.tiny)
+plotshape(blockShort, "Short Blocked", shape.xcross, location.bottom, color.new(#00d4aa, 50), size=size.tiny)
+
+// ─── Alerts ─────────────────────────────────────────────────────────────────
+
+alertcondition(longSig and not longSig[1], "Sentinel Buy", "Sentinel BUY — TA Score bullish, confluence above gate")
+alertcondition(shortSig and not shortSig[1], "Sentinel Sell", "Sentinel SELL — TA Score bearish, confluence above gate")
