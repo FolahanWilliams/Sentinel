@@ -8,10 +8,11 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { Search, ExternalLink, Loader2, TrendingUp, TrendingDown, BarChart3, Target, RefreshCw } from 'lucide-react';
+import { Search, ExternalLink, Loader2, TrendingUp, TrendingDown, BarChart3, Target, RefreshCw, Activity, Layers } from 'lucide-react';
 import { useTickerAnalysis } from '@/hooks/useTickerAnalysis';
 import { MarketDataService } from '@/services/marketData';
 import { MultiTimeframeChart } from '@/components/analysis/MultiTimeframeChart';
+import { StrategyChart } from '@/components/analysis/StrategyChart';
 import { TickerAnalysisPanel } from '@/components/analysis/TickerAnalysisPanel';
 import { NewsFeed } from '@/components/dashboard/NewsFeed';
 import { formatPrice } from '@/utils/formatters';
@@ -63,6 +64,7 @@ export function StockAnalysis() {
     const [quote, setQuote] = useState<Quote | null>(() => getStoredStateWithTTL(STORAGE_KEYS.QUOTE, null));
     const [recentTickers, setRecentTickers] = useState<string[]>(() => getStoredState(STORAGE_KEYS.RECENT, []));
 
+    const [chartView, setChartView] = useState<'chart' | 'strategy'>('chart');
     const [quoteLoading, setQuoteLoading] = useState(false);
     const [quoteError, setQuoteError] = useState<string | null>(null);
 
@@ -276,8 +278,39 @@ export function StockAnalysis() {
                         </div>
                     </motion.div>
 
-                    {/* TradingView Interactive Chart */}
-                    <MultiTimeframeChart ticker={activeTicker} height={600} />
+                    {/* Chart View Toggle + Chart */}
+                    <div className="space-y-3">
+                        <div className="flex items-center gap-1">
+                            <button
+                                onClick={() => setChartView('chart')}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                                    chartView === 'chart'
+                                        ? 'bg-blue-600/20 text-blue-400 ring-1 ring-blue-500/40'
+                                        : 'bg-white/5 text-sentinel-400 hover:text-sentinel-200'
+                                }`}
+                            >
+                                <Layers className="w-3.5 h-3.5" />
+                                Chart
+                            </button>
+                            <button
+                                onClick={() => setChartView('strategy')}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                                    chartView === 'strategy'
+                                        ? 'bg-purple-600/20 text-purple-400 ring-1 ring-purple-500/40'
+                                        : 'bg-white/5 text-sentinel-400 hover:text-sentinel-200'
+                                }`}
+                            >
+                                <Activity className="w-3.5 h-3.5" />
+                                Strategy
+                            </button>
+                        </div>
+
+                        {chartView === 'chart' ? (
+                            <MultiTimeframeChart ticker={activeTicker} height={600} />
+                        ) : (
+                            <StrategyChart ticker={activeTicker} height={600} />
+                        )}
+                    </div>
 
                     {/* Analysis Grid */}
                     <TickerAnalysisPanel
