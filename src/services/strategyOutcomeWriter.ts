@@ -106,10 +106,10 @@ export class StrategyOutcomeWriter {
                         hit_target: sig.outcome === 'win',
                         max_drawdown: sig.maxDrawdown,
                         max_gain: sig.maxGain,
-                        // Map bars held to approximate day returns
+                        // Map bars held to approximate day returns (guard against division by zero)
                         return_at_1d: sig.barsHeld >= 1 ? sig.pnlPct * (1 / sig.barsHeld) : null,
-                        return_at_5d: sig.barsHeld >= 5 ? sig.pnlPct * (5 / sig.barsHeld) : sig.pnlPct,
-                        return_at_10d: sig.barsHeld >= 10 ? sig.pnlPct * (10 / sig.barsHeld) : sig.pnlPct,
+                        return_at_5d: sig.barsHeld >= 5 ? sig.pnlPct * (5 / sig.barsHeld) : null,
+                        return_at_10d: sig.barsHeld >= 10 ? sig.pnlPct * (10 / sig.barsHeld) : null,
                         return_at_30d: sig.pnlPct,
                         completed_at: sig.exitDate ? new Date(sig.exitDate).toISOString() : new Date().toISOString(),
                     });

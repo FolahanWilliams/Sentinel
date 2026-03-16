@@ -135,8 +135,8 @@ export function TradeReplay() {
 
             // Trim bars to the relevant window: 5 days before signal creation to
             // 5 days after signal close (or end of available data)
-            const signalDate = signal.created_at.split('T')[0] ?? '';
-            const closeDate = signal.updated_at.split('T')[0] ?? '';
+            const signalDate = (signal.created_at ?? '').split('T')[0] ?? '';
+            const closeDate = (signal.updated_at ?? '').split('T')[0] ?? '';
 
             const startIdx = Math.max(0, allBars.findIndex(b => b.date >= signalDate) - 5);
             const endIdx = (() => {
@@ -194,7 +194,7 @@ export function TradeReplay() {
     }, [selectedSignal, pnlPct]);
 
     // Signal creation date for chart annotation
-    const signalDate = selectedSignal?.created_at.split('T')[0] ?? null;
+    const signalDate = selectedSignal?.created_at?.split('T')[0] ?? null;
 
     // Y-axis domain: include entry/stop/target in range
     const yDomain = useMemo(() => {
