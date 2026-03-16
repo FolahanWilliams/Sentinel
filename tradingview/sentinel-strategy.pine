@@ -1,0 +1,439 @@
+// ============================================================================
+// Sentinel Intelligence — Buy/Sell Strategy Indicator
+// ============================================================================
+// Pine Script v6 — TradingView
+//
+// Translates the Sentinel AI trading platform's technical analysis engine,
+// confluence scoring, and risk management logic into a standalone chart indicator.
+//
+// Core logic ported from:
+//   src/services/technicalAnalysis.ts  — TA composite score & confluence
+//   src/services/positionSizer.ts      — ATR-based dynamic stops
+//   src/services/sentimentDivergence.ts — Z-Score extremes
+//   src/config/constants.ts            — Thresholds & gates
+//
+// Signal types modeled:
+//   LONG  — Mean-reversion buy on oversold + confluence confirmation
+//   SHORT — Mean-reversion sell on overbought + confluence confirmation
+// ============================================================================
+
+//@version=6
+strategy("Sentinel Intelligence Strategy",
+     overlay        = true,
+     default_qty_type = strategy.percent_of_equity,
+     default_qty_value = 2.0,
+     initial_capital  = 10000,
+     commission_type  = strategy.commission.percent,
+     commission_value = 0.1,
+     slippage         = 1,
+     pyramiding       = 0,
+     calc_on_every_tick = false)
+
+// ─── Inputs ─────────────────────────────────────────────────────────────────
+
+// Confidence & Gating
+i_confGate       = input.int(65, "Confidence Gate (min score to trigger)", minval=30, maxval=95, group="Signal Filters")
+i_confFloor      = input.int(30, "Confidence Floor (absolute minimum)", minval=10, maxval=60, group="Signal Filters")
+i_blockExhaustion = input.bool(true, "Block buying into exhaustion (RSI>80 + bearish MACD)", group="Signal Filters")
+i_blockCapitulation = input.bool(true, "Block shorting at capitulation (RSI<20 + bullish MACD)", group="Signal Filters")
+i_requireMTF     = input.bool(true, "Require weekly timeframe alignment", group="Signal Filters")
+
+// Indicator Periods
+i_rsiLen         = input.int(14, "RSI Length", minval=2, maxval=50, group="Indicators")
+i_macdFast       = input.int(12, "MACD Fast", minval=2, maxval=50, group="Indicators")
+i_macdSlow       = input.int(26, "MACD Slow", minval=2, maxval=100, group="Indicators")
+i_macdSignal     = input.int(9, "MACD Signal", minval=2, maxval=50, group="Indicators")
+i_smaFast        = input.int(50, "SMA Fast (trend)", minval=10, maxval=100, group="Indicators")
+i_smaSlow        = input.int(200, "SMA Slow (trend)", minval=50, maxval=500, group="Indicators")
+i_atrLen         = input.int(14, "ATR Length", minval=2, maxval=50, group="Indicators")
+i_bbLen          = input.int(20, "Bollinger Band Length", minval=10, maxval=50, group="Indicators")
+i_bbMult         = input.float(2.0, "Bollinger StdDev Multiplier", minval=0.5, maxval=4.0, step=0.1, group="Indicators")
+i_zLen           = input.int(20, "Z-Score Lookback", minval=10, maxval=50, group="Indicators")
+i_volLen         = input.int(20, "Volume Average Length", minval=5, maxval=50, group="Indicators")
+
+// Risk Management
+i_atrStopDefault = input.float(1.5, "ATR Stop Multiplier (default)", minval=0.5, maxval=4.0, step=0.25, group="Risk Management")
+i_trailAfterATR  = input.bool(true, "Move stop to breakeven after +1x ATR", group="Risk Management")
+i_riskPct        = input.float(2.0, "Risk Per Trade %", minval=0.5, maxval=10.0, step=0.5, group="Risk Management")
+
+// Visual
+i_showStops      = input.bool(true, "Show stop loss / target levels", group="Display")
+i_showScore      = input.bool(true, "Show TA composite score", group="Display")
+i_showConfluence = input.bool(true, "Show confluence meter", group="Display")
+i_showSignalLabels = input.bool(true, "Show buy/sell labels on chart", group="Display")
+
+// ─── Indicator Calculations ─────────────────────────────────────────────────
+
+// RSI (Wilder's smoothing — matches Sentinel's computeRSI)
+rsiValue = ta.rsi(close, i_rsiLen)
+
+// MACD
+[macdLine, signalLine, macdHist] = ta.macd(close, i_macdFast, i_macdSlow, i_macdSignal)
+
+// SMAs for trend
+smaFast = ta.sma(close, i_smaFast)
+smaSlow = ta.sma(close, i_smaSlow)
+
+// ATR
+atrValue = ta.atr(i_atrLen)
+
+// Bollinger Bands — position as 0-1 (matches computeBollingerPosition)
+bbBasis   = ta.sma(close, i_bbLen)
+bbStdDev  = ta.stdev(close, i_bbLen)
+bbUpper   = bbBasis + i_bbMult * bbStdDev
+bbLower   = bbBasis - i_bbMult * bbStdDev
+bbPos     = bbUpper != bbLower ? (close - bbLower) / (bbUpper - bbLower) : 0.5
+
+// Z-Score (matches computeZScore)
+zSma      = ta.sma(close, i_zLen)
+zStdDev   = ta.stdev(close, i_zLen)
+zScore    = zStdDev != 0 ? (close - zSma) / zStdDev : 0.0
+
+// Volume Ratio (matches computeVolumeRatio)
+avgVol    = ta.sma(volume, i_volLen)
+volRatio  = avgVol != 0 ? volume / avgVol : 1.0
+
+// Volume Direction (matches computeVolumeDirection — >0.3% change threshold)
+changePct = open != 0 ? ((close - open) / open) * 100 : 0.0
+volDir    = changePct > 0.3 ? 1 : changePct < -0.3 ? -1 : 0
+
+// Gap Detection (matches computeGap)
+gapPct    = close[1] != 0 ? ((open - close[1]) / close[1]) * 100 : 0.0
+
+// Gap type classification (simplified — matches Sentinel's heuristic)
+sma10     = ta.sma(close, 10)
+gapIsExhaustion = math.abs(gapPct) >= 1.0 and volRatio > 2.0 and
+     ((gapPct > 0 and close[1] > sma10[1] * 1.02) or
+      (gapPct < 0 and close[1] < sma10[1] * 0.98))
+gapIsBreakaway  = math.abs(gapPct) >= 1.0 and volRatio > 2.0 and not gapIsExhaustion
+gapIsCommon     = math.abs(gapPct) >= 1.0 and not gapIsExhaustion and not gapIsBreakaway
+
+// ─── Trend Direction (matches Sentinel logic) ───────────────────────────────
+
+isBullishTrend = close > smaFast and close > smaSlow
+isBearishTrend = close < smaFast and close < smaSlow
+
+// ─── TA Composite Score (-100 to +100) ──────────────────────────────────────
+// Exact port of technicalAnalysis.ts lines 309-350
+
+var float taScore = 0.0
+taScore := 0.0
+
+// RSI component (±25)
+taScore += rsiValue < 30 ? 25.0 : rsiValue < 40 ? 15.0 : rsiValue > 70 ? -25.0 : rsiValue > 60 ? -10.0 : 0.0
+
+// MACD component (±20)
+taScore += macdHist > 0 ? 20.0 : -20.0
+
+// Trend component (±25)
+taScore += isBullishTrend ? 25.0 : isBearishTrend ? -25.0 : 0.0
+
+// Volume component — direction-aware (matches lines 324-332)
+volBullish = volRatio > 1.5 and volDir > 0
+volBearish = volRatio > 1.5 and volDir < 0
+volNeutralHigh = volRatio > 1.5 and volDir == 0
+volWeak = volRatio < 0.5
+taScore += volBullish ? 20.0 : volBearish ? -15.0 : volNeutralHigh ? 5.0 : volWeak ? -10.0 : 0.0
+
+// Bollinger component (±15)
+taScore += bbPos < 0.1 ? 15.0 : bbPos > 0.9 ? -15.0 : 0.0
+
+// Z-Score component (±20)
+taScore += zScore < -2.5 ? 20.0 : zScore < -2.0 ? 15.0 : zScore > 2.5 ? -20.0 : zScore > 2.0 ? -15.0 : 0.0
+
+// Gap exhaustion component (±10)
+taScore += gapIsExhaustion ? (gapPct > 0 ? -10.0 : 10.0) : 0.0
+
+// Clamp to [-100, +100]
+taScore := math.max(-100.0, math.min(100.0, taScore))
+
+// ─── Signal Direction Alignment (matches evaluateAlignment) ─────────────────
+
+// Long alignment confirmations
+longConfirmRsi   = rsiValue < 40
+longConflictRsi  = rsiValue > 70
+longConfirmMacd  = macdHist > 0 or (macdHist < 0 and macdHist > signalLine)
+longConflictMacd = not longConfirmMacd
+longConfirmTrend = isBullishTrend
+longConflictTrend = isBearishTrend
+longConfirmVol   = volRatio > 1.2 and volDir == 1
+longConflictVol  = volRatio > 1.2 and volDir == -1
+
+longConfirmations = (longConfirmRsi ? 1 : 0) + (longConfirmMacd ? 1 : 0) +
+     (longConfirmTrend ? 1 : 0) + (longConfirmVol ? 1 : 0)
+longConflicts = (longConflictRsi ? 1 : 0) + (longConflictMacd ? 1 : 0) +
+     (longConflictTrend ? 1 : 0) + (longConflictVol ? 1 : 0)
+
+longAlignConfirmed  = longConfirmations >= 3
+longAlignConflicting = longConflicts >= 3
+
+// Short alignment confirmations
+shortConfirmRsi   = rsiValue > 60
+shortConflictRsi  = rsiValue < 30
+shortConfirmMacd  = macdHist < 0
+shortConflictMacd = macdHist > 0
+shortConfirmTrend = isBearishTrend
+shortConflictTrend = isBullishTrend
+shortConfirmVol   = volRatio > 1.2 and volDir == -1
+shortConflictVol  = volRatio > 1.2 and volDir == 1
+
+shortConfirmations = (shortConfirmRsi ? 1 : 0) + (shortConfirmMacd ? 1 : 0) +
+     (shortConfirmTrend ? 1 : 0) + (shortConfirmVol ? 1 : 0)
+shortConflicts = (shortConflictRsi ? 1 : 0) + (shortConflictMacd ? 1 : 0) +
+     (shortConflictTrend ? 1 : 0) + (shortConflictVol ? 1 : 0)
+
+shortAlignConfirmed  = shortConfirmations >= 3
+shortAlignConflicting = shortConflicts >= 3
+
+// ─── Confluence Score (matches computeConfluence) ───────────────────────────
+// Without news sentiment, we use TA score magnitude as the "news confidence" proxy.
+// Formula: 60% base confidence + 40% TA confirmations
+
+// Map absolute TA score to a 0-100 "base confidence"
+baseConfidence = math.abs(taScore)  // 0 to 100 range
+
+// Long confluence
+longTaConf = 0.0
+longTaConf += rsiValue < 35 ? 25.0 : rsiValue < 45 ? 10.0 : 0.0
+longTaConf += zScore < -2.5 ? 20.0 : zScore < -2.0 ? 15.0 : 0.0
+longTaConf += volRatio > 1.5 ? (zScore < -1.5 ? 20.0 : 10.0) : volRatio > 1.2 ? 5.0 : 0.0
+longTaConf += taScore > 30 ? 20.0 : 0.0
+longTaConf += longAlignConfirmed ? 15.0 : longAlignConflicting ? -20.0 : longConfirmations >= 2 ? 5.0 : 0.0
+
+longConfluence = math.min(100.0, math.max(0.0, baseConfidence * 0.6 + longTaConf * 0.4))
+
+// Short confluence
+shortTaConf = 0.0
+shortTaConf += rsiValue > 65 ? 25.0 : rsiValue > 55 ? 10.0 : 0.0
+shortTaConf += zScore > 2.5 ? 20.0 : zScore > 2.0 ? 15.0 : 0.0
+shortTaConf += volRatio > 1.5 ? 10.0 : volRatio > 1.2 ? 5.0 : 0.0
+shortTaConf += taScore < -30 ? 20.0 : 0.0
+shortTaConf += shortAlignConfirmed ? 15.0 : shortAlignConflicting ? -20.0 : shortConfirmations >= 2 ? 5.0 : 0.0
+
+shortConfluence = math.min(100.0, math.max(0.0, baseConfidence * 0.6 + shortTaConf * 0.4))
+
+// Confluence level labels
+longConfLevel  = longConfluence >= 75 ? "STRONG" : longConfluence >= 55 ? "MODERATE" : longConfluence >= 35 ? "WEAK" : "NONE"
+shortConfLevel = shortConfluence >= 75 ? "STRONG" : shortConfluence >= 55 ? "MODERATE" : shortConfluence >= 35 ? "WEAK" : "NONE"
+
+// ─── Weekly Multi-Timeframe Confirmation ────────────────────────────────────
+// (matches getMultiTimeframeConfirmation using request.security)
+
+weeklyClose = request.security(syminfo.tickerid, "W", close)
+weeklySmaFast = request.security(syminfo.tickerid, "W", ta.sma(close, 10))
+weeklySmaSlow = request.security(syminfo.tickerid, "W", ta.sma(close, 40))
+weeklyRsi = request.security(syminfo.tickerid, "W", ta.rsi(close, 14))
+[wMacd, wSignal, wHist] = request.security(syminfo.tickerid, "W", ta.macd(close, 12, 26, 9))
+
+weeklyBullish = weeklyClose > weeklySmaFast and weeklyClose > weeklySmaSlow
+weeklyBearish = weeklyClose < weeklySmaFast and weeklyClose < weeklySmaSlow
+
+// Long MTF alignment (matches lines 608-614)
+longMTFConfirmed = weeklyBullish or (not na(weeklyRsi) and weeklyRsi < 40)
+longMTFConflicting = weeklyBearish and (not na(weeklyRsi) and weeklyRsi > 60)
+
+// Short MTF alignment (matches lines 616-623)
+shortMTFConfirmed = weeklyBearish or (not na(weeklyRsi) and weeklyRsi > 60)
+shortMTFConflicting = weeklyBullish and (not na(weeklyRsi) and weeklyRsi < 40)
+
+// MTF confidence adjustments (matches lines 627-631)
+longMTFAdj = longMTFConfirmed ? 10.0 : longMTFConflicting ? -15.0 : 0.0
+longMTFAdj += (not na(wHist) and wHist > 0 and longMTFConfirmed) ? 5.0 : (not na(wHist) and wHist <= 0 and not longMTFConflicting) ? -5.0 : 0.0
+longMTFAdj := math.max(-15.0, math.min(15.0, longMTFAdj))
+
+shortMTFAdj = shortMTFConfirmed ? 10.0 : shortMTFConflicting ? -15.0 : 0.0
+shortMTFAdj += (not na(wHist) and wHist < 0 and shortMTFConfirmed) ? 5.0 : (not na(wHist) and wHist >= 0 and not shortMTFConflicting) ? -5.0 : 0.0
+shortMTFAdj := math.max(-15.0, math.min(15.0, shortMTFAdj))
+
+// ─── Sentiment Divergence Proxy (Z-Score based) ────────────────────────────
+// Models sentimentDivergence.ts: panic exhaustion & euphoria climax
+// Without external sentiment data, we use price momentum divergence
+
+// Panic Exhaustion: price extremely oversold but momentum turning
+rsiTurningUp = rsiValue > rsiValue[1] and rsiValue[1] > rsiValue[2]
+panicExhaustion = zScore < -2.0 and rsiTurningUp
+panicBoost = panicExhaustion ? (zScore < -2.5 ? 15.0 : 10.0) : 0.0
+
+// Euphoria Climax: price extremely overbought but momentum fading
+rsiFadingDown = rsiValue < rsiValue[1] and rsiValue[1] < rsiValue[2]
+euphoriaClimax = zScore > 2.0 and rsiFadingDown
+euphoriaPenalty = euphoriaClimax ? (zScore > 2.5 ? -15.0 : -10.0) : 0.0
+
+// ─── Final Confidence Calculation ───────────────────────────────────────────
+// Combines confluence + MTF + sentiment divergence, clamped to [FLOOR, 100]
+
+finalLongConf = longConfluence + (i_requireMTF ? longMTFAdj : 0.0) + panicBoost
+finalLongConf := math.max(i_confFloor, math.min(100.0, finalLongConf))
+
+finalShortConf = shortConfluence + (i_requireMTF ? shortMTFAdj : 0.0) + math.abs(euphoriaPenalty)
+finalShortConf := math.max(i_confFloor, math.min(100.0, finalShortConf))
+
+// ─── Signal Blocking Logic (matches shouldBlockLong / shouldBlockShort) ─────
+
+blockLong  = i_blockExhaustion and rsiValue > 80 and macdHist < 0
+blockShort = i_blockCapitulation and rsiValue < 20 and macdHist > 0
+
+// ─── Dynamic ATR Stop Loss (matches positionSizer.ts lines 184-204) ────────
+// Multiplier scales with confluence: strong=tight, weak=wide
+
+longAtrMult = longConfluence >= 75 ? 1.0 : longConfluence >= 55 ? 1.25 : longConfluence >= 35 ? 1.75 : 2.0
+shortAtrMult = shortConfluence >= 75 ? 1.0 : shortConfluence >= 55 ? 1.25 : shortConfluence >= 35 ? 1.75 : 2.0
+
+longStopPrice = close - atrValue * longAtrMult
+longTargetPrice = close + atrValue * longAtrMult * 2.0  // 2:1 R:R minimum
+shortStopPrice = close + atrValue * shortAtrMult
+shortTargetPrice = close - atrValue * shortAtrMult * 2.0
+
+// ─── Entry Conditions ───────────────────────────────────────────────────────
+
+// LONG: TA score bullish + confluence above gate + not blocked + MTF aligned
+longEntry = taScore >= 30 and
+     finalLongConf >= i_confGate and
+     not blockLong and
+     (not i_requireMTF or not longMTFConflicting) and
+     longConfirmations >= 2
+
+// SHORT: TA score bearish + confluence above gate + not blocked + MTF aligned
+shortEntry = taScore <= -30 and
+     finalShortConf >= i_confGate and
+     not blockShort and
+     (not i_requireMTF or not shortMTFConflicting) and
+     shortConfirmations >= 2
+
+// ─── Strategy Execution ─────────────────────────────────────────────────────
+
+if longEntry and strategy.position_size == 0
+    strategy.entry("LONG", strategy.long)
+    strategy.exit("Long Exit", "LONG",
+         stop = longStopPrice,
+         limit = longTargetPrice)
+
+if shortEntry and strategy.position_size == 0
+    strategy.entry("SHORT", strategy.short)
+    strategy.exit("Short Exit", "SHORT",
+         stop = shortStopPrice,
+         limit = shortTargetPrice)
+
+// Trailing stop: move to breakeven after +1x ATR gain (matches positionSizer trailing rule)
+if i_trailAfterATR and strategy.position_size > 0
+    entryP = strategy.opentrades.entry_price(0)
+    if close >= entryP + atrValue
+        strategy.exit("Long Trail", "LONG",
+             stop = entryP,
+             limit = longTargetPrice)
+
+if i_trailAfterATR and strategy.position_size < 0
+    entryP = strategy.opentrades.entry_price(0)
+    if close <= entryP - atrValue
+        strategy.exit("Short Trail", "SHORT",
+             stop = entryP,
+             limit = shortTargetPrice)
+
+// ─── Visual: Buy / Sell Labels ──────────────────────────────────────────────
+
+if i_showSignalLabels and longEntry and strategy.position_size[1] == 0
+    label.new(bar_index, low,
+         "BUY\n" + str.tostring(math.round(finalLongConf)) + "%",
+         style = label.style_label_up,
+         color = color.new(#00d4aa, 0),
+         textcolor = color.white,
+         size = size.small)
+
+if i_showSignalLabels and shortEntry and strategy.position_size[1] == 0
+    label.new(bar_index, high,
+         "SELL\n" + str.tostring(math.round(finalShortConf)) + "%",
+         style = label.style_label_down,
+         color = color.new(#ef4444, 0),
+         textcolor = color.white,
+         size = size.small)
+
+// ─── Visual: Stop Loss & Target Lines ───────────────────────────────────────
+
+plot(i_showStops and strategy.position_size > 0 ? longStopPrice : na,
+     "Long Stop", color.new(#ef4444, 40), 1, plot.style_circles)
+plot(i_showStops and strategy.position_size > 0 ? longTargetPrice : na,
+     "Long Target", color.new(#00d4aa, 40), 1, plot.style_circles)
+plot(i_showStops and strategy.position_size < 0 ? shortStopPrice : na,
+     "Short Stop", color.new(#ef4444, 40), 1, plot.style_circles)
+plot(i_showStops and strategy.position_size < 0 ? shortTargetPrice : na,
+     "Short Target", color.new(#00d4aa, 40), 1, plot.style_circles)
+
+// ─── Visual: SMA Trend Lines ────────────────────────────────────────────────
+
+plot(smaFast, "SMA 50", color.new(#4a9eff, 30), 1)
+plot(smaSlow, "SMA 200", color.new(#f59e0b, 30), 1)
+
+// ─── Visual: Bollinger Bands ────────────────────────────────────────────────
+
+p_bbUpper = plot(bbUpper, "BB Upper", color.new(#6366f1, 60), 1)
+p_bbLower = plot(bbLower, "BB Lower", color.new(#6366f1, 60), 1)
+fill(p_bbUpper, p_bbLower, color.new(#6366f1, 90))
+
+// ─── Background: Signal State ───────────────────────────────────────────────
+
+bgcolor(longEntry ? color.new(#00d4aa, 90) : shortEntry ? color.new(#ef4444, 90) : na)
+
+// Panic exhaustion & euphoria highlighting
+bgcolor(panicExhaustion ? color.new(#00d4aa, 85) : na, title="Panic Exhaustion")
+bgcolor(euphoriaClimax ? color.new(#ef4444, 85) : na, title="Euphoria Climax")
+
+// ─── Info Table (Top Right) ─────────────────────────────────────────────────
+
+if i_showScore or i_showConfluence
+    var table infoTable = table.new(position.top_right, 2, 8, bgcolor=color.new(#1a1a2e, 10), frame_color=color.new(#6366f1, 50), frame_width=1, border_color=color.new(#6366f1, 80), border_width=1)
+
+    if barstate.islast
+        // TA Score
+        if i_showScore
+            scoreColor = taScore > 30 ? color.new(#00d4aa, 0) : taScore < -30 ? color.new(#ef4444, 0) : color.new(#f59e0b, 0)
+            table.cell(infoTable, 0, 0, "TA Score", text_color=color.new(color.white, 20), text_size=size.small)
+            table.cell(infoTable, 1, 0, str.tostring(math.round(taScore)), text_color=scoreColor, text_size=size.small)
+
+        // Confluence
+        if i_showConfluence
+            table.cell(infoTable, 0, 1, "Long Conf", text_color=color.new(color.white, 20), text_size=size.small)
+            table.cell(infoTable, 1, 1, str.tostring(math.round(finalLongConf)) + "% " + longConfLevel,
+                 text_color=longConfluence >= 55 ? color.new(#00d4aa, 0) : color.new(#f59e0b, 0), text_size=size.small)
+
+            table.cell(infoTable, 0, 2, "Short Conf", text_color=color.new(color.white, 20), text_size=size.small)
+            table.cell(infoTable, 1, 2, str.tostring(math.round(finalShortConf)) + "% " + shortConfLevel,
+                 text_color=shortConfluence >= 55 ? color.new(#ef4444, 0) : color.new(#f59e0b, 0), text_size=size.small)
+
+        // Key indicators
+        rsiColor = rsiValue < 30 ? color.new(#00d4aa, 0) : rsiValue > 70 ? color.new(#ef4444, 0) : color.new(color.white, 20)
+        table.cell(infoTable, 0, 3, "RSI", text_color=color.new(color.white, 20), text_size=size.small)
+        table.cell(infoTable, 1, 3, str.tostring(math.round(rsiValue * 10) / 10), text_color=rsiColor, text_size=size.small)
+
+        zColor = zScore < -2.0 ? color.new(#00d4aa, 0) : zScore > 2.0 ? color.new(#ef4444, 0) : color.new(color.white, 20)
+        table.cell(infoTable, 0, 4, "Z-Score", text_color=color.new(color.white, 20), text_size=size.small)
+        table.cell(infoTable, 1, 4, str.tostring(math.round(zScore * 100) / 100), text_color=zColor, text_size=size.small)
+
+        table.cell(infoTable, 0, 5, "Vol Ratio", text_color=color.new(color.white, 20), text_size=size.small)
+        table.cell(infoTable, 1, 5, str.tostring(math.round(volRatio * 10) / 10) + "x",
+             text_color=volRatio > 1.5 ? color.new(#a855f7, 0) : color.new(color.white, 20), text_size=size.small)
+
+        trendLabel = isBullishTrend ? "BULLISH" : isBearishTrend ? "BEARISH" : "NEUTRAL"
+        trendColor = isBullishTrend ? color.new(#00d4aa, 0) : isBearishTrend ? color.new(#ef4444, 0) : color.new(#f59e0b, 0)
+        table.cell(infoTable, 0, 6, "Trend", text_color=color.new(color.white, 20), text_size=size.small)
+        table.cell(infoTable, 1, 6, trendLabel, text_color=trendColor, text_size=size.small)
+
+        // Block warnings
+        blockText = blockLong ? "LONG BLOCKED" : blockShort ? "SHORT BLOCKED" : panicExhaustion ? "PANIC EXHAUSTION" : euphoriaClimax ? "EUPHORIA CLIMAX" : ""
+        blockColor = blockLong or blockShort ? color.new(#ef4444, 0) : panicExhaustion ? color.new(#00d4aa, 0) : euphoriaClimax ? color.new(#f59e0b, 0) : color.new(color.white, 80)
+        table.cell(infoTable, 0, 7, "Status", text_color=color.new(color.white, 20), text_size=size.small)
+        table.cell(infoTable, 1, 7, blockText != "" ? blockText : "SCANNING", text_color=blockColor, text_size=size.small)
+
+// ─── Alerts ─────────────────────────────────────────────────────────────────
+
+alertcondition(longEntry, "Sentinel Long Entry",
+     "Sentinel BUY signal — Confluence: {{plot_0}}% | TA Score: {{plot_1}}")
+alertcondition(shortEntry, "Sentinel Short Entry",
+     "Sentinel SELL signal — Confluence: {{plot_0}}% | TA Score: {{plot_1}}")
+alertcondition(panicExhaustion, "Panic Exhaustion Detected",
+     "Z-Score < -2.0 with momentum turning — potential selling climax reversal")
+alertcondition(euphoriaClimax, "Euphoria Climax Detected",
+     "Z-Score > +2.0 with momentum fading — rally exhaustion warning")
+alertcondition(blockLong, "Long Signal Blocked",
+     "RSI >80 + bearish MACD — buying into exhaustion blocked")
+alertcondition(blockShort, "Short Signal Blocked",
+     "RSI <20 + bullish MACD — shorting at capitulation blocked")
