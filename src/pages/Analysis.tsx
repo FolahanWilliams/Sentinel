@@ -26,6 +26,7 @@ import { LoadingState } from '@/components/shared/LoadingState';
 import { useTickerAnalysis } from '@/hooks/useTickerAnalysis';
 import { TickerNewsFeed } from '@/components/analysis/TickerNewsFeed';
 import { MultiTimeframeChart } from '@/components/analysis/MultiTimeframeChart';
+import { StrategyChart } from '@/components/analysis/StrategyChart';
 import { SourceCitations } from '@/components/shared/SourceCitations';
 
 export function Analysis() {
@@ -327,6 +328,11 @@ export function Analysis() {
                                         {/* Multi-Timeframe Chart */}
                                         <div className="mb-6">
                                             <MultiTimeframeChart ticker={signal.ticker} signal={signal} height={450} />
+                                        </div>
+
+                                        {/* TA Strategy Signals — backtested buy/sell overlays */}
+                                        <div className="mb-6">
+                                            <StrategyChart ticker={signal.ticker} height={400} />
                                         </div>
 
                                         {/* Agent Reasoning Surface — thesis, counter-thesis, confidence waterfall */}

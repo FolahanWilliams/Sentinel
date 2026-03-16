@@ -4,6 +4,9 @@
  * Ports the Sentinel TA composite scoring, confluence evaluation, and
  * signal-blocking logic from technicalAnalysis.ts into a bar-by-bar
  * backtest that can overlay markers on a lightweight-charts candlestick.
+ *
+ * Phase 1: includes walk-forward outcome tracking for each signal —
+ * checks subsequent bars to determine if stop/target was hit.
  */
 
 import { useMemo } from 'react';
@@ -18,6 +21,7 @@ export interface OHLCV {
 }
 
 export type SignalDirection = 'long' | 'short';
+export type SignalOutcome = 'win' | 'loss' | 'open' | 'expired';
 
 export interface StrategySignal {
     /** Bar index in the OHLCV array */
@@ -30,6 +34,37 @@ export interface StrategySignal {
     taScore: number;
     confluence: number;
     confluenceLevel: 'strong' | 'moderate' | 'weak' | 'none';
+    /** Walk-forward outcome (set after backtest) */
+    outcome: SignalOutcome;
+    /** P&L % (entry to exit or last bar) */
+    pnlPct: number;
+    /** Bar index where trade closed (stop/target/expiry) */
+    exitBarIndex: number | null;
+    /** Exit date */
+    exitDate: string | null;
+    /** Max adverse excursion during trade (%) */
+    maxDrawdown: number;
+    /** Max favorable excursion during trade (%) */
+    maxGain: number;
+    /** Number of bars held */
+    barsHeld: number;
+}
+
+/** Aggregate backtest statistics */
+export interface BacktestStats {
+    totalTrades: number;
+    wins: number;
+    losses: number;
+    openTrades: number;
+    winRate: number;
+    avgWinPct: number;
+    avgLossPct: number;
+    avgPnlPct: number;
+    profitFactor: number;
+    maxDrawdownPct: number;
+    expectancy: number;
+    avgBarsHeld: number;
+    byConfluence: Record<string, { trades: number; winRate: number; avgPnl: number }>;
 }
 
 interface StrategyConfig {
@@ -269,6 +304,9 @@ export function computeStrategySignals(
                 taScore,
                 confluence: Math.round(longCf),
                 confluenceLevel: confLevel,
+                // Placeholders — filled by walkForwardOutcomes
+                outcome: 'open', pnlPct: 0, exitBarIndex: null, exitDate: null,
+                maxDrawdown: 0, maxGain: 0, barsHeld: 0,
             });
             lastSignalBar = i;
         } else if (isShort) {
@@ -283,16 +321,200 @@ export function computeStrategySignals(
                 taScore,
                 confluence: Math.round(shortCf),
                 confluenceLevel: confLevel,
+                outcome: 'open', pnlPct: 0, exitBarIndex: null, exitDate: null,
+                maxDrawdown: 0, maxGain: 0, barsHeld: 0,
             });
             lastSignalBar = i;
         }
     }
 
+    // Walk forward through bars to determine outcomes
+    walkForwardOutcomes(signals, bars);
+
     return signals;
 }
 
+const MAX_HOLD_BARS = 20; // ~1 month of trading days — matches DEFAULT_SIGNAL_TIMEFRAME_DAYS * 2
+
 /**
- * React hook that memoizes signal computation.
+ * Walk forward through subsequent bars for each signal to determine outcome.
+ * Mutates signals in place for performance.
+ */
+function walkForwardOutcomes(signals: StrategySignal[], bars: OHLCV[]): void {
+    for (const sig of signals) {
+        let maxGain = 0;
+        let maxDrawdown = 0;
+        const entry = sig.price;
+
+        for (let j = sig.barIndex + 1; j < Math.min(sig.barIndex + MAX_HOLD_BARS + 1, bars.length); j++) {
+            const bar = bars[j]!;
+            const barsHeld = j - sig.barIndex;
+
+            if (sig.direction === 'long') {
+                const pnl = ((bar.close - entry) / entry) * 100;
+                const highPnl = ((bar.high - entry) / entry) * 100;
+                const lowPnl = ((bar.low - entry) / entry) * 100;
+                maxGain = Math.max(maxGain, highPnl);
+                maxDrawdown = Math.min(maxDrawdown, lowPnl);
+
+                // Check stop hit (intrabar low)
+                if (bar.low <= sig.stopLoss) {
+                    sig.outcome = 'loss';
+                    sig.pnlPct = ((sig.stopLoss - entry) / entry) * 100;
+                    sig.exitBarIndex = j;
+                    sig.exitDate = bar.date;
+                    sig.barsHeld = barsHeld;
+                    sig.maxGain = maxGain;
+                    sig.maxDrawdown = maxDrawdown;
+                    break;
+                }
+
+                // Check target hit (intrabar high)
+                if (bar.high >= sig.target) {
+                    sig.outcome = 'win';
+                    sig.pnlPct = ((sig.target - entry) / entry) * 100;
+                    sig.exitBarIndex = j;
+                    sig.exitDate = bar.date;
+                    sig.barsHeld = barsHeld;
+                    sig.maxGain = maxGain;
+                    sig.maxDrawdown = maxDrawdown;
+                    break;
+                }
+
+                // Expiry at max hold
+                if (barsHeld >= MAX_HOLD_BARS) {
+                    sig.outcome = 'expired';
+                    sig.pnlPct = pnl;
+                    sig.exitBarIndex = j;
+                    sig.exitDate = bar.date;
+                    sig.barsHeld = barsHeld;
+                    sig.maxGain = maxGain;
+                    sig.maxDrawdown = maxDrawdown;
+                    break;
+                }
+
+                // Last available bar
+                if (j === bars.length - 1) {
+                    sig.outcome = 'open';
+                    sig.pnlPct = pnl;
+                    sig.barsHeld = barsHeld;
+                    sig.maxGain = maxGain;
+                    sig.maxDrawdown = maxDrawdown;
+                }
+            } else {
+                // Short
+                const pnl = ((entry - bar.close) / entry) * 100;
+                const highPnl = ((entry - bar.low) / entry) * 100;   // best case for short
+                const lowPnl = ((entry - bar.high) / entry) * 100;   // worst case for short
+                maxGain = Math.max(maxGain, highPnl);
+                maxDrawdown = Math.min(maxDrawdown, lowPnl);
+
+                // Check stop hit (intrabar high)
+                if (bar.high >= sig.stopLoss) {
+                    sig.outcome = 'loss';
+                    sig.pnlPct = ((entry - sig.stopLoss) / entry) * 100;
+                    sig.exitBarIndex = j;
+                    sig.exitDate = bar.date;
+                    sig.barsHeld = barsHeld;
+                    sig.maxGain = maxGain;
+                    sig.maxDrawdown = maxDrawdown;
+                    break;
+                }
+
+                // Check target hit (intrabar low)
+                if (bar.low <= sig.target) {
+                    sig.outcome = 'win';
+                    sig.pnlPct = ((entry - sig.target) / entry) * 100;
+                    sig.exitBarIndex = j;
+                    sig.exitDate = bar.date;
+                    sig.barsHeld = barsHeld;
+                    sig.maxGain = maxGain;
+                    sig.maxDrawdown = maxDrawdown;
+                    break;
+                }
+
+                if (barsHeld >= MAX_HOLD_BARS) {
+                    sig.outcome = 'expired';
+                    sig.pnlPct = pnl;
+                    sig.exitBarIndex = j;
+                    sig.exitDate = bar.date;
+                    sig.barsHeld = barsHeld;
+                    sig.maxGain = maxGain;
+                    sig.maxDrawdown = maxDrawdown;
+                    break;
+                }
+
+                if (j === bars.length - 1) {
+                    sig.outcome = 'open';
+                    sig.pnlPct = pnl;
+                    sig.barsHeld = barsHeld;
+                    sig.maxGain = maxGain;
+                    sig.maxDrawdown = maxDrawdown;
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Compute aggregate backtest statistics from resolved signals.
+ */
+export function computeBacktestStats(signals: StrategySignal[]): BacktestStats {
+    const closed = signals.filter(s => s.outcome !== 'open');
+    const wins = closed.filter(s => s.outcome === 'win');
+    const losses = closed.filter(s => s.outcome === 'loss');
+    const expired = closed.filter(s => s.outcome === 'expired');
+    const openTrades = signals.filter(s => s.outcome === 'open').length;
+
+    const totalGross = wins.reduce((sum, s) => sum + s.pnlPct, 0);
+    const totalLoss = losses.reduce((sum, s) => sum + Math.abs(s.pnlPct), 0);
+
+    // Equity curve drawdown
+    let peak = 0;
+    let maxDd = 0;
+    let cumPnl = 0;
+    for (const sig of signals) {
+        if (sig.outcome === 'open') continue;
+        cumPnl += sig.pnlPct;
+        peak = Math.max(peak, cumPnl);
+        maxDd = Math.min(maxDd, cumPnl - peak);
+    }
+
+    const winRate = closed.length > 0 ? wins.length / closed.length : 0;
+    const avgWin = wins.length > 0 ? totalGross / wins.length : 0;
+    const avgLoss = losses.length > 0 ? totalLoss / losses.length : 0;
+
+    // By confluence level
+    const byConfluence: BacktestStats['byConfluence'] = {};
+    for (const level of ['strong', 'moderate', 'weak'] as const) {
+        const subset = closed.filter(s => s.confluenceLevel === level);
+        const subWins = subset.filter(s => s.outcome === 'win').length;
+        byConfluence[level] = {
+            trades: subset.length,
+            winRate: subset.length > 0 ? subWins / subset.length : 0,
+            avgPnl: subset.length > 0 ? subset.reduce((s, x) => s + x.pnlPct, 0) / subset.length : 0,
+        };
+    }
+
+    return {
+        totalTrades: closed.length,
+        wins: wins.length,
+        losses: losses.length + expired.filter(s => s.pnlPct < 0).length,
+        openTrades,
+        winRate,
+        avgWinPct: avgWin,
+        avgLossPct: avgLoss,
+        avgPnlPct: closed.length > 0 ? closed.reduce((s, x) => s + x.pnlPct, 0) / closed.length : 0,
+        profitFactor: totalLoss > 0 ? totalGross / totalLoss : totalGross > 0 ? Infinity : 0,
+        maxDrawdownPct: maxDd,
+        expectancy: closed.length > 0 ? (winRate * avgWin) - ((1 - winRate) * avgLoss) : 0,
+        avgBarsHeld: closed.length > 0 ? closed.reduce((s, x) => s + x.barsHeld, 0) / closed.length : 0,
+        byConfluence,
+    };
+}
+
+/**
+ * React hook that memoizes signal computation and backtest stats.
  */
 export function useStrategySignals(
     bars: OHLCV[],
@@ -305,5 +527,10 @@ export function useStrategySignals(
         [bars, mergedConfig],
     );
 
-    return signals;
+    const stats = useMemo(
+        () => computeBacktestStats(signals),
+        [signals],
+    );
+
+    return { signals, stats };
 }
