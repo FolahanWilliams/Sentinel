@@ -407,6 +407,7 @@ Deno.serve(async (req) => {
         // 4. Load Secrets
         const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
         const ALPHA_VANTAGE_KEY = Deno.env.get('MARKET_DATA_API_KEY') || Deno.env.get('ALPHA_VANTAGE_KEY') || ''
+        const TIINGO_KEY = Deno.env.get('TIINGO_API_KEY') || ''
 
         if (!ALPHA_VANTAGE_KEY) {
             console.warn('[proxy-market-data] No Alpha Vantage key found, will use Yahoo Finance fallback')
@@ -943,57 +944,136 @@ Deno.serve(async (req) => {
             const tickerUpper = ticker.toUpperCase()
             console.log(`[proxy-market-data] Fetching historical bars for ${tickerUpper}`)
 
-            try {
-                const yfUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(tickerUpper)}?range=1y&interval=1d`
-                const histController = new AbortController()
-                const histTimeout = setTimeout(() => histController.abort(), 10000)
-                const yfRes = await fetch(yfUrl, {
-                    headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                        'Accept': 'application/json'
-                    },
-                    signal: histController.signal,
-                })
-                clearTimeout(histTimeout)
+            const MIN_BARS = 50
 
-                if (!yfRes.ok) {
-                    return new Response(
-                        JSON.stringify({ success: false, error: `Yahoo Finance returned ${yfRes.status}` }),
-                        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
-                    )
+            // Helper: fetch with timeout
+            async function fetchWithTimeout(url: string, headers: Record<string, string>, timeoutMs: number): Promise<Response> {
+                const ctrl = new AbortController()
+                const timer = setTimeout(() => ctrl.abort(), timeoutMs)
+                try {
+                    const res = await fetch(url, { headers, signal: ctrl.signal })
+                    return res
+                } finally {
+                    clearTimeout(timer)
                 }
+            }
 
-                const yfData = await yfRes.json()
-                const result = yfData?.chart?.result?.[0]
-                const timestamps = result?.timestamp || []
-                const quote = result?.indicators?.quote?.[0] || {}
+            // Source 1: Yahoo Finance (free, no key)
+            async function fetchYahoo(): Promise<{ bars: any[]; provider: string } | null> {
+                try {
+                    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(tickerUpper)}?range=1y&interval=1d`
+                    const res = await fetchWithTimeout(url, {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept': 'application/json',
+                    }, 10000)
+                    if (!res.ok) { console.warn(`[historical] Yahoo returned ${res.status}`); return null }
+                    const data = await res.json()
+                    const result = data?.chart?.result?.[0]
+                    const timestamps = result?.timestamp || []
+                    const quote = result?.indicators?.quote?.[0] || {}
+                    const bars = timestamps.map((ts: number, i: number) => ({
+                        date: new Date(ts * 1000).toISOString().split('T')[0],
+                        open: quote.open?.[i] ?? 0,
+                        high: quote.high?.[i] ?? 0,
+                        low: quote.low?.[i] ?? 0,
+                        close: quote.close?.[i] ?? 0,
+                        volume: quote.volume?.[i] ?? 0,
+                    })).filter((b: any) => b.close > 0)
+                    console.log(`[historical] Yahoo: ${tickerUpper} — ${bars.length} bars`)
+                    return bars.length >= MIN_BARS ? { bars, provider: 'yahoo-finance' } : null
+                } catch (err: any) {
+                    console.warn(`[historical] Yahoo failed: ${err.message}`)
+                    return null
+                }
+            }
 
-                const bars = timestamps.map((ts: number, i: number) => ({
-                    date: new Date(ts * 1000).toISOString().split('T')[0],
-                    open: quote.open?.[i] ?? 0,
-                    high: quote.high?.[i] ?? 0,
-                    low: quote.low?.[i] ?? 0,
-                    close: quote.close?.[i] ?? 0,
-                    volume: quote.volume?.[i] ?? 0,
-                })).filter((b: any) => b.close > 0)
+            // Source 2: Alpha Vantage TIME_SERIES_DAILY (free key)
+            async function fetchAlphaVantage(): Promise<{ bars: any[]; provider: string } | null> {
+                if (!ALPHA_VANTAGE_KEY) return null
+                try {
+                    const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${encodeURIComponent(tickerUpper)}&outputsize=full&apikey=${ALPHA_VANTAGE_KEY}`
+                    const res = await fetchWithTimeout(url, { 'Accept': 'application/json' }, 12000)
+                    const data = await res.json()
+                    const timeSeries = data?.['Time Series (Daily)']
+                    if (!timeSeries || Object.keys(timeSeries).length === 0) {
+                        console.warn('[historical] Alpha Vantage: no time series data')
+                        return null
+                    }
+                    const bars = Object.entries(timeSeries)
+                        .map(([dateStr, vals]: [string, any]) => ({
+                            date: dateStr,
+                            open: parseFloat(vals['1. open']) || 0,
+                            high: parseFloat(vals['2. high']) || 0,
+                            low: parseFloat(vals['3. low']) || 0,
+                            close: parseFloat(vals['4. close']) || 0,
+                            volume: parseInt(vals['5. volume'], 10) || 0,
+                        }))
+                        .filter((b: any) => b.close > 0)
+                        .sort((a: any, b: any) => a.date.localeCompare(b.date))
+                        .slice(-252)
+                    console.log(`[historical] Alpha Vantage: ${tickerUpper} — ${bars.length} bars`)
+                    return bars.length >= MIN_BARS ? { bars, provider: 'alpha-vantage' } : null
+                } catch (err: any) {
+                    console.warn(`[historical] Alpha Vantage failed: ${err.message}`)
+                    return null
+                }
+            }
 
-                console.log(`[proxy-market-data] Historical: ${tickerUpper} — ${bars.length} bars`)
-                responseData = { success: true, data: bars }
+            // Source 3: Tiingo (free key, 1000 req/day)
+            async function fetchTiingo(): Promise<{ bars: any[]; provider: string } | null> {
+                if (!TIINGO_KEY) return null
+                try {
+                    const oneYearAgo = new Date(Date.now() - 365 * 86400000).toISOString().split('T')[0]
+                    const url = `https://api.tiingo.com/tiingo/daily/${encodeURIComponent(tickerUpper)}/prices?startDate=${oneYearAgo}&token=${TIINGO_KEY}`
+                    const res = await fetchWithTimeout(url, {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Token ${TIINGO_KEY}`,
+                    }, 12000)
+                    if (!res.ok) { console.warn(`[historical] Tiingo returned ${res.status}`); return null }
+                    const data = await res.json()
+                    if (!Array.isArray(data) || data.length === 0) {
+                        console.warn('[historical] Tiingo: empty response')
+                        return null
+                    }
+                    const bars = data.map((d: any) => ({
+                        date: (d.date || '').split('T')[0],
+                        open: d.adjOpen ?? d.open ?? 0,
+                        high: d.adjHigh ?? d.high ?? 0,
+                        low: d.adjLow ?? d.low ?? 0,
+                        close: d.adjClose ?? d.close ?? 0,
+                        volume: d.adjVolume ?? d.volume ?? 0,
+                    })).filter((b: any) => b.close > 0 && b.date)
+                    console.log(`[historical] Tiingo: ${tickerUpper} — ${bars.length} bars`)
+                    return bars.length >= MIN_BARS ? { bars, provider: 'tiingo' } : null
+                } catch (err: any) {
+                    console.warn(`[historical] Tiingo failed: ${err.message}`)
+                    return null
+                }
+            }
 
+            // Waterfall: Yahoo → Alpha Vantage → Tiingo
+            const sources = [fetchYahoo, fetchAlphaVantage, fetchTiingo]
+            let histResult: { bars: any[]; provider: string } | null = null
+
+            for (const fetchFn of sources) {
+                histResult = await fetchFn()
+                if (histResult) break
+            }
+
+            if (histResult) {
+                responseData = { success: true, data: histResult.bars }
                 const durationMs = Date.now() - startTime
                 await supabaseAdmin.from('api_usage').insert({
-                    provider: 'yahoo-finance',
+                    provider: histResult.provider,
                     endpoint: 'historical',
                     ticker: tickerUpper,
                     latency_ms: durationMs,
                     success: true,
-                    estimated_cost_usd: 0
+                    estimated_cost_usd: histResult.provider === 'yahoo-finance' ? 0 : 0.0001,
                 })
-
-            } catch (histErr: any) {
-                console.error('[proxy-market-data] Historical fetch failed:', histErr.message)
+            } else {
                 return new Response(
-                    JSON.stringify({ success: false, error: 'Failed to fetch historical data' }),
+                    JSON.stringify({ success: false, error: 'Failed to fetch historical data from all sources' }),
                     { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
                 )
             }
