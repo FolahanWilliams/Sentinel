@@ -946,6 +946,10 @@ Deno.serve(async (req) => {
 
             const MIN_BARS = 50
 
+            // International exchange suffixes to try when bare US ticker fails
+            const EXCHANGE_SUFFIXES = ['.TO', '.V', '.L', '.AX', '.DE', '.PA', '.MI', '.HK', '.SI', '.NS']
+            let resolvedTicker = tickerUpper // may get updated with suffix
+
             // Helper: fetch with timeout
             async function fetchWithTimeout(url: string, headers: Record<string, string>, timeoutMs: number): Promise<Response> {
                 const ctrl = new AbortController()
@@ -958,40 +962,65 @@ Deno.serve(async (req) => {
                 }
             }
 
-            // Source 1: Yahoo Finance (free, no key)
+            // Source 1: Yahoo Finance (free, no key) — tries international suffixes if bare ticker fails
             async function fetchYahoo(): Promise<{ bars: any[]; provider: string } | null> {
-                try {
-                    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(tickerUpper)}?range=1y&interval=1d`
-                    const res = await fetchWithTimeout(url, {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                        'Accept': 'application/json',
-                    }, 10000)
-                    if (!res.ok) { console.warn(`[historical] Yahoo returned ${res.status}`); return null }
-                    const data = await res.json()
-                    const result = data?.chart?.result?.[0]
-                    const timestamps = result?.timestamp || []
-                    const quote = result?.indicators?.quote?.[0] || {}
-                    const bars = timestamps.map((ts: number, i: number) => ({
-                        date: new Date(ts * 1000).toISOString().split('T')[0],
-                        open: quote.open?.[i] ?? 0,
-                        high: quote.high?.[i] ?? 0,
-                        low: quote.low?.[i] ?? 0,
-                        close: quote.close?.[i] ?? 0,
-                        volume: quote.volume?.[i] ?? 0,
-                    })).filter((b: any) => b.close > 0)
-                    console.log(`[historical] Yahoo: ${tickerUpper} — ${bars.length} bars`)
-                    return bars.length >= MIN_BARS ? { bars, provider: 'yahoo-finance' } : null
-                } catch (err: any) {
-                    console.warn(`[historical] Yahoo failed: ${err.message}`)
-                    return null
+                const yfHeaders = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'application/json',
                 }
+
+                async function tryYahooTicker(t: string): Promise<any[] | null> {
+                    try {
+                        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(t)}?range=1y&interval=1d`
+                        const res = await fetchWithTimeout(url, yfHeaders, 10000)
+                        if (!res.ok) return null
+                        const data = await res.json()
+                        const result = data?.chart?.result?.[0]
+                        const timestamps = result?.timestamp || []
+                        const quote = result?.indicators?.quote?.[0] || {}
+                        return timestamps.map((ts: number, i: number) => ({
+                            date: new Date(ts * 1000).toISOString().split('T')[0],
+                            open: quote.open?.[i] ?? 0,
+                            high: quote.high?.[i] ?? 0,
+                            low: quote.low?.[i] ?? 0,
+                            close: quote.close?.[i] ?? 0,
+                            volume: quote.volume?.[i] ?? 0,
+                        })).filter((b: any) => b.close > 0)
+                    } catch { return null }
+                }
+
+                // Try bare ticker first (US exchanges)
+                const bars = await tryYahooTicker(tickerUpper)
+                if (bars && bars.length >= MIN_BARS) {
+                    console.log(`[historical] Yahoo: ${tickerUpper} — ${bars.length} bars`)
+                    return { bars, provider: 'yahoo-finance' }
+                }
+
+                // If bare ticker has no dot (not already exchange-qualified), try international suffixes
+                if (!tickerUpper.includes('.')) {
+                    console.log(`[historical] Yahoo: ${tickerUpper} returned ${bars?.length ?? 0} bars, trying international exchanges...`)
+                    for (const suffix of EXCHANGE_SUFFIXES) {
+                        const intlTicker = tickerUpper + suffix
+                        const intlBars = await tryYahooTicker(intlTicker)
+                        if (intlBars && intlBars.length >= MIN_BARS) {
+                            console.log(`[historical] Yahoo: found ${intlTicker} — ${intlBars.length} bars`)
+                            resolvedTicker = intlTicker
+                            return { bars: intlBars, provider: 'yahoo-finance' }
+                        }
+                    }
+                }
+
+                console.warn(`[historical] Yahoo: no data for ${tickerUpper} (including international)`)
+                return null
             }
 
             // Source 2: Alpha Vantage TIME_SERIES_DAILY (free key)
             async function fetchAlphaVantage(): Promise<{ bars: any[]; provider: string } | null> {
                 if (!ALPHA_VANTAGE_KEY) return null
                 try {
-                    const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${encodeURIComponent(tickerUpper)}&outputsize=full&apikey=${ALPHA_VANTAGE_KEY}`
+                    // Alpha Vantage uses .TRT for Toronto, .LON for London etc. — try bare ticker + resolvedTicker
+                    const avSymbol = resolvedTicker !== tickerUpper ? resolvedTicker : tickerUpper
+                    const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${encodeURIComponent(avSymbol)}&outputsize=full&apikey=${ALPHA_VANTAGE_KEY}`
                     const res = await fetchWithTimeout(url, { 'Accept': 'application/json' }, 12000)
                     const data = await res.json()
                     const timeSeries = data?.['Time Series (Daily)']
