@@ -56,9 +56,21 @@ const TradingViewChartInner: React.FC<TradingViewChartProps> = ({ ticker, height
             script.onload = initWidget;
             script.onerror = () => setHasError(true);
             document.head.appendChild(script);
-        } else {
-            // If already loaded, just initialize our widget
+        } else if (typeof (window as any).TradingView !== 'undefined') {
+            // Script loaded successfully before — initialize widget
             initWidget();
+        } else {
+            // Script element exists but TradingView never loaded (previous timeout/block)
+            // Remove the broken script tag and retry once
+            script.remove();
+            const retryScript = document.createElement('script');
+            retryScript.id = 'tradingview-widget-script';
+            retryScript.src = 'https://s3.tradingview.com/tv.js';
+            retryScript.type = 'text/javascript';
+            retryScript.async = true;
+            retryScript.onload = initWidget;
+            retryScript.onerror = () => setHasError(true);
+            document.head.appendChild(retryScript);
         }
 
         return () => {

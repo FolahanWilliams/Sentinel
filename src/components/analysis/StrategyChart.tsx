@@ -425,19 +425,28 @@ const StrategyChartInner: React.FC<StrategyChartProps> = ({ ticker, height = 600
             setAlreadySaved(false);
             setPositionSizing(null);
 
-            try {
-                const data = await TechnicalAnalysisService.fetchHistoricalBars(ticker);
+            // Retry up to 2 times (3 total attempts) with 2s delay
+            let lastErr: string | null = null;
+            for (let attempt = 0; attempt < 3; attempt++) {
                 if (cancelled) return;
-                if (data.length < 50) {
-                    setError(`Insufficient data for ${ticker} (${data.length} bars)`);
-                    return;
+                if (attempt > 0) {
+                    console.log(`[StrategyChart] Retry ${attempt}/2 for ${ticker}`);
+                    await new Promise(r => setTimeout(r, 2000));
                 }
-                setBars(data);
-            } catch (err: any) {
-                if (!cancelled) setError(err.message || 'Failed to fetch data');
-            } finally {
-                if (!cancelled) setLoading(false);
+                try {
+                    const data = await TechnicalAnalysisService.fetchHistoricalBars(ticker);
+                    if (cancelled) return;
+                    if (data.length >= 50) {
+                        setBars(data);
+                        return;
+                    }
+                    lastErr = `Insufficient data for ${ticker} (${data.length} bars)`;
+                } catch (err: any) {
+                    lastErr = err.message || 'Failed to fetch data';
+                }
             }
+            if (!cancelled && lastErr) setError(lastErr);
+            if (!cancelled) setLoading(false);
         }
 
         async function fetchRegime() {

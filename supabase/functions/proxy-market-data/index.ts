@@ -977,25 +977,125 @@ Deno.serve(async (req) => {
                     volume: quote.volume?.[i] ?? 0,
                 })).filter((b: any) => b.close > 0)
 
-                console.log(`[proxy-market-data] Historical: ${tickerUpper} — ${bars.length} bars`)
-                responseData = { success: true, data: bars }
+                console.log(`[proxy-market-data] Historical (Yahoo): ${tickerUpper} — ${bars.length} bars`)
 
-                const durationMs = Date.now() - startTime
-                await supabaseAdmin.from('api_usage').insert({
-                    provider: 'yahoo-finance',
-                    endpoint: 'historical',
-                    ticker: tickerUpper,
-                    latency_ms: durationMs,
-                    success: true,
-                    estimated_cost_usd: 0
-                })
+                // If Yahoo returned enough bars, use them
+                if (bars.length >= 50) {
+                    responseData = { success: true, data: bars }
+                    const durationMs = Date.now() - startTime
+                    await supabaseAdmin.from('api_usage').insert({
+                        provider: 'yahoo-finance',
+                        endpoint: 'historical',
+                        ticker: tickerUpper,
+                        latency_ms: durationMs,
+                        success: true,
+                        estimated_cost_usd: 0
+                    })
+                } else if (ALPHA_VANTAGE_KEY) {
+                    // Fallback: Alpha Vantage TIME_SERIES_DAILY
+                    console.log(`[proxy-market-data] Yahoo returned ${bars.length} bars for ${tickerUpper}, falling back to Alpha Vantage`)
+                    const avUrl = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${encodeURIComponent(tickerUpper)}&outputsize=full&apikey=${ALPHA_VANTAGE_KEY}`
+                    const avController = new AbortController()
+                    const avTimeout = setTimeout(() => avController.abort(), 12000)
+                    try {
+                        const avRes = await fetch(avUrl, { signal: avController.signal })
+                        clearTimeout(avTimeout)
+                        const avData = await avRes.json()
+                        const timeSeries = avData?.['Time Series (Daily)']
+                        if (timeSeries && Object.keys(timeSeries).length > 0) {
+                            const avBars = Object.entries(timeSeries)
+                                .map(([dateStr, vals]: [string, any]) => ({
+                                    date: dateStr,
+                                    open: parseFloat(vals['1. open']) || 0,
+                                    high: parseFloat(vals['2. high']) || 0,
+                                    low: parseFloat(vals['3. low']) || 0,
+                                    close: parseFloat(vals['4. close']) || 0,
+                                    volume: parseInt(vals['5. volume'], 10) || 0,
+                                }))
+                                .filter((b: any) => b.close > 0)
+                                .sort((a: any, b: any) => a.date.localeCompare(b.date))
+                                .slice(-252) // ~1 year of trading days
+                            console.log(`[proxy-market-data] Historical (Alpha Vantage): ${tickerUpper} — ${avBars.length} bars`)
+                            responseData = { success: true, data: avBars }
+                            const durationMs = Date.now() - startTime
+                            await supabaseAdmin.from('api_usage').insert({
+                                provider: 'alpha-vantage',
+                                endpoint: 'historical',
+                                ticker: tickerUpper,
+                                latency_ms: durationMs,
+                                success: true,
+                                estimated_cost_usd: 0.0001
+                            })
+                        } else {
+                            console.warn('[proxy-market-data] Alpha Vantage returned no time series data:', JSON.stringify(avData).slice(0, 200))
+                            responseData = { success: true, data: bars } // Return whatever Yahoo had
+                        }
+                    } catch (avErr: any) {
+                        clearTimeout(avTimeout)
+                        console.warn('[proxy-market-data] Alpha Vantage historical fallback failed:', avErr.message)
+                        responseData = { success: true, data: bars }
+                    }
+                } else {
+                    // No AV key, return whatever Yahoo had
+                    responseData = { success: true, data: bars }
+                    const durationMs = Date.now() - startTime
+                    await supabaseAdmin.from('api_usage').insert({
+                        provider: 'yahoo-finance',
+                        endpoint: 'historical',
+                        ticker: tickerUpper,
+                        latency_ms: durationMs,
+                        success: true,
+                        estimated_cost_usd: 0
+                    })
+                }
 
             } catch (histErr: any) {
-                console.error('[proxy-market-data] Historical fetch failed:', histErr.message)
-                return new Response(
-                    JSON.stringify({ success: false, error: 'Failed to fetch historical data' }),
-                    { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
-                )
+                // Yahoo fetch threw — try Alpha Vantage as complete fallback
+                console.error('[proxy-market-data] Yahoo historical fetch failed:', histErr.message)
+                if (ALPHA_VANTAGE_KEY) {
+                    try {
+                        const avUrl = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=${encodeURIComponent(tickerUpper)}&outputsize=full&apikey=${ALPHA_VANTAGE_KEY}`
+                        const avController = new AbortController()
+                        const avTimeout = setTimeout(() => avController.abort(), 12000)
+                        const avRes = await fetch(avUrl, { signal: avController.signal })
+                        clearTimeout(avTimeout)
+                        const avData = await avRes.json()
+                        const timeSeries = avData?.['Time Series (Daily)']
+                        if (timeSeries && Object.keys(timeSeries).length > 0) {
+                            const avBars = Object.entries(timeSeries)
+                                .map(([dateStr, vals]: [string, any]) => ({
+                                    date: dateStr,
+                                    open: parseFloat(vals['1. open']) || 0,
+                                    high: parseFloat(vals['2. high']) || 0,
+                                    low: parseFloat(vals['3. low']) || 0,
+                                    close: parseFloat(vals['4. close']) || 0,
+                                    volume: parseInt(vals['5. volume'], 10) || 0,
+                                }))
+                                .filter((b: any) => b.close > 0)
+                                .sort((a: any, b: any) => a.date.localeCompare(b.date))
+                                .slice(-252)
+                            console.log(`[proxy-market-data] Historical (Alpha Vantage fallback): ${tickerUpper} — ${avBars.length} bars`)
+                            responseData = { success: true, data: avBars }
+                            const durationMs = Date.now() - startTime
+                            await supabaseAdmin.from('api_usage').insert({
+                                provider: 'alpha-vantage',
+                                endpoint: 'historical',
+                                ticker: tickerUpper,
+                                latency_ms: durationMs,
+                                success: true,
+                                estimated_cost_usd: 0.0001
+                            })
+                        }
+                    } catch (avErr: any) {
+                        console.warn('[proxy-market-data] Alpha Vantage historical fallback also failed:', avErr.message)
+                    }
+                }
+                if (!responseData) {
+                    return new Response(
+                        JSON.stringify({ success: false, error: 'Failed to fetch historical data from all sources' }),
+                        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
+                    )
+                }
             }
 
         } else {

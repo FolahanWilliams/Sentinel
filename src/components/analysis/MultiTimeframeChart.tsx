@@ -96,8 +96,19 @@ const MultiTimeframeChartInner: React.FC<MultiTimeframeChartProps> = ({
             script.onload = initWidget;
             script.onerror = () => setHasError(true);
             document.head.appendChild(script);
-        } else {
+        } else if (typeof (window as any).TradingView !== 'undefined') {
             initWidget();
+        } else {
+            // Script tag exists but TradingView never loaded — retry
+            script.remove();
+            const retryScript = document.createElement('script');
+            retryScript.id = 'tradingview-widget-script';
+            retryScript.src = 'https://s3.tradingview.com/tv.js';
+            retryScript.type = 'text/javascript';
+            retryScript.async = true;
+            retryScript.onload = initWidget;
+            retryScript.onerror = () => setHasError(true);
+            document.head.appendChild(retryScript);
         }
 
         return () => {
