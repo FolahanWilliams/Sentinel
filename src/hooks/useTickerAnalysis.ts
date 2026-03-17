@@ -165,95 +165,79 @@ export function useTickerAnalysis() {
 
 // ── Internal fetch helpers ─────────────────────────────────────────
 
+/**
+ * Extract JSON from Gemini free-form text responses.
+ * When grounded search is enabled, responseSchema is stripped by the proxy,
+ * so Gemini may wrap JSON in markdown fences or prose.
+ */
+function extractJSON(text: string): any {
+    // Try direct parse first
+    try { return JSON.parse(text); } catch { /* continue */ }
+
+    // Try extracting from markdown code fences
+    const fenceMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)```/);
+    if (fenceMatch) {
+        try { return JSON.parse(fenceMatch[1]!.trim()); } catch { /* continue */ }
+    }
+
+    // Try finding first [ or { and matching to last ] or }
+    const arrStart = text.indexOf('[');
+    const objStart = text.indexOf('{');
+    const start = arrStart >= 0 && (objStart < 0 || arrStart < objStart) ? arrStart : objStart;
+    if (start >= 0) {
+        const isArray = text[start] === '[';
+        const end = isArray ? text.lastIndexOf(']') : text.lastIndexOf('}');
+        if (end > start) {
+            try { return JSON.parse(text.slice(start, end + 1)); } catch { /* continue */ }
+        }
+    }
+
+    throw new Error('Could not extract JSON from response');
+}
+
 async function fetchBiasWeights(ticker: string): Promise<BiasWeight[]> {
     const { data, error } = await supabase.functions.invoke('proxy-gemini', {
         body: {
-            systemInstruction: `You are a financial signal analysis engine. For the stock ticker ${ticker}, analyze the current market environment and break down the primary factors that would drive a trading signal for this stock right now. Return a JSON array of factors with their relative weights (must sum to 100).`,
-            prompt: `Analyze ${ticker} and return the primary signal drivers with weighted contributions. Consider: market sentiment (social media, news tone), insider buying/selling, technical signals (RSI, moving averages, volume), analyst ratings, institutional flow, sector momentum, and macro factors. Return the top 4-6 most relevant factors.`,
+            systemInstruction: `You are a financial signal analysis engine. You MUST respond with ONLY a valid JSON array — no markdown, no explanation, no code fences. For the stock ticker ${ticker}, analyze the current market environment and break down the primary factors that would drive a trading signal.`,
+            prompt: `Analyze ${ticker} and return a JSON array of the top 4-6 signal drivers. Each object must have: "factor" (short label), "weight" (number 0-100, all must sum to 100), "description" (one sentence), "sentiment" ("bullish"|"bearish"|"neutral"). Consider: market sentiment, insider activity, technical signals, analyst ratings, institutional flow, sector momentum, macro factors. Respond with ONLY the JSON array.`,
             requireGroundedSearch: true,
-            responseSchema: {
-                type: 'ARRAY',
-                items: {
-                    type: 'OBJECT',
-                    properties: {
-                        factor: { type: 'STRING', description: 'Short label like "Bearish Sentiment" or "Insider Buying"' },
-                        weight: { type: 'NUMBER', description: 'Percentage weight 0-100, all must sum to 100' },
-                        description: { type: 'STRING', description: 'One sentence explanation' },
-                        sentiment: { type: 'STRING', enum: ['bullish', 'bearish', 'neutral'] }
-                    },
-                    required: ['factor', 'weight', 'description', 'sentiment']
-                }
-            }
         }
     });
 
     if (error) throw error;
     if (!data?.text) throw new Error('Empty response from Gemini');
-    return JSON.parse(data.text);
+    const parsed = extractJSON(data.text);
+    const weights = Array.isArray(parsed) ? parsed : [];
+    if (data.groundingSources) (weights as any)._groundingSources = data.groundingSources;
+    return weights;
 }
 
 async function fetchEvents(ticker: string): Promise<AIEvent[]> {
     const { data, error } = await supabase.functions.invoke('proxy-gemini', {
         body: {
-            systemInstruction: `You are a financial event tracker. For stock ticker ${ticker}, find the most significant recent events (last 30 days) that have affected or could affect its stock price. Include earnings, SEC filings, analyst actions, major news, insider transactions, and macro events.`,
-            prompt: `List the 6-10 most impactful recent events for ${ticker} in the last 30 days. For each, include the exact date, the type of event, a headline, the impact level, and the approximate price move (if known). Order by date, most recent first.`,
+            systemInstruction: `You are a financial event tracker. You MUST respond with ONLY a valid JSON array — no markdown, no explanation, no code fences. For stock ticker ${ticker}, find significant recent events (last 30 days).`,
+            prompt: `List the 6-10 most impactful recent events for ${ticker} in the last 30 days as a JSON array. Each object must have: "date" (YYYY-MM-DD), "type" ("earnings"|"filing"|"analyst"|"news"|"insider"|"macro"), "headline" (string), "impact" ("high"|"medium"|"low"), "priceMove" (e.g. "+3.2%" or "" if unknown), "source" (e.g. "Reuters"). Order by date, most recent first. Respond with ONLY the JSON array.`,
             requireGroundedSearch: true,
-            responseSchema: {
-                type: 'ARRAY',
-                items: {
-                    type: 'OBJECT',
-                    properties: {
-                        date: { type: 'STRING', description: 'ISO date string YYYY-MM-DD' },
-                        type: { type: 'STRING', enum: ['earnings', 'filing', 'analyst', 'news', 'insider', 'macro'] },
-                        headline: { type: 'STRING', description: 'Event headline' },
-                        impact: { type: 'STRING', enum: ['high', 'medium', 'low'] },
-                        priceMove: { type: 'STRING', description: 'Approximate price change like +3.2% or -1.5%, or empty if unknown' },
-                        source: { type: 'STRING', description: 'Source name like Reuters, SEC, Bloomberg' }
-                    },
-                    required: ['date', 'type', 'headline', 'impact']
-                }
-            }
         }
     });
 
     if (error) throw error;
     if (!data?.text) throw new Error('Empty response from Gemini');
-    const events = JSON.parse(data.text);
-    // Attach grounding sources for aggregation
-    if (data.groundingSources) {
-        (events as any)._groundingSources = data.groundingSources;
-    }
-    return events;
+    const events = extractJSON(data.text);
+    if (data.groundingSources) (events as any)._groundingSources = data.groundingSources;
+    return Array.isArray(events) ? events : [];
 }
 
 async function fetchFundamentals(ticker: string): Promise<FundamentalMetrics> {
     const { data, error } = await supabase.functions.invoke('proxy-gemini', {
         body: {
-            systemInstruction: `You are a financial data extraction engine. For stock ticker ${ticker}, find the latest fundamental financial metrics. Use the most recent publicly available data from financial websites.`,
-            prompt: `Get the latest fundamental metrics for ${ticker}: Forward P/E ratio, Price/Sales ratio, EV/EBITDA, Debt/Equity ratio, Institutional Ownership %, Short Interest %, recent insider transactions (last 30 days summary), Revenue Growth YoY %, Profit Margin %, Market Cap (formatted like "$2.5T"), Sector, and Industry. Return null for any metric you cannot find.`,
+            systemInstruction: `You are a financial data extraction engine. You MUST respond with ONLY a valid JSON object — no markdown, no explanation, no code fences. For stock ticker ${ticker}, find the latest fundamental metrics.`,
+            prompt: `Get the latest fundamental metrics for ${ticker} and return a single JSON object with these exact keys: "forwardPE" (number|null), "priceToSales" (number|null), "evToEbitda" (number|null), "debtToEquity" (number|null), "institutionalOwnershipPct" (number|null), "shortInterestPct" (number|null), "insiderTransactions30d" (string|null), "revenueGrowthYoY" (number|null), "profitMargin" (number|null), "marketCap" (string like "$2.5T"|null), "sector" (string|null), "industry" (string|null). Use null for any metric you cannot find. Respond with ONLY the JSON object.`,
             requireGroundedSearch: true,
-            responseSchema: {
-                type: 'OBJECT',
-                properties: {
-                    forwardPE: { type: 'NUMBER', nullable: true },
-                    priceToSales: { type: 'NUMBER', nullable: true },
-                    evToEbitda: { type: 'NUMBER', nullable: true },
-                    debtToEquity: { type: 'NUMBER', nullable: true },
-                    institutionalOwnershipPct: { type: 'NUMBER', nullable: true },
-                    shortInterestPct: { type: 'NUMBER', nullable: true },
-                    insiderTransactions30d: { type: 'STRING', nullable: true },
-                    revenueGrowthYoY: { type: 'NUMBER', nullable: true },
-                    profitMargin: { type: 'NUMBER', nullable: true },
-                    marketCap: { type: 'STRING', nullable: true },
-                    sector: { type: 'STRING', nullable: true },
-                    industry: { type: 'STRING', nullable: true }
-                },
-                required: ['forwardPE', 'priceToSales', 'evToEbitda', 'debtToEquity', 'institutionalOwnershipPct', 'shortInterestPct', 'insiderTransactions30d', 'revenueGrowthYoY', 'profitMargin', 'marketCap', 'sector', 'industry']
-            }
         }
     });
 
     if (error) throw error;
     if (!data?.text) throw new Error('Empty response from Gemini');
-    return JSON.parse(data.text);
+    return extractJSON(data.text);
 }

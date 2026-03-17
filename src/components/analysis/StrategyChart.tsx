@@ -438,6 +438,7 @@ const StrategyChartInner: React.FC<StrategyChartProps> = ({ ticker, height = 600
                     if (cancelled) return;
                     if (data.length >= 50) {
                         setBars(data);
+                        setLoading(false);
                         return;
                     }
                     lastErr = `Insufficient data for ${ticker} (${data.length} bars)`;
