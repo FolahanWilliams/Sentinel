@@ -971,7 +971,7 @@ Deno.serve(async (req) => {
 
                 async function tryYahooTicker(t: string): Promise<any[] | null> {
                     try {
-                        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(t)}?range=1y&interval=1d`
+                        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(t)}?range=2y&interval=1d`
                         const res = await fetchWithTimeout(url, yfHeaders, 10000)
                         if (!res.ok) return null
                         const data = await res.json()
@@ -1039,7 +1039,7 @@ Deno.serve(async (req) => {
                         }))
                         .filter((b: any) => b.close > 0)
                         .sort((a: any, b: any) => a.date.localeCompare(b.date))
-                        .slice(-252)
+                        .slice(-504) // ~2 years of trading days
                     console.log(`[historical] Alpha Vantage: ${tickerUpper} — ${bars.length} bars`)
                     return bars.length >= MIN_BARS ? { bars, provider: 'alpha-vantage' } : null
                 } catch (err: any) {
@@ -1052,8 +1052,8 @@ Deno.serve(async (req) => {
             async function fetchTiingo(): Promise<{ bars: any[]; provider: string } | null> {
                 if (!TIINGO_KEY) return null
                 try {
-                    const oneYearAgo = new Date(Date.now() - 365 * 86400000).toISOString().split('T')[0]
-                    const url = `https://api.tiingo.com/tiingo/daily/${encodeURIComponent(tickerUpper)}/prices?startDate=${oneYearAgo}&token=${TIINGO_KEY}`
+                    const twoYearsAgo = new Date(Date.now() - 730 * 86400000).toISOString().split('T')[0]
+                    const url = `https://api.tiingo.com/tiingo/daily/${encodeURIComponent(tickerUpper)}/prices?startDate=${twoYearsAgo}&token=${TIINGO_KEY}`
                     const res = await fetchWithTimeout(url, {
                         'Content-Type': 'application/json',
                         'Authorization': `Token ${TIINGO_KEY}`,
