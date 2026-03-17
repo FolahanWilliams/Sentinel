@@ -48,7 +48,8 @@ export function Journal() {
     // Pre-fill from URL
     const prefillTicker = searchParams.get('ticker') || '';
     const prefillEntry = searchParams.get('entry') || '';
-    const prefillThesis = searchParams.get('thesis') ? decodeURIComponent(searchParams.get('thesis')!) : '';
+    const rawThesis = searchParams.get('thesis');
+    const prefillThesis = rawThesis ? decodeURIComponent(rawThesis) : '';
     const hasPrefill = !!prefillTicker;
 
     // Filters

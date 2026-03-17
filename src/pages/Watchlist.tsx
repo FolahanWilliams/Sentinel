@@ -11,7 +11,7 @@ import { EmptyState } from '@/components/shared/EmptyState';
 
 /** Cached strategy signal per ticker */
 interface TickerStrategySignal {
-    signal: StrategySignal;
+    signal: StrategySignal | null;
     loading: boolean;
 }
 
@@ -64,7 +64,7 @@ export function Watchlist() {
         // Mark all as loading
         const loadingState: Record<string, TickerStrategySignal> = {};
         tickers.forEach(t => {
-            loadingState[t] = { signal: null as unknown as StrategySignal, loading: true };
+            loadingState[t] = { signal: null, loading: true };
         });
         setStrategySignals(prev => ({ ...prev, ...loadingState }));
 
@@ -79,7 +79,7 @@ export function Watchlist() {
                         if (bars.length < 201) {
                             setStrategySignals(prev => ({
                                 ...prev,
-                                [t]: { signal: null as unknown as StrategySignal, loading: false },
+                                [t]: { signal: null, loading: false },
                             }));
                             return;
                         }
@@ -92,7 +92,7 @@ export function Watchlist() {
                     } catch {
                         setStrategySignals(prev => ({
                             ...prev,
-                            [t]: { signal: null as unknown as StrategySignal, loading: false },
+                            [t]: { signal: null, loading: false },
                         }));
                     }
                 })

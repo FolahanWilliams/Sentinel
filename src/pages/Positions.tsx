@@ -223,7 +223,7 @@ export function Positions() {
                 const hitStop = closeReason === 'stop_loss';
                 const outcome = hitTarget ? 'target_hit' : hitStop ? 'stop_hit' : realizedPnl >= 0 ? 'profit' : 'loss';
 
-                supabase.from('signal_outcomes').upsert({
+                void supabase.from('signal_outcomes').upsert({
                     signal_id: pos.signal_id,
                     ticker: pos.ticker,
                     entry_price: pos.entry_price,

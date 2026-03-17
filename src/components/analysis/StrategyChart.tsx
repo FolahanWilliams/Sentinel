@@ -340,8 +340,9 @@ const SentimentBadge: React.FC<{ result: SentimentDivergenceResult | null; loadi
 const WeeklyConfluenceBadge: React.FC<{ weeklySignals: StrategySignal[]; dailySignals: StrategySignal[] }> = ({ weeklySignals, dailySignals }) => {
     if (weeklySignals.length === 0 || dailySignals.length === 0) return null;
 
-    const latestDaily = dailySignals[dailySignals.length - 1]!;
-    const latestWeekly = weeklySignals[weeklySignals.length - 1]!;
+    const latestDaily = dailySignals[dailySignals.length - 1];
+    const latestWeekly = weeklySignals[weeklySignals.length - 1];
+    if (!latestDaily || !latestWeekly) return null;
 
     const aligned = latestDaily.direction === latestWeekly.direction;
 
@@ -497,8 +498,8 @@ const StrategyChartInner: React.FC<StrategyChartProps> = ({ ticker, height = 600
             selectedSignal.confluence,
         ).then(result => {
             if (!cancelled) setPositionSizing(result);
-        }).catch(() => {
-            // Non-critical
+        }).catch(err => {
+            console.warn('[StrategyChart] Position sizing failed:', err);
         }).finally(() => {
             if (!cancelled) setSizingLoading(false);
         });
@@ -675,7 +676,8 @@ const StrategyChartInner: React.FC<StrategyChartProps> = ({ ticker, height = 600
             createSeriesMarkers(candleSeries, markers);
 
             // Show the most recent signal's stop/target as price lines
-            const lastSignal = signals[signals.length - 1]!;
+            const lastSignal = signals[signals.length - 1];
+            if (!lastSignal) return;
             setSelectedSignal(lastSignal);
 
             candleSeries.createPriceLine({
