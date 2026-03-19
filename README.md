@@ -1,27 +1,214 @@
 # Sentinel
 
-AI-powered trading intelligence platform that monitors market data, news feeds, and sentiment sources to generate high-conviction trading signals using Google Gemini.
+**AI-Powered Trading Intelligence Platform**
+
+Sentinel is an autonomous market intelligence engine that continuously monitors news, sentiment, and market data to surface high-conviction trading opportunities before the crowd. Built on a multi-agent AI reasoning architecture, it doesn't just alert you to moves — it explains *why* they're happening, challenges its own thesis, and learns from every outcome.
+
+> **Built for an edge.** Sentinel combines real-time data ingestion, behavioral finance models, and a self-improving AI pipeline to identify mispriced assets with institutional-grade rigor — at a fraction of the cost.
+
+---
+
+## Why Sentinel
+
+Traditional screening tools tell you *what* moved. Sentinel tells you **why it moved, whether the market overreacted, and what to do about it** — with confidence scores calibrated against its own track record.
+
+**For investors evaluating this project:** Sentinel demonstrates end-to-end product thinking — from data ingestion and AI orchestration to portfolio-aware risk management and closed-loop learning. It's a single-developer build that ships the kind of intelligence pipeline typically found inside quantitative hedge funds.
+
+---
+
+## Core Intelligence Engine
+
+### Multi-Agent Reasoning Pipeline
+
+Sentinel runs every potential signal through a 5-agent AI pipeline, each with specialized prompts, schemas, and temperature tuning:
+
+| Agent | Role |
+|-------|------|
+| **Overreaction Detector** | Identifies irrational price drops driven by behavioral bias (anchoring, herding, loss aversion) |
+| **Contagion Analyzer** | Detects when a sector-wide selloff unfairly drags down fundamentally strong names |
+| **Bullish Catalyst Agent** | Spots asymmetric upside from catalysts the market hasn't fully priced in |
+| **Earnings Guard** | Flags upcoming earnings as a risk factor and adjusts confidence accordingly |
+| **Red Team (Sanity Check)** | Adversarial agent that challenges every thesis before it reaches the dashboard |
+
+### Self-Critique & Adversarial Validation
+
+Every signal passes through a **Think → Critique → Decide** loop:
+- The originating agent generates a thesis with confidence score
+- A **Self-Critique module** stress-tests the reasoning for logical flaws, circular arguments, and overconfidence
+- Critical flaws automatically reduce confidence; fatal flaws kill the signal entirely
+
+### Self-Learning Feedback Loop
+
+Sentinel gets smarter over time through two closed-loop learning systems:
+
+- **Reflection Agent** — Analyzes historical outcomes to generate "Lessons Learned" rules (e.g., *"Biotech overreaction signals with severity < 5 win only 30% — lower confidence by 15"*). These rules are injected into future agent prompts via RAG.
+- **Auto-Learning Service** — Performs post-mortem analysis on every completed trade, measuring which pipeline steps (sentiment divergence, multi-timeframe, earnings guard) contributed to wins vs. losses, then dynamically adjusts step weights.
+
+### Dynamic Confidence Calibration
+
+Raw AI confidence scores are remapped to actual observed win rates using **isotonic regression (PAVA algorithm)**. This means a signal showing "78% confidence" genuinely reflects a ~78% historical win rate — not just model optimism.
+
+---
+
+## Signal Processing Pipeline
+
+```
+42 RSS Feeds + Reddit + Google News
+              ↓
+   Event Extraction & Severity Scoring
+              ↓
+   Market Data Enrichment (price, volume, 52w range, sector)
+              ↓
+   Sentiment-Price Divergence Detection
+         (Panic Exhaustion / Euphoria Climax)
+              ↓
+   Multi-Agent Analysis (Overreaction + Contagion + Catalyst)
+              ↓
+   Technical Analysis Alignment (multi-timeframe)
+              ↓
+   Red Team Sanity Check → Self-Critique Pass
+              ↓
+   Earnings Guard + Conflict Detection + Correlation Guard
+              ↓
+   Conviction Guardrails (Buffett/Lynch quality gates)
+              ↓
+   Dynamic Confidence Calibration (isotonic regression)
+              ↓
+   Semantic Deduplication → Signal Stored
+              ↓
+   Smart Alerts Dispatched → Outcome Tracking Begins
+              ↓
+   Post-Mortem → Reflection Agent → Weight Adjustment
+         (feedback loop closes)
+```
+
+---
+
+## Platform Features
+
+### Real-Time Market Dashboard
+- Live market snapshot: indices, VIX, crypto, commodities, treasury yields, forex
+- **Fear & Greed gauge** with AI-generated market mood briefings
+- **Market regime detection** (bull / neutral / correction / crisis) with automatic confidence penalties during high-volatility environments
+- Sector heatmaps and rotation analysis
+- Upcoming events calendar (earnings, economic data, Fed meetings)
+
+### Signal Intelligence
+- AI-generated signal cards with full reasoning chain, bias classification, and risk/reward visualization
+- **Agent Reasoning Surface** — inspect exactly how each agent scored a signal
+- Signal comparison view for evaluating competing theses
+- Historical precedent matching
+- Signal decay engine that reduces confidence over time as setups age
+
+### Portfolio Management
+- Position tracking with real-time unrealized P&L
+- Sector exposure monitoring with concentration limits
+- **Portfolio-aware position sizing** — Kelly criterion + ATR-based stops, constrained by portfolio exposure
+- **Conviction guardrails** inspired by Buffett (margin of safety) and Lynch (category-based limits on cyclicals, low-moat stocks)
+- Portfolio simulation engine for paper trading
+- Brokerage CSV import support
+
+### Backtesting & Validation
+- Walk-forward backtesting engine
+- Monte Carlo simulation for drawdown analysis
+- Confidence calibration charts (predicted vs. actual win rates)
+- Strategy performance visualization
+
+### Advanced Risk Management
+- **Correlation Guard** — blocks correlated positions that would amplify drawdowns
+- **Conflict Detector** — flags contradictory signals on the same ticker
+- **Market Regime Filter** — penalizes signals during crisis/high-vol periods
+- **Exposure Monitor** — enforces max sector, max portfolio, and max concurrent position limits
+- ATR-based stop losses with Kelly fraction sizing (quarter-Kelly default)
+
+### Sentiment & News Intelligence
+- 42 curated RSS feeds across financial news, macro, and sector sources
+- Reddit sentiment analysis (retail vs. institutional narrative detection)
+- **Sentiment-Price Divergence Detector** — identifies "Panic Exhaustion" (price falling + sentiment improving) and "Euphoria Climax" (price rising + sentiment deteriorating) patterns
+- **Cross-Source Validation** — requires multiple independent sources to confirm a thesis
+- Semantic deduplication to prevent duplicate signals from the same event
+- Ticker-specific news feed with AI-enriched context
+
+### Outcome Tracking & Learning
+- Automated win/loss tracking at **1-day, 5-day, 10-day, and 30-day** intervals
+- AI-generated **outcome narratives** explaining what happened and why
+- **Post-mortem analysis** with Buffett/Lynch lesson extraction
+- Performance leaderboard and strategy-level statistics
+- Weighted ROI calculations across bias types and sectors
+
+### Trade Journal
+- Manual trade logging with mood tracking, tags, and signal linkage
+- Replay trades with annotated chart overlays
+
+### Smart Alerts
+- Multi-channel: email (Resend) + browser push notifications
+- Gated by confidence threshold + TA alignment + confluence score
+- Configurable per-signal-type notification preferences
+
+---
 
 ## Tech Stack
 
-- **Frontend:** React 19 + TypeScript + Tailwind CSS 4 + Vite 6
-- **Backend:** Supabase (Postgres + Edge Functions + Auth + Realtime)
-- **AI:** Google Gemini (`gemini-3-flash-preview` for reasoning, `gemini-2.0-flash` for grounded search)
-- **State:** Zustand
-- **Charts:** Recharts + TradingView widgets
-- **Deployment:** Vercel
+| Layer | Technology |
+|-------|-----------|
+| **Frontend** | React 19 + TypeScript + Tailwind CSS 4 + Vite 6 |
+| **Backend** | Supabase (Postgres + Edge Functions + Auth + Realtime) |
+| **AI Reasoning** | Google Gemini (`gemini-3-flash-preview` for analysis, `gemini-2.0-flash` for grounded search) |
+| **Charts** | TradingView widgets + Lightweight Charts + Recharts |
+| **State** | Zustand |
+| **Animations** | Framer Motion |
+| **Deployment** | Vercel |
 
-## Features
+### Architecture Highlights
+- **13 Edge Functions** handling AI proxy, market data aggregation, RSS parsing, Reddit sentiment, crypto/forex/treasury/macro data, and email alerts
+- **48+ specialized services** — from scanner orchestration and agent pipelines to isotonic regression calibrators and correlation matrices
+- **Intelligent caching** at every layer (quotes: 60s, fundamentals: 6h, AI content: 30m, regime: 2h) to minimize API costs
+- **Budget controls** with daily/monthly Gemini API spend limits and 80% threshold alerts
+- **Strict TypeScript** with enforced `tsc --noEmit` before every deploy
 
-- **AI Signal Generation** — Overreaction and contagion detection agents with self-critique validation, confidence calibration, and earnings guard
-- **Real-Time Dashboard** — Market snapshot (indices, VIX, crypto, commodities), Fear & Greed gauge, AI-generated market briefings
-- **Portfolio Management** — Position tracking, unrealized P&L, sector exposure, portfolio simulation
-- **Backtesting** — Walk-forward validation, Monte Carlo simulation, confidence calibration charts
-- **Outcome Tracking** — Automated win/loss tracking at 1d, 5d, 10d, 30d intervals with AI-generated outcome narratives
-- **Market Intelligence** — 42 RSS feeds, Reddit sentiment, ticker-specific news, sector heatmaps
-- **Risk Management** — ATR-based stops, Kelly criterion sizing, conflict detection, signal decay engine
-- **Trade Journal** — Manual trade logging with mood tracking, tags, and signal linkage
-- **Smart Alerts** — Email (via Resend) and browser push notifications gated by confidence + TA alignment + confluence
+---
+
+## Project Structure
+
+```
+src/
+├── components/
+│   ├── analysis/      # Agent reasoning, bias breakdown, risk/reward charts
+│   ├── dashboard/     # Market snapshot, portfolio, signals, watchlist, heatmaps
+│   ├── scanner/       # Scanner controls & activity logs
+│   ├── sentinel/      # News intelligence, convergence alerts, briefings
+│   ├── signals/       # Signal filtering & display
+│   └── shared/        # Reusable primitives (Badge, Sparkline, LoadingState)
+├── config/
+│   ├── constants.ts   # All thresholds, defaults, and guardrail parameters
+│   ├── rssFeeds.ts    # 42 RSS feed definitions
+│   └── supabase.ts    # Supabase client initialization
+├── hooks/             # React hooks (market data, signals, settings)
+├── pages/             # 15 route pages (Dashboard, Scanner, Analysis, Journal, etc.)
+├── services/          # 48+ specialized services (see below)
+├── stores/            # Zustand state management
+├── types/             # TypeScript type definitions
+└── utils/             # Formatting, validation, calculations
+
+supabase/
+├── functions/
+│   ├── proxy-gemini/        # AI reasoning gateway (rate-limited, model-switching)
+│   ├── proxy-market-data/   # Market data aggregation
+│   ├── proxy-rss/           # RSS feed parser
+│   ├── proxy-reddit/        # Reddit sentiment extraction
+│   ├── proxy-crypto/        # Cryptocurrency data
+│   ├── proxy-forex/         # Foreign exchange rates
+│   ├── proxy-treasury/      # Treasury yield data
+│   ├── proxy-economic/      # Economic indicators
+│   ├── proxy-macro/         # Macro data aggregation
+│   ├── proxy-fear-greed/    # Fear & Greed Index
+│   ├── post-mortem/         # AI-powered trade post-mortems
+│   ├── sentinel/            # Main scanner execution loop
+│   └── send-alert-email/    # Email alerts via Resend
+└── migrations/              # Database schema
+```
+
+---
 
 ## Getting Started
 
@@ -67,78 +254,7 @@ npx tsc --noEmit   # Type check only (run before pushing)
 npm run preview    # Preview production build locally
 ```
 
-## Project Structure
-
-```
-src/
-├── components/
-│   ├── analysis/      # Signal analysis views (bias weights, events, fundamentals)
-│   ├── dashboard/     # Dashboard widgets (signals, portfolio, watchlist, market)
-│   ├── scanner/       # Scanner control & activity logs
-│   ├── sentinel/      # News intelligence UI
-│   └── shared/        # Reusable primitives (Badge, Sparkline, LoadingState)
-├── config/
-│   ├── constants.ts   # All magic numbers, thresholds, defaults
-│   ├── rssFeeds.ts    # 42 RSS feed definitions
-│   └── supabase.ts    # Supabase client init
-├── hooks/             # React hooks (market data, signals, settings)
-├── pages/             # Route pages (Dashboard, Scanner, Research, Journal, etc.)
-├── services/          # Core business logic
-│   ├── scanner.ts     # Main scan orchestrator
-│   ├── agents.ts      # AI agent runners (overreaction, contagion)
-│   ├── gemini.ts      # Gemini API wrapper
-│   ├── marketData.ts  # Market data service with caching
-│   ├── outcomeTracker.ts    # Automated win/loss tracking
-│   ├── positionSizer.ts     # Kelly criterion + ATR-based sizing
-│   ├── signalDecay.ts       # Time-based confidence decay
-│   └── ...            # 30+ specialized services
-├── stores/            # Zustand stores
-├── types/             # TypeScript type definitions
-└── utils/             # Formatting, validation, calculations
-
-supabase/
-├── functions/
-│   ├── proxy-gemini/       # AI reasoning gateway (rate-limited)
-│   ├── proxy-market-data/  # Market data aggregation
-│   ├── proxy-rss/          # RSS feed parser
-│   ├── proxy-reddit/       # Reddit sentiment
-│   ├── sentinel/           # Main scanner loop
-│   └── send-alert-email/   # Email alerts via Resend
-└── migrations/             # Database schema
-```
-
-## Signal Pipeline
-
-```
-RSS Feeds / Market Data / Reddit
-        ↓
-   Event Extraction (severity scoring)
-        ↓
-   AI Agents (Overreaction + Contagion detection)
-        ↓
-   Technical Analysis alignment check
-        ↓
-   Self-Critique pass (confidence adjustment)
-        ↓
-   Earnings Guard + Conflict Detection
-        ↓
-   Confidence Calibration (historical win-rate mapping)
-        ↓
-   Signal stored → Alerts dispatched → Outcome tracking begins
-```
-
-## Key Configuration
-
-All thresholds and defaults are centralized in `src/config/constants.ts`:
-
-| Constant | Default | Purpose |
-|----------|---------|---------|
-| `DEFAULT_MIN_CONFIDENCE` | 60 | Minimum signal confidence to surface |
-| `CONFIDENCE_GATE_OVERREACTION` | 75 | Initial gate for overreaction signals |
-| `VIX_VOLATILITY_THRESHOLD` | 25 | VIX level that triggers "volatile" mood |
-| `DEFAULT_DAILY_BUDGET` | $2.00 | Daily Gemini API spend limit |
-| `DEFAULT_STARTING_CAPITAL` | $10,000 | Portfolio simulation default |
-| `DEFAULT_RISK_PER_TRADE_PCT` | 2% | Max risk per trade |
+---
 
 ## License
 
