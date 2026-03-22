@@ -42,6 +42,7 @@ import { CrossSourceValidator } from './crossSourceValidator';
 import { RetailVsNewsSentimentDetector } from './retailVsNewsSentiment';
 import { SourceDiversityScorer } from './sourceDiversityScorer';
 import { NoiseAwareConfidenceService } from './noiseAwareConfidence';
+import { DecisionTwinService } from './decisionTwin';
 import { fetchExternalSentiment, buildScanContext } from './scannerPipeline/contextStage';
 import { DEFAULT_MIN_CONFIDENCE, DEFAULT_MIN_PRICE_RISE_PCT, CONFIDENCE_GATE_OVERREACTION, CONFIDENCE_GATE_CATALYST, CONFIDENCE_GATE_CONTAGION, CONFIDENCE_GATE_CRITIQUE, CONFIDENCE_FLOOR, SEVERITY_THRESHOLD } from '@/config/constants';
 import type { MultiTimeframeResult } from './technicalAnalysis';
@@ -928,6 +929,51 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             console.warn(`[Scanner] Noise-Aware Confidence failed for ${ev.ticker} (non-fatal):`, noiseErr);
                                         }
 
+                                        // 7.5.8. DECISION TWIN SIMULATION — 3 investor personas evaluate the thesis
+                                        let decisionTwinOutput: import('@/types/agents').DecisionTwinResult | null = null;
+                                        try {
+                                            decisionTwinOutput = await DecisionTwinService.simulate({
+                                                ticker: ev.ticker,
+                                                thesis: analysis.data.thesis,
+                                                reasoning: analysis.data.reasoning || analysis.data.thesis,
+                                                confidence: analysis.data.confidence_score,
+                                                targetPrice: analysis.data.target_price,
+                                                stopLoss: analysis.data.stop_loss,
+                                                currentPrice: quote.price,
+                                                entryHigh: analysis.data.suggested_entry_high,
+                                                signalType,
+                                                // Value inputs
+                                                moatRating: analysis.data.moat_rating,
+                                                lynchCategory: analysis.data.lynch_category,
+                                                convictionScore: analysis.data.conviction_score,
+                                                peRatio: fundamentalsData?.pe_ratio ?? null,
+                                                debtToEquity: fundamentalsData?.debt_to_equity ?? null,
+                                                profitMargin: fundamentalsData?.profit_margin ?? null,
+                                                fiftyTwoWeekHigh: quote.fiftyTwoWeekHigh,
+                                                // Momentum inputs
+                                                taSnapshot: earlyTaSnapshot,
+                                                // Risk inputs
+                                                vix: regimeResult?.vixLevel ?? null,
+                                                regime: regimeResult?.regime,
+                                            });
+
+                                            if (decisionTwinOutput.confidence_adjustment !== 0) {
+                                                const before = analysis.data.confidence_score;
+                                                analysis.data.confidence_score = decisionTwinOutput.adjusted_confidence;
+                                                console.log(`[Scanner] Decision Twin for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${decisionTwinOutput.summary})`);
+                                            } else {
+                                                console.log(`[Scanner] Decision Twin for ${ev.ticker}: no adjustment. ${decisionTwinOutput.summary}`);
+                                            }
+
+                                            // If all 3 personas voted SKIP, suppress the signal entirely
+                                            if (decisionTwinOutput.skip_count === 3) {
+                                                console.warn(`[Scanner] Decision Twin suppressed ${ev.ticker}: all 3 personas voted SKIP`);
+                                                continue;
+                                            }
+                                        } catch (twinErr) {
+                                            console.warn(`[Scanner] Decision Twin failed for ${ev.ticker} (non-fatal):`, twinErr);
+                                        }
+
                                         // 7.6. SENTIMENT DIVERGENCE BOOST — adjust confidence based on narrative-price divergence
                                         if (divergenceResult && divergenceResult.confidenceBoost !== 0) {
                                             const before = analysis.data.confidence_score;
@@ -1462,6 +1508,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                 } : null,
                                                 bias_detective: biasDetectiveOutput,
                                                 noise_confidence: noiseConfidenceOutput,
+                                                decision_twin: decisionTwinOutput,
                                             } as unknown as Json,
                                             margin_of_safety_pct: marginOfSafetyPct,
                                             conviction_score: typeof analysis.data.conviction_score === 'number'
@@ -1938,6 +1985,34 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                         }
                     } catch { /* non-fatal */ }
 
+                    // 7b.8. DECISION TWIN SIMULATION — 3 investor personas evaluate the thesis
+                    let singleDecisionTwinOutput: import('@/types/agents').DecisionTwinResult | null = null;
+                    try {
+                        singleDecisionTwinOutput = await DecisionTwinService.simulate({
+                            ticker,
+                            thesis: analysis.data.thesis,
+                            reasoning: analysis.data.reasoning || analysis.data.thesis,
+                            confidence: singleConfidence,
+                            targetPrice: analysis.data.target_price,
+                            stopLoss: analysis.data.stop_loss,
+                            currentPrice,
+                            entryHigh: analysis.data.suggested_entry_high,
+                            signalType: 'long_overreaction',
+                            moatRating: analysis.data.moat_rating,
+                            lynchCategory: analysis.data.lynch_category,
+                            convictionScore: analysis.data.conviction_score,
+                            fiftyTwoWeekHigh: quote.fiftyTwoWeekHigh,
+                            taSnapshot: singleTaSnapshot,
+                        });
+                        if (singleDecisionTwinOutput.confidence_adjustment !== 0) {
+                            singleConfidence = singleDecisionTwinOutput.adjusted_confidence;
+                        }
+                        if (singleDecisionTwinOutput.skip_count === 3) {
+                            console.warn(`[Scanner] Decision Twin suppressed single-ticker ${ticker}: all 3 personas voted SKIP`);
+                            return { success: false, error: 'Decision Twin: all personas voted SKIP' };
+                        }
+                    } catch { /* non-fatal */ }
+
                     // Margin-of-safety check
                     const singleMosCheck = ConvictionGuardrails.checkMarginOfSafety(
                         currentPrice,
@@ -1992,6 +2067,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                 self_critique: critiqueOutput,
                                 bias_detective: singleBiasDetectiveOutput,
                                 noise_confidence: singleNoiseConfidenceOutput,
+                                decision_twin: singleDecisionTwinOutput,
                             } as unknown as Json,
                             margin_of_safety_pct: singleMarginPct,
                             conviction_score: typeof analysis.data.conviction_score === 'number'

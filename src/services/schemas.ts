@@ -153,6 +153,39 @@ export const BULLISH_CATALYST_SCHEMA = {
 };
 
 /**
+ * Decision Twin — single persona evaluation schema.
+ * Shared across all 3 personas; the persona identity comes from the system prompt.
+ * Reasoning is first so the model commits to evidence before declaring its verdict.
+ */
+export const DECISION_TWIN_SCHEMA = {
+    type: "object",
+    properties: {
+        reasoning: {
+            type: "string",
+            description: "Step-by-step evaluation of the thesis through your specific investment lens. Cite specific numbers where possible."
+        },
+        verdict: {
+            type: "string",
+            enum: ["take", "caution", "skip"],
+            description: "'take' = you would enter this trade, 'caution' = you'd watch but not act now, 'skip' = you would not enter under any conditions."
+        },
+        rationale: {
+            type: "string",
+            description: "1-2 sentences summarising why you voted take/caution/skip."
+        },
+        key_concern: {
+            type: "string",
+            description: "The single most important risk or dealbreaker from YOUR perspective. Be specific."
+        },
+        confidence_score: {
+            type: "integer",
+            description: "Your independent confidence (0-100) that this is a winning trade from your investment philosophy."
+        }
+    },
+    required: ["reasoning", "verdict", "rationale", "key_concern", "confidence_score"]
+};
+
+/**
  * Bias Detective — full 15-bias taxonomy scan of a primary agent's thesis.
  * Reasoning is first so the model commits to evidence before scoring severity.
  */

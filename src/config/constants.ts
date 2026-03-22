@@ -175,6 +175,18 @@ export const BIAS_DETECTIVE_PENALTY_PER_MODERATE = 4;
 export const BIAS_DETECTIVE_MAX_PENALTY = 25;
 
 // ===========================
+// DECISION TWIN SIMULATION
+// ===========================
+/** Confidence boost when all 3 personas unanimously vote TAKE */
+export const TWIN_UNANIMOUS_TAKE_BOOST = 8;
+/** Boost when 2 TAKE + 1 CAUTION */
+export const TWIN_MAJORITY_TAKE_BOOST = 3;
+/** Penalty per SKIP verdict */
+export const TWIN_SKIP_PENALTY = 10;
+/** Max cumulative penalty from Decision Twins */
+export const TWIN_MAX_PENALTY = 25;
+
+// ===========================
 // NOISE-AWARE CONFIDENCE
 // ===========================
 /** Std-dev above which the 3-judge panel is considered divergent → penalty */

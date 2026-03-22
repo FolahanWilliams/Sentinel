@@ -106,6 +106,29 @@ export interface BiasDetectiveResult {
     adjusted_confidence: number; // original_confidence − total_penalty
 }
 
+/** Single persona verdict from the Decision Twin simulation (Phase 2 — P1) */
+export interface PersonaVerdict {
+    persona: 'value_investor' | 'momentum_trader' | 'risk_manager';
+    verdict: 'take' | 'caution' | 'skip';
+    rationale: string;        // 1-2 sentence reasoning for the verdict
+    key_concern: string;      // top risk or dealbreaker
+    confidence_score: number; // persona's independent confidence (0-100)
+}
+
+/** Aggregated output from the 3-persona Decision Twin simulation */
+export interface DecisionTwinResult {
+    value: PersonaVerdict;
+    momentum: PersonaVerdict;
+    risk: PersonaVerdict;
+    unanimous_take: boolean;
+    skip_count: number;
+    caution_count: number;
+    confidence_adjustment: number;  // net boost or penalty applied
+    adjusted_confidence: number;    // original_confidence + adjustment
+    flagged: boolean;               // true when any persona voted SKIP
+    summary: string;                // one-line summary of panel verdict
+}
+
 /** Output from the Noise-Aware Confidence 3-judge panel (Phase 2 — P0) */
 export interface NoiseConfidenceResult {
     scores: [number, number, number];     // raw confidence from judge_low/mid/high temps
