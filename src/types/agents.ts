@@ -106,6 +106,21 @@ export interface BiasDetectiveResult {
     adjusted_confidence: number; // original_confidence − total_penalty
 }
 
+/** Single SWOT item — a point with supporting evidence */
+export interface SWOTItem {
+    point: string;     // concise statement (1 sentence)
+    evidence: string;  // specific evidence or source cited
+}
+
+/** Structured SWOT analysis enriching the signal thesis narrative (Phase 2 — P1) */
+export interface SWOTResult {
+    strengths: SWOTItem[];      // 2-3: what the thesis gets right
+    weaknesses: SWOTItem[];     // 2-3: structural holes or blind spots
+    opportunities: SWOTItem[];  // 1-2: alpha not yet priced in
+    threats: SWOTItem[];        // 2-3: risks that could invalidate the thesis
+    executive_summary: string;  // 2-3 sentence trader-facing narrative
+}
+
 /** Single persona verdict from the Decision Twin simulation (Phase 2 — P1) */
 export interface PersonaVerdict {
     persona: 'value_investor' | 'momentum_trader' | 'risk_manager';

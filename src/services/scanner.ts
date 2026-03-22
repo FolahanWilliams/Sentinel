@@ -43,6 +43,7 @@ import { RetailVsNewsSentimentDetector } from './retailVsNewsSentiment';
 import { SourceDiversityScorer } from './sourceDiversityScorer';
 import { NoiseAwareConfidenceService } from './noiseAwareConfidence';
 import { DecisionTwinService } from './decisionTwin';
+import { SWOTAnalysisService } from './swotAnalysis';
 import { fetchExternalSentiment, buildScanContext } from './scannerPipeline/contextStage';
 import { DEFAULT_MIN_CONFIDENCE, DEFAULT_MIN_PRICE_RISE_PCT, CONFIDENCE_GATE_OVERREACTION, CONFIDENCE_GATE_CATALYST, CONFIDENCE_GATE_CONTAGION, CONFIDENCE_GATE_CRITIQUE, CONFIDENCE_FLOOR, SEVERITY_THRESHOLD } from '@/config/constants';
 import type { MultiTimeframeResult } from './technicalAnalysis';
@@ -1282,6 +1283,31 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             }
                                         } catch { /* non-fatal */ }
 
+                                        // 7.9. SWOT ANALYSIS — narrative enrichment (non-blocking, no confidence impact)
+                                        let swotOutput: import('@/types/agents').SWOTResult | null = null;
+                                        try {
+                                            swotOutput = await SWOTAnalysisService.analyze({
+                                                ticker: ev.ticker,
+                                                headline: ev.headline,
+                                                thesis: analysis.data.thesis,
+                                                reasoning: analysis.data.reasoning || analysis.data.thesis,
+                                                confidence: analysis.data.confidence_score,
+                                                signalType,
+                                                counterThesis: sanity.data?.counter_thesis ?? null,
+                                                criticalFlaws: critiqueOutput?.criticalFlaws ?? [],
+                                                decisionTwin: decisionTwinOutput,
+                                                moatRating: analysis.data.moat_rating,
+                                                lynchCategory: analysis.data.lynch_category,
+                                                peRatio: fundamentalsData?.pe_ratio ?? null,
+                                                debtToEquity: fundamentalsData?.debt_to_equity ?? null,
+                                                profitMargin: fundamentalsData?.profit_margin ?? null,
+                                                taSnapshot: earlyTaSnapshot,
+                                            });
+                                            console.log(`[Scanner] SWOT generated for ${ev.ticker}: "${swotOutput.executive_summary.slice(0, 80)}..."`);
+                                        } catch (swotErr) {
+                                            console.warn(`[Scanner] SWOT failed for ${ev.ticker} (non-fatal):`, swotErr);
+                                        }
+
                                         // 8. WINNER! WE HAVE A SIGNAL.
                                         signalsGenerated++;
 
@@ -1509,6 +1535,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                 bias_detective: biasDetectiveOutput,
                                                 noise_confidence: noiseConfidenceOutput,
                                                 decision_twin: decisionTwinOutput,
+                                                swot: swotOutput,
                                             } as unknown as Json,
                                             margin_of_safety_pct: marginOfSafetyPct,
                                             conviction_score: typeof analysis.data.conviction_score === 'number'
@@ -2044,6 +2071,25 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                             singleTaSnapshot, 'long', singleConfidence
                         );
 
+                        // 7e. SWOT ANALYSIS — narrative enrichment (non-blocking)
+                        let singleSwotOutput: import('@/types/agents').SWOTResult | null = null;
+                        try {
+                            singleSwotOutput = await SWOTAnalysisService.analyze({
+                                ticker,
+                                headline: `Manual scan: ${ticker}`,
+                                thesis: analysis.data.thesis,
+                                reasoning: analysis.data.reasoning || analysis.data.thesis,
+                                confidence: singleConfidence,
+                                signalType: 'long_overreaction',
+                                counterThesis: sanity.data?.counter_thesis ?? null,
+                                criticalFlaws: critiqueOutput?.criticalFlaws ?? [],
+                                decisionTwin: singleDecisionTwinOutput,
+                                moatRating: analysis.data.moat_rating,
+                                lynchCategory: analysis.data.lynch_category,
+                                taSnapshot: singleTaSnapshot,
+                            });
+                        } catch { /* non-fatal */ }
+
                         const { data: savedSignal, error: discSignalErr } = await supabase.from('signals').insert({
                             ticker: ticker,
                             signal_type: 'long_overreaction',
@@ -2068,6 +2114,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                 bias_detective: singleBiasDetectiveOutput,
                                 noise_confidence: singleNoiseConfidenceOutput,
                                 decision_twin: singleDecisionTwinOutput,
+                                swot: singleSwotOutput,
                             } as unknown as Json,
                             margin_of_safety_pct: singleMarginPct,
                             conviction_score: typeof analysis.data.conviction_score === 'number'

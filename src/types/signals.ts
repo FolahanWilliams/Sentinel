@@ -78,8 +78,8 @@ export interface Signal {
     updated_at: string;
 }
 
-import type { OverreactionResult, SanityCheckResult, ContagionResult, BullishCatalystResult, BiasDetectiveResult, NoiseConfidenceResult, DecisionTwinResult } from './agents';
-export type { OverreactionResult, SanityCheckResult, ContagionResult, BullishCatalystResult, BiasDetectiveResult, NoiseConfidenceResult, DecisionTwinResult };
+import type { OverreactionResult, SanityCheckResult, ContagionResult, BullishCatalystResult, BiasDetectiveResult, NoiseConfidenceResult, DecisionTwinResult, SWOTResult } from './agents';
+export type { OverreactionResult, SanityCheckResult, ContagionResult, BullishCatalystResult, BiasDetectiveResult, NoiseConfidenceResult, DecisionTwinResult, SWOTResult };
 
 export interface AgentOutputsJson {
     overreaction?: OverreactionResult;
@@ -244,6 +244,8 @@ export interface AgentOutputsJson {
     noise_confidence?: NoiseConfidenceResult | null;
     // Phase 2 — P1: Decision Twin Simulation
     decision_twin?: DecisionTwinResult | null;
+    // Phase 2 — P1: SWOT Analysis
+    swot?: SWOTResult | null;
     // Legacy fields for older signals
     event_detector?: any;
     bias_classifier?: any;

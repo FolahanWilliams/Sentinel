@@ -153,6 +153,76 @@ export const BULLISH_CATALYST_SCHEMA = {
 };
 
 /**
+ * SWOT Analysis schema — enriches the thesis narrative with structured
+ * Strengths / Weaknesses / Opportunities / Threats + an executive summary.
+ * Non-blocking: does not modify confidence, only adds narrative richness.
+ *
+ * reasoning is first so the model commits to evidence before populating items.
+ */
+export const SWOT_SCHEMA = {
+    type: "object",
+    properties: {
+        reasoning: {
+            type: "string",
+            description: "Think through all pipeline evidence — thesis, counter-thesis, Decision Twin concerns, fundamentals — before populating each SWOT quadrant."
+        },
+        strengths: {
+            type: "array",
+            description: "2-3 genuine strengths: what the thesis gets verifiably right.",
+            items: {
+                type: "object",
+                properties: {
+                    point: { type: "string", description: "Concise strength statement (1 sentence)." },
+                    evidence: { type: "string", description: "Specific supporting evidence (metric, event, or data point)." }
+                },
+                required: ["point", "evidence"]
+            }
+        },
+        weaknesses: {
+            type: "array",
+            description: "2-3 weaknesses: structural holes or blind spots in the current thesis.",
+            items: {
+                type: "object",
+                properties: {
+                    point: { type: "string", description: "Concise weakness statement (1 sentence)." },
+                    evidence: { type: "string", description: "Why this is a weakness — cite the counter-thesis, a flaw, or missing data." }
+                },
+                required: ["point", "evidence"]
+            }
+        },
+        opportunities: {
+            type: "array",
+            description: "1-2 opportunities: upside catalysts or alpha NOT yet reflected in the current price or thesis.",
+            items: {
+                type: "object",
+                properties: {
+                    point: { type: "string", description: "Concise opportunity statement (1 sentence)." },
+                    evidence: { type: "string", description: "Why this upside is plausible but not yet priced in." }
+                },
+                required: ["point", "evidence"]
+            }
+        },
+        threats: {
+            type: "array",
+            description: "2-3 threats: risks that could directly invalidate the thesis or stop the trade out.",
+            items: {
+                type: "object",
+                properties: {
+                    point: { type: "string", description: "Concise threat statement (1 sentence)." },
+                    evidence: { type: "string", description: "Why this threat is real and specific to this ticker/thesis." }
+                },
+                required: ["point", "evidence"]
+            }
+        },
+        executive_summary: {
+            type: "string",
+            description: "2-3 sentence trader-facing narrative synthesising the SWOT. Lead with the strongest argument for the trade, then acknowledge the key risk."
+        }
+    },
+    required: ["reasoning", "strengths", "weaknesses", "opportunities", "threats", "executive_summary"]
+};
+
+/**
  * Decision Twin — single persona evaluation schema.
  * Shared across all 3 personas; the persona identity comes from the system prompt.
  * Reasoning is first so the model commits to evidence before declaring its verdict.
