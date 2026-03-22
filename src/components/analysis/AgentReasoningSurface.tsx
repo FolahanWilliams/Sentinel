@@ -17,8 +17,13 @@ import {
     Zap,
     Users,
     ArrowRight,
+    Microscope,
+    Waves,
 } from 'lucide-react';
 import { formatPercent } from '@/utils/formatters';
+import { DecisionTwinPanel } from './DecisionTwinPanel';
+import { SWOTCard } from './SWOTCard';
+import type { DecisionTwinResult, SWOTResult } from '@/types/agents';
 
 interface AgentReasoningSurfaceProps {
     signal: {
@@ -37,6 +42,11 @@ interface AgentReasoningSurfaceProps {
             correlation_guard?: { penalty: number } | null;
             options_flow?: { confidence_adjustment: number; sentiment: string } | null;
             peer_strength?: { confidence_adjustment: number; is_idiosyncratic: boolean } | null;
+            // Phase 2 agents
+            bias_detective?: { total_penalty: number; dominant_bias: string } | null;
+            noise_confidence?: { confidence_adjustment: number } | null;
+            decision_twin?: DecisionTwinResult | null;
+            swot?: SWOTResult | null;
         };
     };
 }
@@ -149,6 +159,32 @@ export function AgentReasoningSurface({ signal }: AgentReasoningSurfaceProps) {
                 </div>
             )}
 
+            {/* Decision Twin Simulation */}
+            {agent_outputs.decision_twin && (
+                <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                        <Users className="w-3.5 h-3.5 text-sentinel-400" />
+                        <span className="text-xs font-semibold text-sentinel-400 uppercase tracking-wider">
+                            Decision Twin Simulation
+                        </span>
+                    </div>
+                    <DecisionTwinPanel result={agent_outputs.decision_twin} />
+                </div>
+            )}
+
+            {/* SWOT Analysis */}
+            {agent_outputs.swot && (
+                <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                        <Microscope className="w-3.5 h-3.5 text-sentinel-400" />
+                        <span className="text-xs font-semibold text-sentinel-400 uppercase tracking-wider">
+                            SWOT Analysis
+                        </span>
+                    </div>
+                    <SWOTCard result={agent_outputs.swot} />
+                </div>
+            )}
+
             {/* Confidence Waterfall */}
             {waterfallSteps.length > 0 && (
                 <div className="space-y-3">
@@ -240,6 +276,36 @@ function buildWaterfallSteps(
             label: 'Self-Critique',
             value: critiqueAdj,
             icon: <Eye className="w-3.5 h-3.5" />,
+        });
+    }
+
+    // Bias Detective
+    const biasDetective = agent_outputs.bias_detective;
+    if (biasDetective?.total_penalty) {
+        steps.push({
+            label: 'Bias Det.',
+            value: -biasDetective.total_penalty,
+            icon: <Microscope className="w-3.5 h-3.5" />,
+        });
+    }
+
+    // Noise-Aware Confidence
+    const noiseAdj = agent_outputs.noise_confidence?.confidence_adjustment;
+    if (noiseAdj != null && noiseAdj !== 0) {
+        steps.push({
+            label: 'Noise',
+            value: noiseAdj,
+            icon: <Waves className="w-3.5 h-3.5" />,
+        });
+    }
+
+    // Decision Twin
+    const twinAdj = agent_outputs.decision_twin?.confidence_adjustment;
+    if (twinAdj != null && twinAdj !== 0) {
+        steps.push({
+            label: 'Twins',
+            value: twinAdj,
+            icon: <Users className="w-3.5 h-3.5" />,
         });
     }
 
