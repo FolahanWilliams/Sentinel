@@ -12,7 +12,7 @@
 
 import { supabase } from '@/config/supabase';
 import { MarketDataService } from './marketData';
-import { AgentService, type MarketContext } from './agents';
+import { AgentService, type MarketContext, type PriorAgentContext } from './agents';
 import { GeminiService } from './gemini';
 import { NotificationService } from './notifications';
 import { RSSReaderService } from './rssReader';
@@ -40,6 +40,7 @@ import { ConvictionGuardrails } from './convictionGuardrails';
 import { MultiTimeframeService } from './multiTimeframe';
 import { CrossSourceValidator } from './crossSourceValidator';
 import { RetailVsNewsSentimentDetector } from './retailVsNewsSentiment';
+import { SourceDiversityScorer } from './sourceDiversityScorer';
 import { fetchExternalSentiment, buildScanContext } from './scannerPipeline/contextStage';
 import { DEFAULT_MIN_CONFIDENCE, DEFAULT_MIN_PRICE_RISE_PCT, CONFIDENCE_GATE_OVERREACTION, CONFIDENCE_GATE_CATALYST, CONFIDENCE_GATE_CONTAGION, CONFIDENCE_GATE_CRITIQUE, CONFIDENCE_FLOOR, SEVERITY_THRESHOLD } from '@/config/constants';
 import type { MultiTimeframeResult } from './technicalAnalysis';
@@ -736,7 +737,8 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                         perfContext,
                                         marketContext,
                                         enrichedTaContext,
-                                        historicalCtx
+                                        historicalCtx,
+                                        regimeResult?.regime
                                     );
 
                                     // Normalize catalyst result to overreaction shape for unified downstream processing
@@ -757,7 +759,8 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                         console.log(`[Scanner] Bullish catalyst: no underreaction for ${ev.ticker}, falling back to overreaction agent`);
                                         analysis = await AgentService.evaluateOverreaction(
                                             ev.ticker, ev.headline, eventContext, quote.price, priceDrop,
-                                            perfContext, marketContext, enrichedTaContext, historicalCtx
+                                            perfContext, marketContext, enrichedTaContext, historicalCtx,
+                                            regimeResult?.regime
                                         );
                                     }
                                 } else {
@@ -771,7 +774,8 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                         perfContext,
                                         marketContext,
                                         enrichedTaContext,
-                                        historicalCtx
+                                        historicalCtx,
+                                        regimeResult?.regime
                                     );
                                 }
 
@@ -821,15 +825,29 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                         console.warn(`[Scanner] TA fetch failed for ${ev.ticker}, proceeding without TA:`, taErr);
                                     }
 
-                                    // 7. SANITY CHECK (Red Team)
+                                    // 7. SANITY CHECK (Red Team) — with cascading context from originating agent
+                                    // The Red Team receives the full structured output of the prior agent so it can
+                                    // mount a targeted challenge against specific weak points (not just the thesis string).
+                                    const priorContext: PriorAgentContext = {
+                                        agentName: catalystAgentUsed ? 'BULLISH_CATALYST_AGENT' : 'OVERREACTION_AGENT',
+                                        confidence: analysis.data.confidence_score,
+                                        thesis: analysis.data.thesis,
+                                        reasoning: analysis.data.reasoning || analysis.data.thesis,
+                                        identifiedBiases: analysis.data.identified_biases || [],
+                                        convictionScore: analysis.data.conviction_score,
+                                        moatRating: analysis.data.moat_rating,
+                                        financialImpact: analysis.data.financial_impact_assessment,
+                                    };
                                     const sanity = await AgentService.runSanityCheck(
                                         ev.ticker,
                                         analysis.data.thesis,
                                         analysis.data.target_price,
                                         analysis.data.stop_loss,
-                                        'OVERREACTION_AGENT',
+                                        catalystAgentUsed ? 'BULLISH_CATALYST_AGENT' : 'OVERREACTION_AGENT',
                                         perfContext,
-                                        earlyTaContext
+                                        earlyTaContext,
+                                        priorContext,
+                                        regimeResult?.regime
                                     );
 
                                     // Log sanity check result
@@ -1105,6 +1123,34 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             }
                                         } catch { /* non-fatal */ }
 
+                                        // 7.16e. SOURCE DIVERSITY GATE — cap confidence for thin news coverage
+                                        // Single-source or low-diversity signals are capped at 65% confidence.
+                                        // Requires minimum 5 diversity points (e.g., 1 Tier-1 source + 1 other)
+                                        // for signals above the cap threshold.
+                                        let sourceDiversityResult: import('./sourceDiversityScorer').SourceDiversityResult | null = null;
+                                        try {
+                                            // Build source list from all available context (RSS articles, grounded search, sentinel intel)
+                                            const signalSources: string[] = [
+                                                ...(actionableArticles
+                                                    .filter((a: any) => {
+                                                        const text = `${a.title || ''}. ${a.description || ''}`;
+                                                        return text.toLowerCase().includes(ev.ticker.toLowerCase());
+                                                    })
+                                                    .map((a: any) => a.source_url || a.feed_url || a.title || '')
+                                                ),
+                                            ];
+                                            const { adjustedConfidence, result: divResult } = SourceDiversityScorer.applyGate(
+                                                signalSources,
+                                                analysis.data.confidence_score,
+                                            );
+                                            sourceDiversityResult = divResult;
+                                            if (divResult.confidenceAdjustment !== 0) {
+                                                const before = analysis.data.confidence_score;
+                                                analysis.data.confidence_score = Math.max(0, Math.min(100, adjustedConfidence));
+                                                console.log(`[Scanner] Source diversity gate for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${divResult.summary})`);
+                                            }
+                                        } catch { /* non-fatal */ }
+
                                         // Drop signal if all adjustments brought it below threshold (adaptive)
                                         if (analysis.data.confidence_score < adaptiveMinConfidence) {
                                             console.warn(`[Scanner] Signal for ${ev.ticker} dropped — confidence ${analysis.data.confidence_score} below ${adaptiveMinConfidence} after all adjustments`);
@@ -1358,6 +1404,16 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                     news_sentiment: retailVsNewsResult.newsSentiment,
                                                     sentiment_gap: retailVsNewsResult.sentimentGap,
                                                     confidence_adjustment: retailVsNewsResult.confidenceAdjustment,
+                                                } : null,
+                                                source_diversity: sourceDiversityResult ? {
+                                                    diversity_score: sourceDiversityResult.diversityScore,
+                                                    source_count: sourceDiversityResult.sourceCount,
+                                                    tier1_count: sourceDiversityResult.tier1Count,
+                                                    tier2_count: sourceDiversityResult.tier2Count,
+                                                    tier3_count: sourceDiversityResult.tier3Count,
+                                                    cap_applied: sourceDiversityResult.capApplied,
+                                                    confidence_adjustment: sourceDiversityResult.confidenceAdjustment,
+                                                    summary: sourceDiversityResult.summary,
                                                 } : null,
                                             } as unknown as Json,
                                             margin_of_safety_pct: marginOfSafetyPct,

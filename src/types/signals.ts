@@ -229,6 +229,16 @@ export interface AgentOutputsJson {
         sentiment_gap: number;
         confidence_adjustment: number;
     } | null;
+    source_diversity?: {
+        diversity_score: number;
+        source_count: number;
+        tier1_count: number;
+        tier2_count: number;
+        tier3_count: number;
+        cap_applied: boolean;
+        confidence_adjustment: number;
+        summary: string;
+    } | null;
     // Legacy fields for older signals
     event_detector?: any;
     bias_classifier?: any;
