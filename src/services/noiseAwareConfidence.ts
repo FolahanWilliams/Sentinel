@@ -82,8 +82,9 @@ Assign your independent confidence score. Do not anchor to any prior score.
 Return JSON.
 `;
 
-        // Fire all 3 judge calls in parallel
-        const [low, mid, high] = await Promise.all(
+        // Fire all 3 judge calls in parallel — allSettled so a single judge failure
+        // falls back to original confidence rather than rejecting the whole panel
+        const [lowSettled, midSettled, highSettled] = await Promise.allSettled(
             TEMPERATURES.map(temp =>
                 GeminiService.generate({
                     prompt,
@@ -96,11 +97,15 @@ Return JSON.
             )
         );
 
+        const low  = lowSettled.status  === 'fulfilled' ? lowSettled.value  : null;
+        const mid  = midSettled.status  === 'fulfilled' ? midSettled.value  : null;
+        const high = highSettled.status === 'fulfilled' ? highSettled.value : null;
+
         // Extract scores — fall back to original confidence if a judge call failed
         const scores: [number, number, number] = [
-            low.success && low.data ? Math.max(0, Math.min(100, low.data.confidence_score)) : originalConfidence,
-            mid.success && mid.data ? Math.max(0, Math.min(100, mid.data.confidence_score)) : originalConfidence,
-            high.success && high.data ? Math.max(0, Math.min(100, high.data.confidence_score)) : originalConfidence,
+            low?.success && low.data ? Math.max(0, Math.min(100, low.data.confidence_score)) : originalConfidence,
+            mid?.success && mid.data ? Math.max(0, Math.min(100, mid.data.confidence_score)) : originalConfidence,
+            high?.success && high.data ? Math.max(0, Math.min(100, high.data.confidence_score)) : originalConfidence,
         ];
 
         const mean = Math.round((scores[0] + scores[1] + scores[2]) / 3);

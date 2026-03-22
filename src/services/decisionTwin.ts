@@ -63,10 +63,17 @@ export interface DecisionTwinContext {
 
 // ── Persona prompt builders ───────────────────────────────────────────────────
 
+function safeRR(target: number, current: number, stop: number): string {
+    if (!target || !current || !stop) return 'N/A';
+    const denominator = current - stop;
+    if (Math.abs(denominator) < 0.001) return 'N/A'; // stop at/above current price
+    const rr = (target - current) / denominator;
+    if (!isFinite(rr) || rr < 0) return 'N/A';
+    return rr.toFixed(2);
+}
+
 function buildValuePrompt(ctx: DecisionTwinContext): string {
-    const rrRatio = ctx.targetPrice && ctx.stopLoss && ctx.currentPrice
-        ? ((ctx.targetPrice - ctx.currentPrice) / (ctx.currentPrice - ctx.stopLoss)).toFixed(2)
-        : 'N/A';
+    const rrRatio = safeRR(ctx.targetPrice, ctx.currentPrice, ctx.stopLoss);
     const mosDiscount = ctx.fiftyTwoWeekHigh && ctx.fiftyTwoWeekHigh > 0
         ? `${(((ctx.fiftyTwoWeekHigh - ctx.currentPrice) / ctx.fiftyTwoWeekHigh) * 100).toFixed(1)}% below 52W high`
         : 'N/A';
@@ -99,9 +106,7 @@ Return JSON.
 
 function buildMomentumPrompt(ctx: DecisionTwinContext): string {
     const ta = ctx.taSnapshot;
-    const rrRatio = ctx.targetPrice && ctx.stopLoss && ctx.currentPrice
-        ? ((ctx.targetPrice - ctx.currentPrice) / (ctx.currentPrice - ctx.stopLoss)).toFixed(2)
-        : 'N/A';
+    const rrRatio = safeRR(ctx.targetPrice, ctx.currentPrice, ctx.stopLoss);
 
     return `
 TICKER: ${ctx.ticker}
@@ -132,12 +137,10 @@ Return JSON.
 }
 
 function buildRiskPrompt(ctx: DecisionTwinContext): string {
-    const stopDistance = ctx.currentPrice && ctx.stopLoss
+    const stopDistance = ctx.currentPrice && ctx.stopLoss && ctx.currentPrice > 0
         ? Math.abs(((ctx.currentPrice - ctx.stopLoss) / ctx.currentPrice) * 100).toFixed(1)
         : 'N/A';
-    const rrRatio = ctx.targetPrice && ctx.stopLoss && ctx.currentPrice
-        ? ((ctx.targetPrice - ctx.currentPrice) / (ctx.currentPrice - ctx.stopLoss)).toFixed(2)
-        : 'N/A';
+    const rrRatio = safeRR(ctx.targetPrice, ctx.currentPrice, ctx.stopLoss);
 
     return `
 TICKER: ${ctx.ticker}
@@ -244,8 +247,9 @@ export class DecisionTwinService {
      */
     static async simulate(ctx: DecisionTwinContext): Promise<DecisionTwinResult> {
 
-        // Fire all 3 persona calls in parallel
-        const [valueResult, momentumResult, riskResult] = await Promise.all([
+        // Fire all 3 persona calls in parallel — allSettled so a single failure
+        // falls back gracefully rather than rejecting the whole simulation
+        const [valueSettled, momentumSettled, riskSettled] = await Promise.allSettled([
             GeminiService.generate({
                 prompt: buildValuePrompt(ctx),
                 systemInstruction: DECISION_TWIN_VALUE_PROMPT,
@@ -272,16 +276,20 @@ export class DecisionTwinService {
             }),
         ]);
 
-        // Map raw results → PersonaVerdict (with fallback)
-        const value: PersonaVerdict = valueResult.success && valueResult.data
+        // Map settled results → PersonaVerdict (with fallback on rejection or API error)
+        const valueResult  = valueSettled.status    === 'fulfilled' ? valueSettled.value    : null;
+        const momentumResult = momentumSettled.status === 'fulfilled' ? momentumSettled.value : null;
+        const riskResult   = riskSettled.status     === 'fulfilled' ? riskSettled.value     : null;
+
+        const value: PersonaVerdict = valueResult?.success && valueResult.data
             ? { persona: 'value_investor', ...valueResult.data }
             : fallbackVerdict('value_investor');
 
-        const momentum: PersonaVerdict = momentumResult.success && momentumResult.data
+        const momentum: PersonaVerdict = momentumResult?.success && momentumResult.data
             ? { persona: 'momentum_trader', ...momentumResult.data }
             : fallbackVerdict('momentum_trader');
 
-        const risk: PersonaVerdict = riskResult.success && riskResult.data
+        const risk: PersonaVerdict = riskResult?.success && riskResult.data
             ? { persona: 'risk_manager', ...riskResult.data }
             : fallbackVerdict('risk_manager');
 

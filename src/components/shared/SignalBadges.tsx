@@ -154,20 +154,28 @@ export function DecisionTwinBadge({ twin }: { twin: DecisionTwinResult | null | 
     let label: string;
 
     if (unanimous_take) {
+        // 3×TAKE
         className = 'bg-emerald-500/15 text-emerald-400 ring-emerald-500/30';
         label = '3× TAKE';
     } else if (skip_count === 0 && caution_count === 1) {
+        // 2×TAKE 1×CAUTION
         className = 'bg-blue-500/10 text-blue-400 ring-blue-500/20';
-        label = '2×TAKE 1×CAUTION';
+        label = '2T 1C';
+    } else if (skip_count === 0 && caution_count >= 2) {
+        // All CAUTION, or 1 TAKE + 2 CAUTION
+        const takeCount = 3 - caution_count;
+        className = 'bg-sentinel-800/50 text-sentinel-400 ring-sentinel-700/30';
+        label = takeCount > 0 ? `${takeCount}T ${caution_count}C` : '3× CAUTION';
     } else if (skip_count === 1) {
         className = 'bg-amber-500/15 text-amber-400 ring-amber-500/30';
-        label = `1 SKIP`;
-    } else if (skip_count >= 2) {
+        label = '1 SKIP';
+    } else if (skip_count === 2) {
         className = 'bg-red-500/15 text-red-400 ring-red-500/30';
-        label = `${skip_count} SKIP`;
+        label = '2 SKIP';
     } else {
-        className = 'bg-sentinel-800/50 text-sentinel-400 ring-sentinel-700/30';
-        label = `${3 - caution_count}×TAKE`;
+        // 3 SKIP
+        className = 'bg-red-600/20 text-red-300 ring-red-600/40';
+        label = '3× SKIP';
     }
 
     const adjStr = confidence_adjustment !== 0

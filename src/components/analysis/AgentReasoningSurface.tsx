@@ -33,7 +33,14 @@ interface AgentReasoningSurfaceProps {
         agent_outputs: {
             overreaction?: any;
             red_team?: any;
-            self_critique?: any;
+            self_critique?: {
+                // CritiqueResult uses camelCase (from service), older records snake_case
+                criticalFlaws?: string[];
+                critical_flaws?: string[];
+                adjustedConfidence?: number;
+                adjusted_confidence?: number;
+                confidence_adjustment?: number; // legacy alias
+            } | null;
             sentiment_divergence?: { type: string; confidence_boost: number } | null;
             earnings_guard?: { penalty: number; days_until: number | null } | null;
             market_regime?: { regime: string; penalty: number } | null;
@@ -64,10 +71,13 @@ export function AgentReasoningSurface({ signal }: AgentReasoningSurfaceProps) {
     const selfCritique = agent_outputs.self_critique;
 
     // Extract structured data
+    // Note: self_critique is stored as CritiqueResult (camelCase keys from the service).
+    // Support both camelCase (live run) and snake_case (older DB records).
     const thesis = overreaction?.thesis || signal.thesis;
     const counterThesis = redTeam?.counter_thesis || signal.counter_argument;
     const identifiedBiases: string[] = overreaction?.identified_biases ?? [];
-    const criticalFlaws: string[] = selfCritique?.critical_flaws ?? [];
+    const criticalFlaws: string[] =
+        selfCritique?.criticalFlaws ?? selfCritique?.critical_flaws ?? [];
 
     // Build confidence waterfall steps
     const waterfallSteps = buildWaterfallSteps(signal);
@@ -269,14 +279,21 @@ function buildWaterfallSteps(
         });
     }
 
-    // Self-critique
-    const critiqueAdj = agent_outputs.self_critique?.confidence_adjustment;
-    if (critiqueAdj != null) {
-        steps.push({
-            label: 'Self-Critique',
-            value: critiqueAdj,
-            icon: <Eye className="w-3.5 h-3.5" />,
-        });
+    // Self-critique — stored as CritiqueResult with camelCase keys.
+    // We show the delta (adjusted - original) so the waterfall reflects the change.
+    const sc = agent_outputs.self_critique;
+    const critiqueBase = agent_outputs.overreaction?.confidence_score ?? signal.confidence_score;
+    // adjustedConfidence is the final score; delta = adjusted - base
+    const critiqueAdjusted: number | undefined = sc?.adjustedConfidence ?? sc?.adjusted_confidence;
+    if (critiqueAdjusted != null && critiqueBase != null) {
+        const critiqueAdj = Math.round(critiqueAdjusted - critiqueBase);
+        if (critiqueAdj !== 0) {
+            steps.push({
+                label: 'Critique',
+                value: critiqueAdj,
+                icon: <Eye className="w-3.5 h-3.5" />,
+            });
+        }
     }
 
     // Bias Detective
