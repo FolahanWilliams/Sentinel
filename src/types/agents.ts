@@ -88,6 +88,74 @@ export interface SanityCheckResult {
     counter_thesis: string;
 }
 
+/** Individual bias finding from the Bias Detective agent */
+export interface BiasDetectiveFinding {
+    bias_name: string;
+    severity: 1 | 2 | 3;        // 1=mild, 2=moderate, 3=severe
+    evidence: string;            // specific sentence(s) from the thesis that expose this bias
+    penalty: number;             // confidence penalty applied for this finding
+}
+
+/** Output from the Bias Detective agent (Phase 2 — P0) */
+export interface BiasDetectiveResult {
+    reasoning: string;
+    findings: BiasDetectiveFinding[];
+    total_penalty: number;       // cumulative penalty (capped at BIAS_DETECTIVE_MAX_PENALTY)
+    dominant_bias: string;       // the most severe bias found, or 'none'
+    bias_free: boolean;          // true when no bias above severity threshold was detected
+    adjusted_confidence: number; // original_confidence − total_penalty
+}
+
+/** Single SWOT item — a point with supporting evidence */
+export interface SWOTItem {
+    point: string;     // concise statement (1 sentence)
+    evidence: string;  // specific evidence or source cited
+}
+
+/** Structured SWOT analysis enriching the signal thesis narrative (Phase 2 — P1) */
+export interface SWOTResult {
+    strengths: SWOTItem[];      // 2-3: what the thesis gets right
+    weaknesses: SWOTItem[];     // 2-3: structural holes or blind spots
+    opportunities: SWOTItem[];  // 1-2: alpha not yet priced in
+    threats: SWOTItem[];        // 2-3: risks that could invalidate the thesis
+    executive_summary: string;  // 2-3 sentence trader-facing narrative
+}
+
+/** Single persona verdict from the Decision Twin simulation (Phase 2 — P1) */
+export interface PersonaVerdict {
+    persona: 'value_investor' | 'momentum_trader' | 'risk_manager';
+    verdict: 'take' | 'caution' | 'skip';
+    rationale: string;        // 1-2 sentence reasoning for the verdict
+    key_concern: string;      // top risk or dealbreaker
+    confidence_score: number; // persona's independent confidence (0-100)
+}
+
+/** Aggregated output from the 3-persona Decision Twin simulation */
+export interface DecisionTwinResult {
+    value: PersonaVerdict;
+    momentum: PersonaVerdict;
+    risk: PersonaVerdict;
+    unanimous_take: boolean;
+    skip_count: number;
+    caution_count: number;
+    confidence_adjustment: number;  // net boost or penalty applied
+    adjusted_confidence: number;    // original_confidence + adjustment
+    flagged: boolean;               // true when any persona voted SKIP
+    summary: string;                // one-line summary of panel verdict
+}
+
+/** Output from the Noise-Aware Confidence 3-judge panel (Phase 2 — P0) */
+export interface NoiseConfidenceResult {
+    scores: [number, number, number];     // raw confidence from judge_low/mid/high temps
+    mean: number;
+    std_dev: number;
+    convergent: boolean;                  // std_dev < NOISE_JUDGE_CONVERGENCE_THRESHOLD
+    divergent: boolean;                   // std_dev > NOISE_JUDGE_DIVERGENCE_THRESHOLD
+    confidence_adjustment: number;        // negative = penalty, positive = boost
+    adjusted_confidence: number;
+    summary: string;
+}
+
 export interface AgentOutputs {
     event_detection: AgentResult<import('./events').DetectionResult>;
     bias_classification: AgentResult<import('./signals').BiasClassification> | null;

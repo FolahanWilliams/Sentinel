@@ -138,9 +138,10 @@ export const LYNCH_CATEGORY_LABELS: Record<string, string> = {
 } as const;
 
 // ===========================
-// BIAS TAXONOMY
+// BIAS TAXONOMY (15 cognitive biases)
 // ===========================
 export const BIAS_TYPES = [
+    // Core market biases (original 10)
     'overreaction',
     'anchoring',
     'herding',
@@ -151,9 +152,51 @@ export const BIAS_TYPES = [
     'disposition_effect',
     'framing',
     'representativeness',
+    // Extended taxonomy (Phase 2 — Bias Detective)
+    'narrative_fallacy',      // constructing a plausible story from sparse data
+    'status_quo_bias',        // preference to maintain current holdings/thesis
+    'overconfidence',         // excessive certainty in own analysis quality
+    'regret_aversion',        // avoiding decisions that may cause regret
+    'endowment_effect',       // overvaluing existing positions vs identical new ones
 ] as const;
 
 export type BiasType = (typeof BIAS_TYPES)[number];
+
+// ===========================
+// BIAS DETECTIVE THRESHOLDS
+// ===========================
+/** Severity at or above which a bias triggers a confidence penalty */
+export const BIAS_DETECTIVE_SEVERITY_THRESHOLD = 2; // 1=mild, 2=moderate, 3=severe
+/** Penalty applied per severe bias detected (cumulative, but capped) */
+export const BIAS_DETECTIVE_PENALTY_PER_SEVERE = 8;
+/** Penalty applied per moderate bias detected */
+export const BIAS_DETECTIVE_PENALTY_PER_MODERATE = 4;
+/** Maximum cumulative penalty the Bias Detective can apply */
+export const BIAS_DETECTIVE_MAX_PENALTY = 25;
+
+// ===========================
+// DECISION TWIN SIMULATION
+// ===========================
+/** Confidence boost when all 3 personas unanimously vote TAKE */
+export const TWIN_UNANIMOUS_TAKE_BOOST = 8;
+/** Boost when 2 TAKE + 1 CAUTION */
+export const TWIN_MAJORITY_TAKE_BOOST = 3;
+/** Penalty per SKIP verdict */
+export const TWIN_SKIP_PENALTY = 10;
+/** Max cumulative penalty from Decision Twins */
+export const TWIN_MAX_PENALTY = 25;
+
+// ===========================
+// NOISE-AWARE CONFIDENCE
+// ===========================
+/** Std-dev above which the 3-judge panel is considered divergent → penalty */
+export const NOISE_JUDGE_DIVERGENCE_THRESHOLD = 15;
+/** Std-dev below which the panel is considered convergent → small boost */
+export const NOISE_JUDGE_CONVERGENCE_THRESHOLD = 5;
+/** Confidence penalty when judges diverge */
+export const NOISE_JUDGE_DIVERGENCE_PENALTY = 10;
+/** Confidence boost when judges strongly converge */
+export const NOISE_JUDGE_CONVERGENCE_BOOST = 3;
 
 // ===========================
 // CATEGORY COLOR MAP

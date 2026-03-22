@@ -12,18 +12,37 @@ import {
     CONTAGION_AGENT_PROMPT,
     EARNINGS_AGENT_PROMPT,
     SANITY_CHECK_AGENT_PROMPT,
-    BULLISH_CATALYST_AGENT_PROMPT
+    BULLISH_CATALYST_AGENT_PROMPT,
+    BIAS_DETECTIVE_AGENT_PROMPT,
+    getRegimeOverlay
 } from './prompts';
+import type { MarketRegimeType } from './marketRegime';
 import {
     OVERREACTION_SCHEMA,
     CONTAGION_SCHEMA,
     EARNINGS_SCHEMA,
     SANITY_CHECK_SCHEMA,
     SATELLITE_DISCOVERY_SCHEMA,
-    BULLISH_CATALYST_SCHEMA
+    BULLISH_CATALYST_SCHEMA,
+    BIAS_DETECTIVE_SCHEMA
 } from './schemas';
-import { GEMINI_MODEL } from '@/config/constants';
-import type { AgentResult, OverreactionResult, ContagionResult, SanityCheckResult, BullishCatalystResult } from '@/types/agents';
+import { GEMINI_MODEL, BIAS_DETECTIVE_MAX_PENALTY } from '@/config/constants';
+import type { AgentResult, OverreactionResult, ContagionResult, SanityCheckResult, BullishCatalystResult, BiasDetectiveResult } from '@/types/agents';
+
+/**
+ * Cascading agent context — structured summary of a prior agent's output
+ * injected into the Red Team prompt so it can mount a more targeted challenge.
+ */
+export interface PriorAgentContext {
+    agentName: string;
+    confidence: number;
+    thesis: string;
+    reasoning: string;
+    identifiedBiases?: string[];
+    convictionScore?: number;
+    moatRating?: number;
+    financialImpact?: string;
+}
 
 /**
  * Extended market context for richer agent analysis.
@@ -54,7 +73,8 @@ export class AgentService {
         performanceContext?: string,
         marketContext?: MarketContext,
         taContext?: string,
-        historicalContext?: string
+        historicalContext?: string,
+        regime?: MarketRegimeType
     ): Promise<AgentResult<OverreactionResult>> {
         const perfBlock = performanceContext
             ? `\n\n${performanceContext}\n\nUse the performance data above to calibrate your confidence. If this bias type or sector historically underperforms, lower your confidence. If it outperforms, you may raise it slightly.`
@@ -70,6 +90,8 @@ export class AgentService {
 
         const taBlock = taContext || '';
         const histBlock = historicalContext || '';
+        // Prepend regime-specific reasoning guidance to the agent's system prompt
+        const regimeOverlay = regime ? getRegimeOverlay(regime, 'thesis') : '';
 
         const prompt = `
     TICKER: ${ticker}
@@ -84,7 +106,7 @@ export class AgentService {
 
         return GeminiService.generate({
             prompt,
-            systemInstruction: OVERREACTION_AGENT_PROMPT,
+            systemInstruction: regimeOverlay + OVERREACTION_AGENT_PROMPT,
             // Grounded search is incompatible with responseSchema in the Gemini API.
             // All real-time context (price, TA, market data) is already in the prompt.
             requireGroundedSearch: false,
@@ -196,6 +218,11 @@ export class AgentService {
      * 4. Sanity Check / Red Team Agent
      * Attacks a proposed trade thesis.
      * Uses temperature 0.5 — devil's advocate needs to explore unlikely scenarios.
+     *
+     * Cascading context: when priorAgentContext is provided, the Red Team sees the
+     * full structured output of the originating agent — confidence, reasoning, identified
+     * biases, and conviction score — so it can mount a more targeted challenge against
+     * specific weak points rather than a generic attack.
      */
     static async runSanityCheck(
         ticker: string,
@@ -204,7 +231,9 @@ export class AgentService {
         stopLoss: number,
         agentType: string,
         performanceContext?: string,
-        taContext?: string
+        taContext?: string,
+        priorAgentContext?: PriorAgentContext,
+        regime?: MarketRegimeType
     ): Promise<AgentResult<SanityCheckResult>> {
         const perfBlock = performanceContext
             ? `\n\n${performanceContext}\n\nAs the Red Team, use this performance history to identify systemic weaknesses. If the originating agent type or sector has a poor track record, be EXTRA skeptical and demand stronger evidence.`
@@ -212,22 +241,39 @@ export class AgentService {
 
         const taBlock = taContext || '';
 
+        // Cascading context block — structured prior agent output injected into Red Team
+        const cascadeBlock = priorAgentContext
+            ? `\n\nORIGINATING AGENT FULL OUTPUT (${priorAgentContext.agentName}):
+    - Confidence: ${priorAgentContext.confidence}/100
+    - Conviction Score: ${priorAgentContext.convictionScore ?? 'N/A'}/100
+    - Moat Rating: ${priorAgentContext.moatRating ?? 'N/A'}/10
+    - Identified Biases: ${priorAgentContext.identifiedBiases?.join(', ') || 'none listed'}
+    - Financial Impact Assessment: ${priorAgentContext.financialImpact || 'not provided'}
+    - Full Reasoning: ${priorAgentContext.reasoning}
+
+    RED TEAM DIRECTIVE: The above is the originating agent's reasoning. Do NOT simply restate it.
+    Attack the SPECIFIC weak points: if bias identification is weak, challenge it. If moat rating seems inflated, push back. If confidence is high but reasoning is thin, flag it as overconfidence.`
+            : '';
+
         const prompt = `
     PROPOSED TRADE FOR TICKER: ${ticker}
     ORIGINATING AGENT: ${agentType}
 
     THESIS: "${originalThesis}"
     TARGET: $${targetPrice} | STOP LOSS: $${stopLoss}
-    ${taBlock}${perfBlock}
+    ${taBlock}${cascadeBlock}${perfBlock}
     You are the RED TEAM. Tear this thesis apart. Find the fatal flaw.
     Research macro conditions, pending lawsuits, or sector rot.
     Think step-by-step in your reasoning — explore multiple counterarguments.
     If it's a terrible trade, fail it. Return JSON.
     `;
 
+        // Red Team regime overlay: bull markets get the most aggressive red team
+        const regimeOverlay = regime ? getRegimeOverlay(regime, 'red_team') : '';
+
         return GeminiService.generate({
             prompt,
-            systemInstruction: SANITY_CHECK_AGENT_PROMPT,
+            systemInstruction: regimeOverlay + SANITY_CHECK_AGENT_PROMPT,
             requireGroundedSearch: false,
             responseSchema: SANITY_CHECK_SCHEMA,
             temperature: 0.5,
@@ -249,7 +295,8 @@ export class AgentService {
         performanceContext?: string,
         marketContext?: MarketContext,
         taContext?: string,
-        historicalContext?: string
+        historicalContext?: string,
+        regime?: MarketRegimeType
     ): Promise<AgentResult<BullishCatalystResult>> {
         const perfBlock = performanceContext
             ? `\n\n${performanceContext}\n\nUse the performance data above to calibrate your confidence.`
@@ -265,6 +312,7 @@ export class AgentService {
 
         const taBlock = taContext || '';
         const histBlock = historicalContext || '';
+        const regimeOverlay = regime ? getRegimeOverlay(regime, 'thesis') : '';
 
         const prompt = `
     TICKER: ${ticker}
@@ -279,7 +327,7 @@ export class AgentService {
 
         return GeminiService.generate({
             prompt,
-            systemInstruction: BULLISH_CATALYST_AGENT_PROMPT,
+            systemInstruction: regimeOverlay + BULLISH_CATALYST_AGENT_PROMPT,
             requireGroundedSearch: false,
             responseSchema: BULLISH_CATALYST_SCHEMA,
             temperature: 0.4,
@@ -372,6 +420,56 @@ export class AgentService {
                 required: ["actionable_ids"]
             },
             temperature: 0.1,
+            model: GEMINI_MODEL,
+        });
+    }
+
+    /**
+     * 8. Bias Detective Agent (Phase 2 — P0)
+     *
+     * Audits the primary agent's own reasoning for all 15 cognitive biases.
+     * Runs AFTER the primary agent and BEFORE the Red Team so the Red Team
+     * can reference detected biases in its attack.
+     *
+     * Uses temperature 0.2 — bias identification is a classification task that
+     * benefits from low entropy / deterministic output.
+     *
+     * @param thesis        The primary agent's thesis string
+     * @param reasoning     The primary agent's step-by-step reasoning
+     * @param originalConfidence  The primary agent's raw confidence_score
+     * @param agentName     Which agent produced the thesis (for context)
+     */
+    static async runBiasDetective(
+        thesis: string,
+        reasoning: string,
+        originalConfidence: number,
+        agentName: string
+    ): Promise<AgentResult<BiasDetectiveResult>> {
+        const prompt = `
+ORIGINATING AGENT: ${agentName}
+ORIGINAL CONFIDENCE: ${originalConfidence}/100
+
+THESIS TO AUDIT:
+"${thesis}"
+
+REASONING TO AUDIT:
+"${reasoning}"
+
+Scan the above thesis and reasoning for cognitive biases using the full 15-bias taxonomy.
+For each bias you find evidence for, record: bias_name, severity (1/2/3), evidence (direct quote), and penalty.
+Set total_penalty = min(sum of penalties, ${BIAS_DETECTIVE_MAX_PENALTY}).
+Set adjusted_confidence = ${originalConfidence} - total_penalty.
+Set bias_free = true if findings array is empty or all severities are 1 (mild).
+Set dominant_bias = the bias_name with the highest severity, or 'none'.
+Return JSON.
+`;
+
+        return GeminiService.generate({
+            prompt,
+            systemInstruction: BIAS_DETECTIVE_AGENT_PROMPT,
+            requireGroundedSearch: false,
+            responseSchema: BIAS_DETECTIVE_SCHEMA,
+            temperature: 0.2,
             model: GEMINI_MODEL,
         });
     }

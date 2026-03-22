@@ -17,8 +17,13 @@ import {
     Zap,
     Users,
     ArrowRight,
+    Microscope,
+    Waves,
 } from 'lucide-react';
 import { formatPercent } from '@/utils/formatters';
+import { DecisionTwinPanel } from './DecisionTwinPanel';
+import { SWOTCard } from './SWOTCard';
+import type { DecisionTwinResult, SWOTResult } from '@/types/agents';
 
 interface AgentReasoningSurfaceProps {
     signal: {
@@ -28,7 +33,14 @@ interface AgentReasoningSurfaceProps {
         agent_outputs: {
             overreaction?: any;
             red_team?: any;
-            self_critique?: any;
+            self_critique?: {
+                // CritiqueResult uses camelCase (from service), older records snake_case
+                criticalFlaws?: string[];
+                critical_flaws?: string[];
+                adjustedConfidence?: number;
+                adjusted_confidence?: number;
+                confidence_adjustment?: number; // legacy alias
+            } | null;
             sentiment_divergence?: { type: string; confidence_boost: number } | null;
             earnings_guard?: { penalty: number; days_until: number | null } | null;
             market_regime?: { regime: string; penalty: number } | null;
@@ -37,6 +49,11 @@ interface AgentReasoningSurfaceProps {
             correlation_guard?: { penalty: number } | null;
             options_flow?: { confidence_adjustment: number; sentiment: string } | null;
             peer_strength?: { confidence_adjustment: number; is_idiosyncratic: boolean } | null;
+            // Phase 2 agents
+            bias_detective?: { total_penalty: number; dominant_bias: string } | null;
+            noise_confidence?: { confidence_adjustment: number } | null;
+            decision_twin?: DecisionTwinResult | null;
+            swot?: SWOTResult | null;
         };
     };
 }
@@ -54,10 +71,13 @@ export function AgentReasoningSurface({ signal }: AgentReasoningSurfaceProps) {
     const selfCritique = agent_outputs.self_critique;
 
     // Extract structured data
+    // Note: self_critique is stored as CritiqueResult (camelCase keys from the service).
+    // Support both camelCase (live run) and snake_case (older DB records).
     const thesis = overreaction?.thesis || signal.thesis;
     const counterThesis = redTeam?.counter_thesis || signal.counter_argument;
     const identifiedBiases: string[] = overreaction?.identified_biases ?? [];
-    const criticalFlaws: string[] = selfCritique?.critical_flaws ?? [];
+    const criticalFlaws: string[] =
+        selfCritique?.criticalFlaws ?? selfCritique?.critical_flaws ?? [];
 
     // Build confidence waterfall steps
     const waterfallSteps = buildWaterfallSteps(signal);
@@ -149,6 +169,32 @@ export function AgentReasoningSurface({ signal }: AgentReasoningSurfaceProps) {
                 </div>
             )}
 
+            {/* Decision Twin Simulation */}
+            {agent_outputs.decision_twin && (
+                <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                        <Users className="w-3.5 h-3.5 text-sentinel-400" />
+                        <span className="text-xs font-semibold text-sentinel-400 uppercase tracking-wider">
+                            Decision Twin Simulation
+                        </span>
+                    </div>
+                    <DecisionTwinPanel result={agent_outputs.decision_twin} />
+                </div>
+            )}
+
+            {/* SWOT Analysis */}
+            {agent_outputs.swot && (
+                <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                        <Microscope className="w-3.5 h-3.5 text-sentinel-400" />
+                        <span className="text-xs font-semibold text-sentinel-400 uppercase tracking-wider">
+                            SWOT Analysis
+                        </span>
+                    </div>
+                    <SWOTCard result={agent_outputs.swot} />
+                </div>
+            )}
+
             {/* Confidence Waterfall */}
             {waterfallSteps.length > 0 && (
                 <div className="space-y-3">
@@ -233,13 +279,50 @@ function buildWaterfallSteps(
         });
     }
 
-    // Self-critique
-    const critiqueAdj = agent_outputs.self_critique?.confidence_adjustment;
-    if (critiqueAdj != null) {
+    // Self-critique — stored as CritiqueResult with camelCase keys.
+    // We show the delta (adjusted - original) so the waterfall reflects the change.
+    const sc = agent_outputs.self_critique;
+    const critiqueBase = agent_outputs.overreaction?.confidence_score ?? signal.confidence_score;
+    // adjustedConfidence is the final score; delta = adjusted - base
+    const critiqueAdjusted: number | undefined = sc?.adjustedConfidence ?? sc?.adjusted_confidence;
+    if (critiqueAdjusted != null && critiqueBase != null) {
+        const critiqueAdj = Math.round(critiqueAdjusted - critiqueBase);
+        if (critiqueAdj !== 0) {
+            steps.push({
+                label: 'Critique',
+                value: critiqueAdj,
+                icon: <Eye className="w-3.5 h-3.5" />,
+            });
+        }
+    }
+
+    // Bias Detective
+    const biasDetective = agent_outputs.bias_detective;
+    if (biasDetective?.total_penalty) {
         steps.push({
-            label: 'Self-Critique',
-            value: critiqueAdj,
-            icon: <Eye className="w-3.5 h-3.5" />,
+            label: 'Bias Det.',
+            value: -biasDetective.total_penalty,
+            icon: <Microscope className="w-3.5 h-3.5" />,
+        });
+    }
+
+    // Noise-Aware Confidence
+    const noiseAdj = agent_outputs.noise_confidence?.confidence_adjustment;
+    if (noiseAdj != null && noiseAdj !== 0) {
+        steps.push({
+            label: 'Noise',
+            value: noiseAdj,
+            icon: <Waves className="w-3.5 h-3.5" />,
+        });
+    }
+
+    // Decision Twin
+    const twinAdj = agent_outputs.decision_twin?.confidence_adjustment;
+    if (twinAdj != null && twinAdj !== 0) {
+        steps.push({
+            label: 'Twins',
+            value: twinAdj,
+            icon: <Users className="w-3.5 h-3.5" />,
         });
     }
 

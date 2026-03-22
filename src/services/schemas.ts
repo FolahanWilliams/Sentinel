@@ -152,6 +152,172 @@ export const BULLISH_CATALYST_SCHEMA = {
     required: ["reasoning", "is_underreaction", "confidence_score", "catalyst_type", "identified_biases", "bias_type", "secondary_biases", "thesis", "catalyst_impact_assessment", "stop_loss", "target_price", "moat_rating", "lynch_category", "conviction_score"]
 };
 
+/**
+ * SWOT Analysis schema — enriches the thesis narrative with structured
+ * Strengths / Weaknesses / Opportunities / Threats + an executive summary.
+ * Non-blocking: does not modify confidence, only adds narrative richness.
+ *
+ * reasoning is first so the model commits to evidence before populating items.
+ */
+export const SWOT_SCHEMA = {
+    type: "object",
+    properties: {
+        reasoning: {
+            type: "string",
+            description: "Think through all pipeline evidence — thesis, counter-thesis, Decision Twin concerns, fundamentals — before populating each SWOT quadrant."
+        },
+        strengths: {
+            type: "array",
+            description: "2-3 genuine strengths: what the thesis gets verifiably right.",
+            items: {
+                type: "object",
+                properties: {
+                    point: { type: "string", description: "Concise strength statement (1 sentence)." },
+                    evidence: { type: "string", description: "Specific supporting evidence (metric, event, or data point)." }
+                },
+                required: ["point", "evidence"]
+            }
+        },
+        weaknesses: {
+            type: "array",
+            description: "2-3 weaknesses: structural holes or blind spots in the current thesis.",
+            items: {
+                type: "object",
+                properties: {
+                    point: { type: "string", description: "Concise weakness statement (1 sentence)." },
+                    evidence: { type: "string", description: "Why this is a weakness — cite the counter-thesis, a flaw, or missing data." }
+                },
+                required: ["point", "evidence"]
+            }
+        },
+        opportunities: {
+            type: "array",
+            description: "1-2 opportunities: upside catalysts or alpha NOT yet reflected in the current price or thesis.",
+            items: {
+                type: "object",
+                properties: {
+                    point: { type: "string", description: "Concise opportunity statement (1 sentence)." },
+                    evidence: { type: "string", description: "Why this upside is plausible but not yet priced in." }
+                },
+                required: ["point", "evidence"]
+            }
+        },
+        threats: {
+            type: "array",
+            description: "2-3 threats: risks that could directly invalidate the thesis or stop the trade out.",
+            items: {
+                type: "object",
+                properties: {
+                    point: { type: "string", description: "Concise threat statement (1 sentence)." },
+                    evidence: { type: "string", description: "Why this threat is real and specific to this ticker/thesis." }
+                },
+                required: ["point", "evidence"]
+            }
+        },
+        executive_summary: {
+            type: "string",
+            description: "2-3 sentence trader-facing narrative synthesising the SWOT. Lead with the strongest argument for the trade, then acknowledge the key risk."
+        }
+    },
+    required: ["reasoning", "strengths", "weaknesses", "opportunities", "threats", "executive_summary"]
+};
+
+/**
+ * Decision Twin — single persona evaluation schema.
+ * Shared across all 3 personas; the persona identity comes from the system prompt.
+ * Reasoning is first so the model commits to evidence before declaring its verdict.
+ */
+export const DECISION_TWIN_SCHEMA = {
+    type: "object",
+    properties: {
+        reasoning: {
+            type: "string",
+            description: "Step-by-step evaluation of the thesis through your specific investment lens. Cite specific numbers where possible."
+        },
+        verdict: {
+            type: "string",
+            enum: ["take", "caution", "skip"],
+            description: "'take' = you would enter this trade, 'caution' = you'd watch but not act now, 'skip' = you would not enter under any conditions."
+        },
+        rationale: {
+            type: "string",
+            description: "1-2 sentences summarising why you voted take/caution/skip."
+        },
+        key_concern: {
+            type: "string",
+            description: "The single most important risk or dealbreaker from YOUR perspective. Be specific."
+        },
+        confidence_score: {
+            type: "integer",
+            description: "Your independent confidence (0-100) that this is a winning trade from your investment philosophy."
+        }
+    },
+    required: ["reasoning", "verdict", "rationale", "key_concern", "confidence_score"]
+};
+
+/**
+ * Bias Detective — full 15-bias taxonomy scan of a primary agent's thesis.
+ * Reasoning is first so the model commits to evidence before scoring severity.
+ */
+export const BIAS_DETECTIVE_SCHEMA = {
+    type: "object",
+    properties: {
+        reasoning: {
+            type: "string",
+            description: "Step-by-step analysis: read the thesis and reasoning, then search for evidence of each of the 15 cognitive biases in the taxonomy. Cite specific phrases that expose each bias found."
+        },
+        findings: {
+            type: "array",
+            description: "One entry per bias detected. Omit biases with zero evidence.",
+            items: {
+                type: "object",
+                properties: {
+                    bias_name: {
+                        type: "string",
+                        enum: [
+                            "overreaction", "anchoring", "herding", "loss_aversion",
+                            "availability", "recency", "confirmation", "disposition_effect",
+                            "framing", "representativeness", "narrative_fallacy",
+                            "status_quo_bias", "overconfidence", "regret_aversion",
+                            "endowment_effect"
+                        ]
+                    },
+                    severity: {
+                        type: "integer",
+                        description: "1=mild (linguistic hint), 2=moderate (affects conclusion), 3=severe (invalidates the thesis)."
+                    },
+                    evidence: {
+                        type: "string",
+                        description: "Direct quote or paraphrase from the thesis/reasoning that demonstrates this bias."
+                    },
+                    penalty: {
+                        type: "integer",
+                        description: "Confidence penalty for this finding: severity 1 → 0, severity 2 → 4, severity 3 → 8."
+                    }
+                },
+                required: ["bias_name", "severity", "evidence", "penalty"]
+            }
+        },
+        total_penalty: {
+            type: "integer",
+            description: "Sum of all finding penalties, capped at 25."
+        },
+        dominant_bias: {
+            type: "string",
+            description: "The bias_name with the highest severity, or 'none' if no biases found."
+        },
+        bias_free: {
+            type: "boolean",
+            description: "True only when findings is empty or all severities are 1 (mild)."
+        },
+        adjusted_confidence: {
+            type: "integer",
+            description: "original_confidence − total_penalty. You will receive the original score in the prompt."
+        }
+    },
+    required: ["reasoning", "findings", "total_penalty", "dominant_bias", "bias_free", "adjusted_confidence"]
+};
+
 export const SANITY_CHECK_SCHEMA = {
     type: "object",
     properties: {

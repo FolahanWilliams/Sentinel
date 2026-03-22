@@ -30,7 +30,7 @@ export interface DynamicCalibrationCurve {
 
 interface RawOutcomeRow {
   outcome: string;
-  signals: { confidence_score: number } | null;
+  signals: { confidence_score: number; conviction_score: number | null } | null;
 }
 
 // ─── Constants ───────────────────────────────────────────────────────
@@ -106,40 +106,49 @@ export class DynamicCalibrator {
   static async fitCurve(): Promise<DynamicCalibrationCurve> {
     const { data: outcomes, error } = await supabase
       .from('signal_outcomes')
-      .select('outcome, signals!inner(confidence_score)')
+      .select('outcome, signals!inner(confidence_score, conviction_score)')
       .neq('outcome', 'pending');
 
     if (error || !outcomes || outcomes.length < MIN_OUTCOMES_FOR_FIT) {
       return this.emptyCurve();
     }
 
-    // Group by integer confidence to form weighted observations
-    const bucketMap = new Map<number, { wins: number; total: number }>();
+    // Group by integer confidence to form conviction-weighted observations.
+    // Higher conviction_score = more weight in PAVA, making the calibration curve
+    // more responsive to outcomes that actually mattered for sizing and risk management.
+    // Weight formula: base weight 1.0 + conviction bonus (conviction_score / 100)
+    // → a conviction=100 outcome counts 2× vs conviction=0 outcome.
+    const bucketMap = new Map<number, { weightedWins: number; totalWeight: number; count: number }>();
     let totalWins = 0;
 
     for (const row of outcomes as unknown as RawOutcomeRow[]) {
       const confidence = row.signals?.confidence_score ?? 0;
+      const conviction = row.signals?.conviction_score ?? null;
       const bucket = Math.min(100, Math.max(0, Math.round(confidence)));
       const isWin = row.outcome === 'win';
 
+      // Conviction weight: 1.0 baseline + up to 1.0 bonus for full conviction
+      const weight = conviction !== null ? 1.0 + (conviction / 100) : 1.0;
+
       if (!bucketMap.has(bucket)) {
-        bucketMap.set(bucket, { wins: 0, total: 0 });
+        bucketMap.set(bucket, { weightedWins: 0, totalWeight: 0, count: 0 });
       }
       const entry = bucketMap.get(bucket)!;
-      entry.total++;
+      entry.totalWeight += weight;
+      entry.count++;
       if (isWin) {
-        entry.wins++;
+        entry.weightedWins += weight;
         totalWins++;
       }
     }
 
     // Build weighted input for PAVA
     const pavaInput: { x: number; y: number; w: number }[] = [];
-    for (const [x, { wins, total }] of bucketMap) {
+    for (const [x, { weightedWins, totalWeight }] of bucketMap) {
       pavaInput.push({
         x,
-        y: (wins / total) * 100, // win rate as percentage
-        w: total,
+        y: (weightedWins / totalWeight) * 100, // conviction-weighted win rate as percentage
+        w: totalWeight,                          // total conviction weight (not raw count)
       });
     }
 
