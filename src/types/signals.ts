@@ -78,8 +78,8 @@ export interface Signal {
     updated_at: string;
 }
 
-import type { OverreactionResult, SanityCheckResult, ContagionResult, BullishCatalystResult } from './agents';
-export type { OverreactionResult, SanityCheckResult, ContagionResult, BullishCatalystResult };
+import type { OverreactionResult, SanityCheckResult, ContagionResult, BullishCatalystResult, BiasDetectiveResult, NoiseConfidenceResult } from './agents';
+export type { OverreactionResult, SanityCheckResult, ContagionResult, BullishCatalystResult, BiasDetectiveResult, NoiseConfidenceResult };
 
 export interface AgentOutputsJson {
     overreaction?: OverreactionResult;
@@ -239,6 +239,9 @@ export interface AgentOutputsJson {
         confidence_adjustment: number;
         summary: string;
     } | null;
+    // Phase 2 — P0: Bias Detective + Noise-Aware Confidence
+    bias_detective?: BiasDetectiveResult | null;
+    noise_confidence?: NoiseConfidenceResult | null;
     // Legacy fields for older signals
     event_detector?: any;
     bias_classifier?: any;

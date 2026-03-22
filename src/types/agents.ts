@@ -88,6 +88,36 @@ export interface SanityCheckResult {
     counter_thesis: string;
 }
 
+/** Individual bias finding from the Bias Detective agent */
+export interface BiasDetectiveFinding {
+    bias_name: string;
+    severity: 1 | 2 | 3;        // 1=mild, 2=moderate, 3=severe
+    evidence: string;            // specific sentence(s) from the thesis that expose this bias
+    penalty: number;             // confidence penalty applied for this finding
+}
+
+/** Output from the Bias Detective agent (Phase 2 — P0) */
+export interface BiasDetectiveResult {
+    reasoning: string;
+    findings: BiasDetectiveFinding[];
+    total_penalty: number;       // cumulative penalty (capped at BIAS_DETECTIVE_MAX_PENALTY)
+    dominant_bias: string;       // the most severe bias found, or 'none'
+    bias_free: boolean;          // true when no bias above severity threshold was detected
+    adjusted_confidence: number; // original_confidence − total_penalty
+}
+
+/** Output from the Noise-Aware Confidence 3-judge panel (Phase 2 — P0) */
+export interface NoiseConfidenceResult {
+    scores: [number, number, number];     // raw confidence from judge_low/mid/high temps
+    mean: number;
+    std_dev: number;
+    convergent: boolean;                  // std_dev < NOISE_JUDGE_CONVERGENCE_THRESHOLD
+    divergent: boolean;                   // std_dev > NOISE_JUDGE_DIVERGENCE_THRESHOLD
+    confidence_adjustment: number;        // negative = penalty, positive = boost
+    adjusted_confidence: number;
+    summary: string;
+}
+
 export interface AgentOutputs {
     event_detection: AgentResult<import('./events').DetectionResult>;
     bias_classification: AgentResult<import('./signals').BiasClassification> | null;

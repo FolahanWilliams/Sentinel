@@ -152,6 +152,69 @@ export const BULLISH_CATALYST_SCHEMA = {
     required: ["reasoning", "is_underreaction", "confidence_score", "catalyst_type", "identified_biases", "bias_type", "secondary_biases", "thesis", "catalyst_impact_assessment", "stop_loss", "target_price", "moat_rating", "lynch_category", "conviction_score"]
 };
 
+/**
+ * Bias Detective — full 15-bias taxonomy scan of a primary agent's thesis.
+ * Reasoning is first so the model commits to evidence before scoring severity.
+ */
+export const BIAS_DETECTIVE_SCHEMA = {
+    type: "object",
+    properties: {
+        reasoning: {
+            type: "string",
+            description: "Step-by-step analysis: read the thesis and reasoning, then search for evidence of each of the 15 cognitive biases in the taxonomy. Cite specific phrases that expose each bias found."
+        },
+        findings: {
+            type: "array",
+            description: "One entry per bias detected. Omit biases with zero evidence.",
+            items: {
+                type: "object",
+                properties: {
+                    bias_name: {
+                        type: "string",
+                        enum: [
+                            "overreaction", "anchoring", "herding", "loss_aversion",
+                            "availability", "recency", "confirmation", "disposition_effect",
+                            "framing", "representativeness", "narrative_fallacy",
+                            "status_quo_bias", "overconfidence", "regret_aversion",
+                            "endowment_effect"
+                        ]
+                    },
+                    severity: {
+                        type: "integer",
+                        description: "1=mild (linguistic hint), 2=moderate (affects conclusion), 3=severe (invalidates the thesis)."
+                    },
+                    evidence: {
+                        type: "string",
+                        description: "Direct quote or paraphrase from the thesis/reasoning that demonstrates this bias."
+                    },
+                    penalty: {
+                        type: "integer",
+                        description: "Confidence penalty for this finding: severity 1 → 0, severity 2 → 4, severity 3 → 8."
+                    }
+                },
+                required: ["bias_name", "severity", "evidence", "penalty"]
+            }
+        },
+        total_penalty: {
+            type: "integer",
+            description: "Sum of all finding penalties, capped at 25."
+        },
+        dominant_bias: {
+            type: "string",
+            description: "The bias_name with the highest severity, or 'none' if no biases found."
+        },
+        bias_free: {
+            type: "boolean",
+            description: "True only when findings is empty or all severities are 1 (mild)."
+        },
+        adjusted_confidence: {
+            type: "integer",
+            description: "original_confidence − total_penalty. You will receive the original score in the prompt."
+        }
+    },
+    required: ["reasoning", "findings", "total_penalty", "dominant_bias", "bias_free", "adjusted_confidence"]
+};
+
 export const SANITY_CHECK_SCHEMA = {
     type: "object",
     properties: {

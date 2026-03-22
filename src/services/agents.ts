@@ -13,6 +13,7 @@ import {
     EARNINGS_AGENT_PROMPT,
     SANITY_CHECK_AGENT_PROMPT,
     BULLISH_CATALYST_AGENT_PROMPT,
+    BIAS_DETECTIVE_AGENT_PROMPT,
     getRegimeOverlay
 } from './prompts';
 import type { MarketRegimeType } from './marketRegime';
@@ -22,10 +23,11 @@ import {
     EARNINGS_SCHEMA,
     SANITY_CHECK_SCHEMA,
     SATELLITE_DISCOVERY_SCHEMA,
-    BULLISH_CATALYST_SCHEMA
+    BULLISH_CATALYST_SCHEMA,
+    BIAS_DETECTIVE_SCHEMA
 } from './schemas';
-import { GEMINI_MODEL } from '@/config/constants';
-import type { AgentResult, OverreactionResult, ContagionResult, SanityCheckResult, BullishCatalystResult } from '@/types/agents';
+import { GEMINI_MODEL, BIAS_DETECTIVE_MAX_PENALTY } from '@/config/constants';
+import type { AgentResult, OverreactionResult, ContagionResult, SanityCheckResult, BullishCatalystResult, BiasDetectiveResult } from '@/types/agents';
 
 /**
  * Cascading agent context — structured summary of a prior agent's output
@@ -418,6 +420,56 @@ export class AgentService {
                 required: ["actionable_ids"]
             },
             temperature: 0.1,
+            model: GEMINI_MODEL,
+        });
+    }
+
+    /**
+     * 8. Bias Detective Agent (Phase 2 — P0)
+     *
+     * Audits the primary agent's own reasoning for all 15 cognitive biases.
+     * Runs AFTER the primary agent and BEFORE the Red Team so the Red Team
+     * can reference detected biases in its attack.
+     *
+     * Uses temperature 0.2 — bias identification is a classification task that
+     * benefits from low entropy / deterministic output.
+     *
+     * @param thesis        The primary agent's thesis string
+     * @param reasoning     The primary agent's step-by-step reasoning
+     * @param originalConfidence  The primary agent's raw confidence_score
+     * @param agentName     Which agent produced the thesis (for context)
+     */
+    static async runBiasDetective(
+        thesis: string,
+        reasoning: string,
+        originalConfidence: number,
+        agentName: string
+    ): Promise<AgentResult<BiasDetectiveResult>> {
+        const prompt = `
+ORIGINATING AGENT: ${agentName}
+ORIGINAL CONFIDENCE: ${originalConfidence}/100
+
+THESIS TO AUDIT:
+"${thesis}"
+
+REASONING TO AUDIT:
+"${reasoning}"
+
+Scan the above thesis and reasoning for cognitive biases using the full 15-bias taxonomy.
+For each bias you find evidence for, record: bias_name, severity (1/2/3), evidence (direct quote), and penalty.
+Set total_penalty = min(sum of penalties, ${BIAS_DETECTIVE_MAX_PENALTY}).
+Set adjusted_confidence = ${originalConfidence} - total_penalty.
+Set bias_free = true if findings array is empty or all severities are 1 (mild).
+Set dominant_bias = the bias_name with the highest severity, or 'none'.
+Return JSON.
+`;
+
+        return GeminiService.generate({
+            prompt,
+            systemInstruction: BIAS_DETECTIVE_AGENT_PROMPT,
+            requireGroundedSearch: false,
+            responseSchema: BIAS_DETECTIVE_SCHEMA,
+            temperature: 0.2,
             model: GEMINI_MODEL,
         });
     }

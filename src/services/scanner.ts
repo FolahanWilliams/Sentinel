@@ -41,6 +41,7 @@ import { MultiTimeframeService } from './multiTimeframe';
 import { CrossSourceValidator } from './crossSourceValidator';
 import { RetailVsNewsSentimentDetector } from './retailVsNewsSentiment';
 import { SourceDiversityScorer } from './sourceDiversityScorer';
+import { NoiseAwareConfidenceService } from './noiseAwareConfidence';
 import { fetchExternalSentiment, buildScanContext } from './scannerPipeline/contextStage';
 import { DEFAULT_MIN_CONFIDENCE, DEFAULT_MIN_PRICE_RISE_PCT, CONFIDENCE_GATE_OVERREACTION, CONFIDENCE_GATE_CATALYST, CONFIDENCE_GATE_CONTAGION, CONFIDENCE_GATE_CRITIQUE, CONFIDENCE_FLOOR, SEVERITY_THRESHOLD } from '@/config/constants';
 import type { MultiTimeframeResult } from './technicalAnalysis';
@@ -858,6 +859,31 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                     }
 
                                     if (sanity.success && sanity.data?.passes_sanity_check) {
+                                        // 7.4.5. BIAS DETECTIVE — audit primary agent's reasoning for cognitive biases
+                                        let biasDetectiveOutput: import('@/types/agents').BiasDetectiveResult | null = null;
+                                        try {
+                                            const biasResult = await AgentService.runBiasDetective(
+                                                analysis.data.thesis,
+                                                analysis.data.reasoning || analysis.data.thesis,
+                                                analysis.data.confidence_score,
+                                                catalystAgentUsed ? 'BULLISH_CATALYST_AGENT' : 'OVERREACTION_AGENT'
+                                            );
+                                            if (biasResult.success && biasResult.data) {
+                                                biasDetectiveOutput = biasResult.data;
+                                                if (biasResult.data.total_penalty > 0) {
+                                                    const before = analysis.data.confidence_score;
+                                                    analysis.data.confidence_score = Math.max(CONFIDENCE_FLOOR,
+                                                        analysis.data.confidence_score - biasResult.data.total_penalty
+                                                    );
+                                                    console.log(`[Scanner] Bias Detective penalised ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (dominant: ${biasResult.data.dominant_bias}, penalty: -${biasResult.data.total_penalty})`);
+                                                } else {
+                                                    console.log(`[Scanner] Bias Detective: ${ev.ticker} is bias-free (dominant: ${biasResult.data.dominant_bias})`);
+                                                }
+                                            }
+                                        } catch (biasErr) {
+                                            console.warn(`[Scanner] Bias Detective failed for ${ev.ticker} (non-fatal):`, biasErr);
+                                        }
+
                                         // 7.5. SELF-CRITIQUE — second-pass confidence adjustment
                                         let critiqueOutput = null;
                                         try {
@@ -881,6 +907,25 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             }
                                         } catch (critiqueErr) {
                                             console.warn(`[Scanner] Self-critique failed for ${ev.ticker} (non-fatal):`, critiqueErr);
+                                        }
+
+                                        // 7.5.5. NOISE-AWARE CONFIDENCE — 3-judge panel to measure LLM certainty
+                                        let noiseConfidenceOutput: import('@/types/agents').NoiseConfidenceResult | null = null;
+                                        try {
+                                            const noiseResult = await NoiseAwareConfidenceService.evaluate(
+                                                analysis.data.thesis,
+                                                analysis.data.reasoning || analysis.data.thesis,
+                                                analysis.data.confidence_score,
+                                                catalystAgentUsed ? 'BULLISH_CATALYST_AGENT' : 'OVERREACTION_AGENT'
+                                            );
+                                            noiseConfidenceOutput = noiseResult;
+                                            if (noiseResult.confidence_adjustment !== 0) {
+                                                const before = analysis.data.confidence_score;
+                                                analysis.data.confidence_score = noiseResult.adjusted_confidence;
+                                                console.log(`[Scanner] Noise-Aware Confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${noiseResult.summary})`);
+                                            }
+                                        } catch (noiseErr) {
+                                            console.warn(`[Scanner] Noise-Aware Confidence failed for ${ev.ticker} (non-fatal):`, noiseErr);
                                         }
 
                                         // 7.6. SENTIMENT DIVERGENCE BOOST — adjust confidence based on narrative-price divergence
@@ -1415,6 +1460,8 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                     confidence_adjustment: sourceDiversityResult.confidenceAdjustment,
                                                     summary: sourceDiversityResult.summary,
                                                 } : null,
+                                                bias_detective: biasDetectiveOutput,
+                                                noise_confidence: noiseConfidenceOutput,
                                             } as unknown as Json,
                                             margin_of_safety_pct: marginOfSafetyPct,
                                             conviction_score: typeof analysis.data.conviction_score === 'number'
@@ -1836,6 +1883,25 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                         }
                     } catch { /* non-fatal */ }
 
+                    // 7a.5. BIAS DETECTIVE — audit primary agent's reasoning for cognitive biases
+                    let singleBiasDetectiveOutput: import('@/types/agents').BiasDetectiveResult | null = null;
+                    try {
+                        const biasResult = await AgentService.runBiasDetective(
+                            analysis.data.thesis,
+                            analysis.data.reasoning || analysis.data.thesis,
+                            analysis.data.confidence_score,
+                            'OVERREACTION_AGENT'
+                        );
+                        if (biasResult.success && biasResult.data) {
+                            singleBiasDetectiveOutput = biasResult.data;
+                            if (biasResult.data.total_penalty > 0) {
+                                analysis.data.confidence_score = Math.max(CONFIDENCE_FLOOR,
+                                    analysis.data.confidence_score - biasResult.data.total_penalty
+                                );
+                            }
+                        }
+                    } catch { /* non-fatal */ }
+
                     // 7b. Self-critique
                     let singleConfidence = analysis.data.confidence_score;
                     let critiqueOutput = null;
@@ -1855,6 +1921,21 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                             singleConfidence,
                             Math.max(CONFIDENCE_FLOOR, Math.max(rawAdj, singleConfidence - maxReduction))
                         );
+                    } catch { /* non-fatal */ }
+
+                    // 7b.5. NOISE-AWARE CONFIDENCE — 3-judge panel to measure LLM certainty
+                    let singleNoiseConfidenceOutput: import('@/types/agents').NoiseConfidenceResult | null = null;
+                    try {
+                        const noiseResult = await NoiseAwareConfidenceService.evaluate(
+                            analysis.data.thesis,
+                            analysis.data.reasoning || analysis.data.thesis,
+                            singleConfidence,
+                            'OVERREACTION_AGENT'
+                        );
+                        singleNoiseConfidenceOutput = noiseResult;
+                        if (noiseResult.confidence_adjustment !== 0) {
+                            singleConfidence = noiseResult.adjusted_confidence;
+                        }
                     } catch { /* non-fatal */ }
 
                     // Margin-of-safety check
@@ -1909,6 +1990,8 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                 overreaction: analysis.data,
                                 red_team: sanity.data,
                                 self_critique: critiqueOutput,
+                                bias_detective: singleBiasDetectiveOutput,
+                                noise_confidence: singleNoiseConfidenceOutput,
                             } as unknown as Json,
                             margin_of_safety_pct: singleMarginPct,
                             conviction_score: typeof analysis.data.conviction_score === 'number'
