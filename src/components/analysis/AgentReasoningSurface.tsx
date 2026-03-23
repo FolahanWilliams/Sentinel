@@ -130,8 +130,12 @@ function StepDetailPanel({ step, onClose }: { step: WaterfallStep; onClose: () =
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function AgentReasoningSurface({ signal }: AgentReasoningSurfaceProps) {
-    const { agent_outputs } = signal;
+    // useState must be called before any conditional returns (Rules of Hooks)
     const [openStep, setOpenStep] = useState<string | null>(null);
+
+    const { agent_outputs } = signal;
+    // Guard: older DB signals may have agent_outputs: null
+    if (!agent_outputs) return null;
 
     const overreaction = agent_outputs.overreaction;
     const redTeam = agent_outputs.red_team;

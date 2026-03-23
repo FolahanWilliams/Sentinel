@@ -225,7 +225,7 @@ function PersonaRadarChart({
     ];
 
     return (
-        <svg viewBox="0 0 200 210" className="w-full h-full" aria-hidden="true">
+        <svg viewBox="-8 -8 216 228" className="w-full h-full" aria-hidden="true">
             {/* Outer triangle (max extent) */}
             <polygon
                 points={toStr(outerPts)}
@@ -310,32 +310,6 @@ function PersonaRadarChart({
                 );
             })}
         </svg>
-    );
-}
-
-// ── Summary bar ───────────────────────────────────────────────────────────────
-
-function SummaryBar({ result }: { result: DecisionTwinResult }) {
-    const { unanimous_take, skip_count, flagged, confidence_adjustment, summary } = result;
-
-    let barClass = 'bg-sentinel-900/40 border-sentinel-800/50';
-    if (unanimous_take) barClass = 'bg-emerald-950/30 border-emerald-500/25';
-    else if (flagged && skip_count >= 2) barClass = 'bg-red-950/25 border-red-500/25';
-    else if (flagged) barClass = 'bg-amber-950/25 border-amber-500/25';
-
-    return (
-        <div className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border px-4 py-2.5 ${barClass}`}>
-            <p className="text-xs text-sentinel-300 flex-1 min-w-0">{summary}</p>
-            <div className={`flex-shrink-0 text-sm font-mono font-bold ${
-                confidence_adjustment > 0
-                    ? 'text-emerald-400'
-                    : confidence_adjustment < 0
-                        ? 'text-red-400'
-                        : 'text-sentinel-500'
-            }`}>
-                {confidence_adjustment > 0 ? '+' : ''}{confidence_adjustment}
-            </div>
-        </div>
     );
 }
 
