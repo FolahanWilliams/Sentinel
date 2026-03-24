@@ -157,8 +157,12 @@ export interface AgentOutputsJson {
     } | null;
     peer_strength?: {
         peer_avg_change: number;
+        sector_etf_change: number | null;
         relative_strength: number;
+        relative_to_sector: number | null;
         is_idiosyncratic: boolean;
+        momentum_divergence: string;
+        volume_signal: string;
         confidence_adjustment: number;
         peers: Array<{ ticker: string; change_pct: number }>;
     } | null;
@@ -252,6 +256,13 @@ export interface AgentOutputsJson {
     decision_twin?: DecisionTwinResult | null;
     // Phase 2 — P1: SWOT Analysis
     swot?: SWOTResult | null;
+    // Thesis invalidation monitoring
+    thesis_invalidation?: {
+        checked_at: string;
+        severity: string;
+        recommendation: string;
+        triggers: Array<{ type: string; description: string; severity: number }>;
+    } | null;
     // Phase 3 — Agent Context Bus (cascading intelligence audit trail)
     context_bus?: {
         confidence_trail: Array<{

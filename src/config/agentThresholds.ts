@@ -129,3 +129,39 @@ export const AB_DEFAULT_MIN_SAMPLE_SIZE = 20;
 export const INJECTED_ARTICLE_SEVERITY = 5;
 /** Severity for sector rotation synthetic events */
 export const ROTATION_EVENT_SEVERITY = 4;
+
+// ===========================
+// THESIS INVALIDATION DETECTOR
+// ===========================
+/** % below stop-loss before triggering price breach invalidation */
+export const INVALIDATION_PRICE_BREACH_PCT = 2;
+/** % below 200-SMA before triggering technical support break */
+export const INVALIDATION_SUPPORT_BREAK_PCT = 3;
+/** Max active signals to check per scan cycle */
+export const INVALIDATION_MAX_SIGNALS_PER_CYCLE = 15;
+/** Hours between re-checking the same signal */
+export const INVALIDATION_COOLDOWN_HOURS = 4;
+
+// ===========================
+// OUTCOME NARRATIVE AGENT
+// ===========================
+/** Max narratives to generate per scan cycle */
+export const NARRATIVE_MAX_SIGNALS_PER_CYCLE = 5;
+/** Minimum absolute return (%) for a narrative to be worth generating */
+export const NARRATIVE_MIN_RETURN_PCT = 1.0;
+
+// ===========================
+// PEER RELATIVE STRENGTH (Enhanced)
+// ===========================
+/** Relative strength (%) threshold to classify a move as idiosyncratic */
+export const PEER_RS_IDIOSYNCRATIC_THRESHOLD = 2.0;
+/** Ticker min change (%) to detect sector-wide move */
+export const PEER_RS_SECTOR_WIDE_TICKER_MIN = 3.0;
+/** Peer avg min change (%) to detect sector-wide move */
+export const PEER_RS_SECTOR_WIDE_PEER_MIN = 2.0;
+/** Relative strength (%) for strong divergence (full boost/penalty) */
+export const PEER_RS_STRONG_DIVERGENCE = 3.0;
+/** Max confidence boost for strong idiosyncratic underperformance */
+export const PEER_RS_MAX_BOOST = 15;
+/** Max confidence penalty for sector-wide moves (negative) */
+export const PEER_RS_MAX_PENALTY = -12;

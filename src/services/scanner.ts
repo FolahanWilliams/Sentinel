@@ -50,6 +50,8 @@ import { EarningsAnticipationAgent } from './earningsAnticipation';
 import { AgentContextBus } from './agentContextBus';
 import { ABTestingFramework } from './abTestingFramework';
 import { enrichWithMitigations } from './biasMitigation';
+import { ThesisInvalidationDetector } from './thesisInvalidationDetector';
+import { OutcomeNarrativeAgent } from './outcomeNarrativeAgent';
 import { DEFAULT_MIN_CONFIDENCE, DEFAULT_MIN_PRICE_RISE_PCT, CONFIDENCE_GATE_OVERREACTION, CONFIDENCE_GATE_CATALYST, CONFIDENCE_GATE_CONTAGION, CONFIDENCE_GATE_CRITIQUE, CONFIDENCE_FLOOR, CONFIDENCE_CEILING, MAX_CUMULATIVE_PENALTY, MAX_CUMULATIVE_BOOST, SWOT_WEAKNESS_IMBALANCE_PENALTY, SWOT_SEVERE_IMBALANCE_PENALTY, ROTATION_FAVORED_SECTOR_BOOST, ROTATION_DISFAVORED_SECTOR_PENALTY, ROTATION_HEADWIND_PENALTY, SEVERITY_THRESHOLD } from '@/config/constants';
 import {
     FEAR_GREED_EXTREME_FEAR_THRESHOLD, FEAR_GREED_FEAR_THRESHOLD,
@@ -1676,8 +1678,12 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                 } : null,
                                                 peer_strength: peerStrengthResult && peerStrengthResult.peers.length > 0 ? {
                                                     peer_avg_change: peerStrengthResult.peerAvgChange,
+                                                    sector_etf_change: peerStrengthResult.sectorEtfChange,
                                                     relative_strength: peerStrengthResult.relativeStrength,
+                                                    relative_to_sector: peerStrengthResult.relativeToSector,
                                                     is_idiosyncratic: peerStrengthResult.isIdiosyncratic,
+                                                    momentum_divergence: peerStrengthResult.momentumDivergence,
+                                                    volume_signal: peerStrengthResult.volumeSignal,
                                                     confidence_adjustment: peerStrengthResult.confidenceAdjustment,
                                                     peers: peerStrengthResult.peers.map(p => ({ ticker: p.ticker, change_pct: p.changePercent })),
                                                 } : null,
@@ -2002,6 +2008,20 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
             } catch (outcomeErr: any) {
                 console.warn('[Scanner] Outcome tracker error:', outcomeErr.message);
             }
+
+            // 11a1. Thesis Invalidation — actively check open signals for thesis-breaking events
+            try {
+                void ThesisInvalidationDetector.checkActiveSignals().catch(e =>
+                    console.warn('[Scanner] Thesis invalidation check failed (non-fatal):', e)
+                );
+            } catch { /* non-fatal */ }
+
+            // 11a2. Outcome Narratives — generate post-mortem analysis for completed signals
+            try {
+                void OutcomeNarrativeAgent.generatePendingNarratives().catch(e =>
+                    console.warn('[Scanner] Outcome narrative generation failed (non-fatal):', e)
+                );
+            } catch { /* non-fatal */ }
 
             // 11b. Auto-Learning — automatic trigger (replaces manual 20-outcome check)
             try {
