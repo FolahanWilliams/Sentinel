@@ -195,7 +195,7 @@ export class SignalDecayEngine {
             }
 
             // Fetch historical win rates for adaptive decay
-            let winRateByType: Record<string, number> = {};
+            const winRateByType: Record<string, number> = {};
             try {
                 const { data: outcomeStats } = await supabase
                     .from('signal_outcomes')
