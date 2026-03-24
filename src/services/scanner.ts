@@ -949,11 +949,13 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                         // 7.5.5. NOISE-AWARE CONFIDENCE — 3-judge panel to measure LLM certainty
                                         let noiseConfidenceOutput: import('@/types/agents').NoiseConfidenceResult | null = null;
                                         try {
+                                            const noiseCascadeCtx = AgentContextBus.buildPromptContext(agentCtx, 'noise_panel');
                                             const noiseResult = await NoiseAwareConfidenceService.evaluate(
                                                 analysis.data.thesis,
                                                 analysis.data.reasoning || analysis.data.thesis,
                                                 analysis.data.confidence_score,
-                                                catalystAgentUsed ? 'BULLISH_CATALYST_AGENT' : 'OVERREACTION_AGENT'
+                                                catalystAgentUsed ? 'BULLISH_CATALYST_AGENT' : 'OVERREACTION_AGENT',
+                                                noiseCascadeCtx || undefined,
                                             );
                                             noiseConfidenceOutput = noiseResult;
                                             AgentContextBus.setNoisePanel(agentCtx, noiseResult);
@@ -993,6 +995,8 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                 // Risk inputs
                                                 vix: regimeResult?.vixLevel ?? null,
                                                 regime: regimeResult?.regime,
+                                                // Cascading context from upstream agents
+                                                cascadingContext: AgentContextBus.buildPromptContext(agentCtx, 'decision_twin') || undefined,
                                             });
 
                                             AgentContextBus.setDecisionTwin(agentCtx, decisionTwinOutput);
@@ -1851,7 +1855,52 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                     for (const thesis of proactiveResult.theses) {
                         try {
                             await this.ensureWatchlistEntry(thesis.ticker);
-                            // Save proactive thesis as a signal
+
+                            // Quality Gate 1: Conflict Detection — check for contradictions with active signals
+                            const tickerSectorForConflict = tickersToScan.find(t => t.ticker === thesis.ticker)?.sector || 'Unknown';
+                            let proactiveConflictResult: import('./conflictDetector').ConflictResult | null = null;
+                            try {
+                                proactiveConflictResult = await ConflictDetector.checkConflicts(
+                                    thesis.ticker,
+                                    thesis.direction,
+                                    thesis.thesis,
+                                    tickerSectorForConflict,
+                                );
+                                if (proactiveConflictResult.shouldBlock) {
+                                    console.warn(`[Scanner] Proactive thesis for ${thesis.ticker} BLOCKED by conflict detector: ${proactiveConflictResult.summary}`);
+                                    continue;
+                                }
+                                // Apply conflict penalty
+                                if (proactiveConflictResult.confidencePenalty !== 0) {
+                                    thesis.confidence = Math.max(CONFIDENCE_FLOOR, thesis.confidence + proactiveConflictResult.confidencePenalty);
+                                    console.log(`[Scanner] Proactive conflict penalty for ${thesis.ticker}: ${proactiveConflictResult.confidencePenalty}`);
+                                }
+                            } catch { /* non-fatal */ }
+
+                            // Quality Gate 2: Sanity Check (Red Team) — attack the proactive thesis
+                            try {
+                                const sanityResult = await AgentService.runSanityCheck(
+                                    thesis.ticker,
+                                    thesis.thesis,
+                                    thesis.target_price,
+                                    thesis.stop_loss,
+                                    'PROACTIVE_THESIS_ENGINE',
+                                );
+                                if (sanityResult.success && sanityResult.data) {
+                                    if (!sanityResult.data.passes_sanity_check) {
+                                        console.warn(`[Scanner] Proactive thesis for ${thesis.ticker} FAILED sanity check: ${sanityResult.data.fatal_flaws?.join(', ')}`);
+                                        continue;
+                                    }
+                                }
+                            } catch { /* non-fatal — save anyway if sanity check fails */ }
+
+                            // Quality Gate 3: Minimum confidence after adjustments
+                            if (thesis.confidence < adaptiveMinConfidence) {
+                                console.warn(`[Scanner] Proactive thesis for ${thesis.ticker} below min confidence (${thesis.confidence} < ${adaptiveMinConfidence})`);
+                                continue;
+                            }
+
+                            // Save proactive thesis as a signal (passed quality gates)
                             await supabase.from('signals').insert({
                                 ticker: thesis.ticker,
                                 signal_type: thesis.direction === 'short' ? 'short_overreaction' : 'long_overreaction',
@@ -1876,6 +1925,15 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                         reasoning: thesis.reasoning,
                                         direction: thesis.direction,
                                     },
+                                    conflict_check: proactiveConflictResult?.hasConflicts ? {
+                                        has_conflicts: true,
+                                        conflict_count: proactiveConflictResult.conflicts.length,
+                                        penalty: proactiveConflictResult.confidencePenalty,
+                                        summary: proactiveConflictResult.summary,
+                                    } : null,
+                                    conflict_resolution: proactiveConflictResult?.resolutions?.filter(r => r.action !== 'none').length
+                                        ? proactiveConflictResult.resolutions.filter(r => r.action !== 'none')
+                                        : null,
                                 } as any,
                                 data_quality: 'partial',
                                 is_paper: true,

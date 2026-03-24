@@ -59,6 +59,8 @@ export interface DecisionTwinContext {
     // Risk Manager inputs
     vix?: number | null;
     regime?: string;
+    // Cascading context from upstream agents
+    cascadingContext?: string;
 }
 
 // ── Persona prompt builders ───────────────────────────────────────────────────
@@ -246,6 +248,11 @@ export class DecisionTwinService {
      * Run all 3 investor personas in parallel and aggregate their verdicts.
      */
     static async simulate(ctx: DecisionTwinContext): Promise<DecisionTwinResult> {
+
+        // Enrich reasoning with cascading context from upstream agents
+        if (ctx.cascadingContext) {
+            ctx = { ...ctx, reasoning: ctx.reasoning + ctx.cascadingContext };
+        }
 
         // Fire all 3 persona calls in parallel — allSettled so a single failure
         // falls back gracefully rather than rejecting the whole simulation

@@ -66,19 +66,23 @@ export class NoiseAwareConfidenceService {
      * @param reasoning      The primary agent's reasoning
      * @param originalConfidence  The current confidence before the panel
      * @param agentName      Which agent produced this signal (for logging)
+     * @param cascadingContext  Optional upstream agent context for richer evaluation
      */
     static async evaluate(
         thesis: string,
         reasoning: string,
         originalConfidence: number,
-        agentName: string
+        agentName: string,
+        cascadingContext?: string,
     ): Promise<NoiseConfidenceResult> {
+        const contextBlock = cascadingContext || '';
         const prompt = `
 ORIGINATING AGENT: ${agentName}
 THESIS: "${thesis}"
 REASONING: "${reasoning}"
-
+${contextBlock}
 Assign your independent confidence score. Do not anchor to any prior score.
+Consider any upstream agent findings provided above in your evaluation.
 Return JSON.
 `;
 

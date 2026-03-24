@@ -100,6 +100,8 @@ export async function buildScanContext(): Promise<ScanContext> {
     try {
         regimeResult = await MarketRegimeFilter.detect();
         regimeCtx = MarketRegimeFilter.formatForPrompt(regimeResult);
+        // Set regime early so signal decay uses correct context from the start
+        SignalDecayEngine.setRegime(regimeResult.regime);
         if (regimeResult.regime !== 'neutral') {
             console.log(`[Scanner] Market regime: ${regimeResult.regime.toUpperCase()} (penalty=${regimeResult.confidencePenalty})`);
         }
