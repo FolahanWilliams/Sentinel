@@ -33,6 +33,16 @@ export const CONFIDENCE_GATE_CATALYST = 65; // Initial gate for bullish catalyst
 export const CONFIDENCE_GATE_CONTAGION = 70; // Initial gate for contagion signal
 export const CONFIDENCE_GATE_CRITIQUE = 50; // Floor after self-critique pass
 export const CONFIDENCE_EXPIRY_THRESHOLD = 40; // Below this, signal is expired by decay
+
+// ===========================
+// SECTOR ROTATION OVERLAY
+// ===========================
+/** Boost for signals in the favored sector during risk_on/rotation regimes */
+export const ROTATION_FAVORED_SECTOR_BOOST = 8;
+/** Penalty for signals in disfavored sectors during risk_off regimes */
+export const ROTATION_DISFAVORED_SECTOR_PENALTY = 8;
+/** Mild headwind penalty for growth longs during risk_off */
+export const ROTATION_HEADWIND_PENALTY = 5;
 export const SEVERITY_THRESHOLD = 3; // Lowered from 4 to let more events into deep analysis
 export const DEFAULT_SIGNAL_TIMEFRAME_DAYS = 10; // Default expected holding period
 
