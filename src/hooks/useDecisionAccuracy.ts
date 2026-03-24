@@ -92,13 +92,16 @@ export function useDecisionAccuracy(): DecisionAccuracyData {
             const calibrationData: CalibrationDataPoint[] = [];
             if (calibrationCurve?.buckets) {
                 for (const bucket of calibrationCurve.buckets) {
+                    const [minStr, maxStr] = bucket.range.split('-');
+                    const min = Number(minStr);
+                    const max = Number(maxStr);
                     calibrationData.push({
-                        bucket: `${bucket.min}-${bucket.max}`,
-                        confidenceMin: bucket.min,
-                        confidenceMax: bucket.max,
-                        expectedWinRate: (bucket.min + bucket.max) / 2,
-                        actualWinRate: bucket.actual_win_rate * 100,
-                        count: bucket.total,
+                        bucket: bucket.range,
+                        confidenceMin: min,
+                        confidenceMax: max,
+                        expectedWinRate: bucket.predicted,
+                        actualWinRate: bucket.actualWinRate,
+                        count: bucket.sampleSize,
                     });
                 }
             }

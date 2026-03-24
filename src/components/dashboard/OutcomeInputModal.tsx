@@ -19,9 +19,9 @@ interface OutcomeInputModalProps {
 }
 
 const RESULT_OPTIONS = [
-    { value: 'win', label: 'Win', icon: TrendingUp, color: 'emerald' },
-    { value: 'loss', label: 'Loss', icon: TrendingDown, color: 'red' },
-    { value: 'breakeven', label: 'Breakeven', icon: AlertTriangle, color: 'amber' },
+    { value: 'win', label: 'Win', icon: TrendingUp, activeClass: 'bg-emerald-500/15 ring-emerald-500/50 text-emerald-400' },
+    { value: 'loss', label: 'Loss', icon: TrendingDown, activeClass: 'bg-red-500/15 ring-red-500/50 text-red-400' },
+    { value: 'breakeven', label: 'Breakeven', icon: AlertTriangle, activeClass: 'bg-amber-500/15 ring-amber-500/50 text-amber-400' },
 ] as const;
 
 export function OutcomeInputModal({ signal, outcome, onClose, onSaved }: OutcomeInputModalProps) {
@@ -105,7 +105,7 @@ export function OutcomeInputModal({ signal, outcome, onClose, onSaved }: Outcome
                                         onClick={() => setResult(opt.value)}
                                         className={`flex flex-col items-center gap-1.5 p-3 rounded-xl ring-1 transition-all border-none cursor-pointer ${
                                             isSelected
-                                                ? `bg-${opt.color}-500/15 ring-${opt.color}-500/50 text-${opt.color}-400`
+                                                ? opt.activeClass
                                                 : 'bg-sentinel-800/50 ring-sentinel-700/30 text-sentinel-400 hover:ring-sentinel-600/50'
                                         }`}
                                     >
