@@ -2028,7 +2028,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                             moatRating: analysis.data.moat_rating,
                             lynchCategory: analysis.data.lynch_category,
                             convictionScore: analysis.data.conviction_score,
-                            fiftyTwoWeekHigh: quote.fiftyTwoWeekHigh,
+                            fiftyTwoWeekHigh: quote.fiftyTwoWeekHigh ?? undefined,
                             taSnapshot: singleTaSnapshot,
                         });
                         if (singleDecisionTwinOutput.confidence_adjustment !== 0) {
