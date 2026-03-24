@@ -45,10 +45,29 @@ const DEFAULT_HALF_LIVES: Record<SignalType, number> = {
     information: 10,
 };
 
+// ── Regime-based half-life multipliers ──────────────────────────────────────
+// In crisis/correction, signals go stale faster (shorter half-life).
+// In bull markets, theses persist longer (longer half-life).
+const REGIME_HALF_LIFE_MULTIPLIERS: Record<string, number> = {
+    crisis: 0.5,      // Half-lives cut in half — fast-moving environment
+    correction: 0.75,  // Shorter half-lives — elevated volatility
+    neutral: 1.0,      // Default
+    bull: 1.3,         // Theses persist longer in stable uptrend
+};
+
+// ── Volatility-aware decay acceleration ─────────────────────────────────────
+// When realized volatility (via ATR or price range) exceeds expectations,
+// decay accelerates proportionally.
+const VOLATILITY_ACCELERATION_THRESHOLD = 1.5; // 1.5× expected vol triggers acceleration
+const MAX_VOLATILITY_ACCELERATION = 2.0;       // Cap: never accelerate more than 2×
+
 const HALF_LIVES_SETTINGS_KEY = 'signal_decay_half_lives';
 const HALF_LIVES_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
 let cachedHalfLives: Record<string, number> | null = null;
 let halfLivesCacheTimestamp = 0;
+
+// Regime cache (populated externally by scanner or decay processor)
+let cachedRegime: string | null = null;
 
 export interface DecayResult {
     signalId: string;
@@ -87,17 +106,59 @@ export class SignalDecayEngine {
     }
 
     /**
+     * Set the current market regime for adaptive decay.
+     * Called by the scanner after regime detection.
+     */
+    static setRegime(regime: string): void {
+        cachedRegime = regime;
+    }
+
+    /**
      * Compute exponential decay factor for a signal.
-     * decay_factor = e^(-0.693 × days_active / half_life), floored at 0.5.
-     * Uses per-signal-type half-life so thesis staleness is modelled correctly.
+     * decay_factor = 2^(-days_active / effective_half_life), floored at 0.5.
+     *
+     * Adaptive enhancements:
+     * - Half-life is adjusted by market regime (crisis = faster decay, bull = slower)
+     * - Volatility acceleration: if the signal's price has moved more than expected,
+     *   the thesis is likely resolving faster — accelerate decay.
+     * - Performance feedback: signals from historically weak categories decay faster.
      */
     static computeDecayFactor(
         daysActive: number,
         signalType: string,
         halfLives: Record<string, number>,
+        options?: {
+            regime?: string;
+            realizedVolMultiplier?: number; // actual vol / expected vol
+            historicalWinRate?: number;     // 0-1, category win rate
+        },
     ): number {
-        const halfLife = halfLives[signalType] ?? DEFAULT_HALF_LIVES['long_overreaction'];
-        // Exponential: decay_factor = 2^(-days/half_life)  (i.e. e^(-ln2 * days/half_life))
+        let halfLife = halfLives[signalType] ?? DEFAULT_HALF_LIVES['long_overreaction'];
+
+        // 1. Regime adjustment: scale half-life by market environment
+        const regime = options?.regime ?? cachedRegime ?? 'neutral';
+        const regimeMultiplier = REGIME_HALF_LIFE_MULTIPLIERS[regime] ?? 1.0;
+        halfLife *= regimeMultiplier;
+
+        // 2. Volatility acceleration: if realized vol exceeds expected, decay faster
+        if (options?.realizedVolMultiplier && options.realizedVolMultiplier > VOLATILITY_ACCELERATION_THRESHOLD) {
+            const volAcceleration = Math.min(
+                MAX_VOLATILITY_ACCELERATION,
+                options.realizedVolMultiplier / VOLATILITY_ACCELERATION_THRESHOLD,
+            );
+            halfLife /= volAcceleration;
+        }
+
+        // 3. Performance feedback: weak categories decay faster
+        if (options?.historicalWinRate !== undefined && options.historicalWinRate < 0.4) {
+            // Win rate below 40% → accelerate decay by up to 30%
+            const winRatePenalty = 1.0 + (0.4 - options.historicalWinRate); // e.g., 30% win rate → 1.1× faster
+            halfLife /= winRatePenalty;
+        }
+
+        // Floor: half-life never drops below 1 day
+        halfLife = Math.max(1.0, halfLife);
+
         const rawFactor = Math.pow(2, -daysActive / halfLife);
         return Math.max(0.5, rawFactor);
     }
@@ -130,13 +191,39 @@ export class SignalDecayEngine {
                 return { processed: 0, stale: 0, expired: 0, results: [] };
             }
 
+            // Fetch historical win rates for adaptive decay
+            let winRateByType: Record<string, number> = {};
+            try {
+                const { data: outcomeStats } = await supabase
+                    .from('signal_outcomes')
+                    .select('signals!inner(signal_type), outcome')
+                    .neq('outcome', 'pending');
+                if (outcomeStats && outcomeStats.length > 0) {
+                    const typeCounts: Record<string, { wins: number; total: number }> = {};
+                    for (const o of outcomeStats) {
+                        const st = (o as any).signals?.signal_type || 'unknown';
+                        if (!typeCounts[st]) typeCounts[st] = { wins: 0, total: 0 };
+                        typeCounts[st].total++;
+                        if (o.outcome === 'win') typeCounts[st].wins++;
+                    }
+                    for (const [st, counts] of Object.entries(typeCounts)) {
+                        if (counts.total >= 5) {
+                            winRateByType[st] = counts.wins / counts.total;
+                        }
+                    }
+                }
+            } catch { /* non-fatal */ }
+
             for (const signal of activeSignals) {
                 const createdAt = new Date(signal.created_at);
                 const daysActive = (Date.now() - createdAt.getTime()) / (1000 * 60 * 60 * 24);
                 const expectedDays = signal.expected_timeframe_days || DEFAULT_SIGNAL_TIMEFRAME_DAYS;
 
-                // Adaptive exponential decay, floored at 0.5
-                const decayFactor = this.computeDecayFactor(daysActive, signal.signal_type, halfLives);
+                // Adaptive exponential decay with regime, volatility, and performance feedback
+                const decayFactor = this.computeDecayFactor(daysActive, signal.signal_type, halfLives, {
+                    regime: cachedRegime ?? undefined,
+                    historicalWinRate: winRateByType[signal.signal_type],
+                });
                 const decayedConfidence = Math.round(signal.confidence_score * decayFactor);
 
                 let action: DecayResult['action'] = 'active';

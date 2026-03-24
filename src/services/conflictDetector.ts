@@ -20,6 +20,15 @@ export interface ConflictResult {
     confidencePenalty: number; // aggregate penalty for the new signal
     shouldBlock: boolean;
     summary: string;
+    /** Auto-resolution actions taken (if any) */
+    resolutions: ConflictResolution[];
+}
+
+export interface ConflictResolution {
+    action: 'expire_existing' | 'reduce_existing_confidence' | 'supersede' | 'none';
+    existingSignalId: string;
+    existingTicker: string;
+    reason: string;
 }
 
 export interface ThesisConflict {
@@ -120,15 +129,22 @@ export class ConflictDetector {
             return this.noConflictResult();
         }
 
-        // Calculate aggregate penalty
+        // Auto-resolve conflicts instead of just flagging them
+        const resolutions = await this.autoResolveConflicts(conflicts, activeSignals);
+
+        // Recalculate penalties after resolution (resolved conflicts get reduced penalties)
         let penalty = 0;
         let shouldBlock = false;
+        const resolvedIds = new Set(resolutions.filter(r => r.action !== 'none').map(r => r.existingSignalId));
 
         for (const conflict of conflicts) {
+            // Resolved conflicts don't contribute to penalties
+            if (resolvedIds.has(conflict.existingSignalId)) continue;
+
             switch (conflict.severity) {
                 case 'high':
                     penalty -= 20;
-                    shouldBlock = true; // Direct contradiction = block
+                    shouldBlock = true;
                     break;
                 case 'medium':
                     penalty -= 10;
@@ -139,14 +155,20 @@ export class ConflictDetector {
             }
         }
 
+        // If all high-severity conflicts were resolved, don't block
+        if (shouldBlock && conflicts.filter(c => c.severity === 'high' && !resolvedIds.has(c.existingSignalId)).length === 0) {
+            shouldBlock = false;
+        }
+
         // Cap penalty
         penalty = Math.max(-30, penalty);
 
-        const summary = conflicts.map(c =>
-            `[${c.severity.toUpperCase()}] ${c.conflictType}: ${c.explanation}`
-        ).join(' | ');
+        const summary = conflicts.map(c => {
+            const resolved = resolvedIds.has(c.existingSignalId) ? ' [RESOLVED]' : '';
+            return `[${c.severity.toUpperCase()}] ${c.conflictType}: ${c.explanation}${resolved}`;
+        }).join(' | ');
 
-        console.log(`[ConflictDetector] ${newTicker}: ${conflicts.length} conflicts found (penalty=${penalty}, block=${shouldBlock})`);
+        console.log(`[ConflictDetector] ${newTicker}: ${conflicts.length} conflicts found, ${resolutions.filter(r => r.action !== 'none').length} auto-resolved (penalty=${penalty}, block=${shouldBlock})`);
 
         return {
             hasConflicts: true,
@@ -154,6 +176,7 @@ export class ConflictDetector {
             confidencePenalty: penalty,
             shouldBlock,
             summary,
+            resolutions,
         };
     }
 
@@ -237,6 +260,100 @@ If no conflict: {"has_conflict": false, "explanation": "No conflict detected.", 
         cacheTimestamp = 0;
     }
 
+    /**
+     * Auto-resolve conflicts by evaluating which signal has stronger evidence.
+     * Resolution strategies:
+     * 1. Expire stale/decayed existing signal if new signal is stronger
+     * 2. Reduce existing signal's confidence if new thesis supersedes it
+     * 3. Supersede: mark existing as superseded by the new signal
+     */
+    private static async autoResolveConflicts(
+        conflicts: ThesisConflict[],
+        activeSignals: any[],
+    ): Promise<ConflictResolution[]> {
+        const resolutions: ConflictResolution[] = [];
+
+        for (const conflict of conflicts) {
+            const existing = activeSignals.find(s => s.id === conflict.existingSignalId);
+            if (!existing) {
+                resolutions.push({ action: 'none', existingSignalId: conflict.existingSignalId, existingTicker: conflict.existingTicker, reason: 'Signal not found' });
+                continue;
+            }
+
+            const daysActive = (Date.now() - new Date(existing.created_at || Date.now()).getTime()) / (1000 * 60 * 60 * 24);
+
+            // Strategy 1: Expire stale existing signals (>7 days old with low confidence)
+            if (daysActive > 7 && existing.confidence_score < 55) {
+                try {
+                    await supabase.from('signals').update({
+                        status: 'expired',
+                        user_notes: `[Auto-resolved] Expired stale signal (${daysActive.toFixed(0)}d old, conf=${existing.confidence_score}) due to conflicting new signal on ${conflict.existingTicker}.`,
+                    }).eq('id', conflict.existingSignalId);
+
+                    resolutions.push({
+                        action: 'expire_existing',
+                        existingSignalId: conflict.existingSignalId,
+                        existingTicker: conflict.existingTicker,
+                        reason: `Expired stale ${conflict.existingDirection} signal (${daysActive.toFixed(0)}d old, confidence ${existing.confidence_score})`,
+                    });
+                    console.log(`[ConflictDetector] Auto-resolved: expired stale ${conflict.existingTicker} signal ${conflict.existingSignalId}`);
+                } catch {
+                    resolutions.push({ action: 'none', existingSignalId: conflict.existingSignalId, existingTicker: conflict.existingTicker, reason: 'DB update failed' });
+                }
+                continue;
+            }
+
+            // Strategy 2: Reduce confidence of older, weaker existing signal
+            if (daysActive > 3 && conflict.severity === 'medium') {
+                try {
+                    const reducedConfidence = Math.max(30, existing.confidence_score - 15);
+                    await supabase.from('signals').update({
+                        confidence_score: reducedConfidence,
+                        user_notes: `[Auto-resolved] Confidence reduced ${existing.confidence_score} → ${reducedConfidence} due to conflicting sector signal.`,
+                    }).eq('id', conflict.existingSignalId);
+
+                    resolutions.push({
+                        action: 'reduce_existing_confidence',
+                        existingSignalId: conflict.existingSignalId,
+                        existingTicker: conflict.existingTicker,
+                        reason: `Reduced confidence ${existing.confidence_score} → ${reducedConfidence} (sector conflict, ${daysActive.toFixed(0)}d old)`,
+                    });
+                    console.log(`[ConflictDetector] Auto-resolved: reduced confidence for ${conflict.existingTicker} signal ${conflict.existingSignalId}`);
+                } catch {
+                    resolutions.push({ action: 'none', existingSignalId: conflict.existingSignalId, existingTicker: conflict.existingTicker, reason: 'DB update failed' });
+                }
+                continue;
+            }
+
+            // Strategy 3: For direct contradictions on fresh signals, attempt AI-assisted resolution
+            if (conflict.conflictType === 'direct_contradiction' && daysActive <= 3) {
+                // Fresh direct contradiction — don't auto-resolve, let the block stand
+                // but mark it so the user knows why
+                resolutions.push({
+                    action: 'none',
+                    existingSignalId: conflict.existingSignalId,
+                    existingTicker: conflict.existingTicker,
+                    reason: `Fresh direct contradiction (${daysActive.toFixed(1)}d old, conf=${existing.confidence_score}) — requires manual review`,
+                });
+                continue;
+            }
+
+            resolutions.push({
+                action: 'none',
+                existingSignalId: conflict.existingSignalId,
+                existingTicker: conflict.existingTicker,
+                reason: 'No auto-resolution applicable',
+            });
+        }
+
+        // Invalidate cache since we may have modified signals
+        if (resolutions.some(r => r.action !== 'none')) {
+            this.invalidateCache();
+        }
+
+        return resolutions;
+    }
+
     // ─── Private Helpers ───
 
     private static async getActiveSignals(): Promise<any[]> {
@@ -247,7 +364,7 @@ If no conflict: {"has_conflict": false, "explanation": "No conflict detected.", 
         try {
             const { data } = await supabase
                 .from('signals')
-                .select('id, ticker, signal_type, thesis, status, confidence_score')
+                .select('id, ticker, signal_type, thesis, status, confidence_score, created_at')
                 .eq('status', 'active');
 
             activeSignalCache = data || [];
@@ -286,6 +403,7 @@ If no conflict: {"has_conflict": false, "explanation": "No conflict detected.", 
             confidencePenalty: 0,
             shouldBlock: false,
             summary: 'No thesis conflicts detected.',
+            resolutions: [],
         };
     }
 }

@@ -246,6 +246,37 @@ export interface AgentOutputsJson {
     decision_twin?: DecisionTwinResult | null;
     // Phase 2 — P1: SWOT Analysis
     swot?: SWOTResult | null;
+    // Phase 3 — Agent Context Bus (cascading intelligence audit trail)
+    context_bus?: {
+        confidence_trail: Array<{
+            stage: string;
+            before: number;
+            after: number;
+            adjustment: number;
+            reason: string;
+        }>;
+        stages_completed: string[];
+    } | null;
+    // Phase 3 — A/B experiment assignment
+    ab_experiment?: {
+        experiment_id: string;
+        variant: 'control' | 'variant';
+        params: Record<string, number>;
+    } | null;
+    // Phase 3 — Proactive thesis engine
+    proactive_thesis?: {
+        catalyst: string;
+        urgency: 'immediate' | 'watchlist' | 'developing';
+        reasoning: string;
+        direction: 'long' | 'short';
+    } | null;
+    // Phase 3 — Conflict resolution actions
+    conflict_resolution?: Array<{
+        action: string;
+        existingSignalId: string;
+        existingTicker: string;
+        reason: string;
+    }> | null;
     // Legacy fields for older signals
     event_detector?: any;
     bias_classifier?: any;

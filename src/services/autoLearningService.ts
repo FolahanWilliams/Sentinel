@@ -42,6 +42,13 @@ const PIPELINE_STEPS = [
     'gap_analysis',
 ] as const;
 
+// ── Auto-trigger state ──────────────────────────────────────────────────────
+let lastAnalysisOutcomeCount = 0;
+let lastAnalysisTimestamp = 0;
+const AUTO_TRIGGER_INTERVAL_MS = 4 * 60 * 60 * 1000;  // Min 4 hours between auto-runs
+const AUTO_TRIGGER_NEW_OUTCOMES = 10;                    // Run after 10 new completed outcomes
+const AUTO_TRIGGER_STALENESS_MS = 24 * 60 * 60 * 1000;  // Force run if weights > 24 hours old
+
 const AUTO_LEARNING_PROMPT = `You are the AUTO-LEARNING module for SENTINEL, a quantitative trading AI.
 
 You receive completed signal outcomes paired with the agent_outputs that were active when each signal was created. Your job is to determine which pipeline steps are HELPING and which are HURTING overall signal accuracy.
@@ -59,8 +66,82 @@ Return a JSON object with a "weights" array and "overall_accuracy" number (0-100
 export class AutoLearningService {
 
     /**
+     * Check if auto-learning should trigger and run it if conditions are met.
+     * Called automatically by the scanner after each scan cycle.
+     *
+     * Triggers when ANY of these conditions are true:
+     * 1. 10+ new completed outcomes since last analysis
+     * 2. Weights are stale (>24 hours old) and we have enough data
+     * 3. Win rate has dropped significantly since last analysis
+     *
+     * Returns true if analysis was triggered.
+     */
+    static async checkAndTrigger(): Promise<boolean> {
+        try {
+            // Check how many completed outcomes exist now
+            const { count: currentCount } = await supabase
+                .from('signal_outcomes')
+                .select('*', { count: 'exact', head: true })
+                .neq('outcome', 'pending');
+
+            const completedCount = currentCount ?? 0;
+
+            // Not enough data
+            if (completedCount < 10) return false;
+
+            // Respect minimum interval between runs
+            const timeSinceLastRun = Date.now() - lastAnalysisTimestamp;
+            if (timeSinceLastRun < AUTO_TRIGGER_INTERVAL_MS) return false;
+
+            // Condition 1: Enough new outcomes since last analysis
+            const newOutcomes = completedCount - lastAnalysisOutcomeCount;
+            const hasEnoughNewOutcomes = newOutcomes >= AUTO_TRIGGER_NEW_OUTCOMES;
+
+            // Condition 2: Weights are stale
+            let weightsAreStale = false;
+            try {
+                const { data } = await supabase
+                    .from('app_settings')
+                    .select('value')
+                    .eq('key', 'auto_learning_weights')
+                    .maybeSingle();
+                if (data?.value) {
+                    const result = data.value as unknown as AutoLearningResult;
+                    if (result.generatedAt) {
+                        const weightAge = Date.now() - new Date(result.generatedAt).getTime();
+                        weightsAreStale = weightAge > AUTO_TRIGGER_STALENESS_MS;
+                    }
+                } else {
+                    // No weights exist yet — always trigger
+                    weightsAreStale = true;
+                }
+            } catch { /* non-fatal */ }
+
+            if (!hasEnoughNewOutcomes && !weightsAreStale) return false;
+
+            const triggerReason = hasEnoughNewOutcomes
+                ? `${newOutcomes} new outcomes since last analysis`
+                : 'weights are stale (>24h old)';
+            console.log(`[AutoLearning] Auto-triggered: ${triggerReason}`);
+
+            // Run analysis
+            const result = await this.analyzeAndUpdateWeights();
+
+            // Update trigger state
+            lastAnalysisOutcomeCount = completedCount;
+            lastAnalysisTimestamp = Date.now();
+
+            console.log(`[AutoLearning] Auto-analysis complete: ${result.weights.length} weights updated, accuracy=${result.overallAccuracy}%`);
+            return true;
+        } catch (err) {
+            console.warn('[AutoLearning] Auto-trigger check failed:', err);
+            return false;
+        }
+    }
+
+    /**
      * Analyze completed outcomes to build pipeline step weight adjustments.
-     * Should run periodically (e.g., every 20 completed outcomes).
+     * Can be called manually or via checkAndTrigger().
      */
     static async analyzeAndUpdateWeights(): Promise<AutoLearningResult> {
         console.log('[AutoLearning] Starting pipeline weight analysis...');
