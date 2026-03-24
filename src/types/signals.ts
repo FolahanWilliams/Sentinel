@@ -5,9 +5,10 @@
 import type { BiasType } from '@/config/constants';
 export type { BiasType };
 
-export type SignalType = 'long_overreaction' | 'short_overreaction' | 'sector_contagion' | 'earnings_overreaction' | 'bullish_catalyst' | 'information';
+export type SignalType = 'long_overreaction' | 'short_overreaction' | 'sector_contagion' | 'earnings_overreaction' | 'bullish_catalyst' | 'information' | 'capital_allocation' | 'investment_thesis' | 'portfolio_exit';
 export type LynchCategory = 'fast_grower' | 'stalwart' | 'turnaround' | 'asset_play' | 'cyclical' | 'slow_grower';
 export type SignalStatus = 'active' | 'triggered' | 'stopped_out' | 'target_hit' | 'manually_closed' | 'expired';
+export type OutcomeStatus = 'pending_outcome' | 'outcome_logged' | 'outcome_overdue';
 export type RiskLevel = 'low' | 'medium' | 'high' | 'extreme';
 export type DataQuality = 'full' | 'partial' | 'stale' | 'no_quote';
 export type TAAlignment = 'confirmed' | 'partial' | 'conflicting' | 'unavailable';
@@ -74,6 +75,11 @@ export interface Signal {
     data_quality: DataQuality;
     user_notes: string | null;
     is_paper: boolean;
+    outcome_status: OutcomeStatus;
+    outcome_due_at: string | null;
+    outcome_review_days: number | null;
+    monetary_value: number | null;
+    currency: string | null;
     created_at: string;
     updated_at: string;
 }
@@ -246,6 +252,37 @@ export interface AgentOutputsJson {
     decision_twin?: DecisionTwinResult | null;
     // Phase 2 — P1: SWOT Analysis
     swot?: SWOTResult | null;
+    // Phase 3 — Agent Context Bus (cascading intelligence audit trail)
+    context_bus?: {
+        confidence_trail: Array<{
+            stage: string;
+            before: number;
+            after: number;
+            adjustment: number;
+            reason: string;
+        }>;
+        stages_completed: string[];
+    } | null;
+    // Phase 3 — A/B experiment assignment
+    ab_experiment?: {
+        experiment_id: string;
+        variant: 'control' | 'variant';
+        params: Record<string, number>;
+    } | null;
+    // Phase 3 — Proactive thesis engine
+    proactive_thesis?: {
+        catalyst: string;
+        urgency: 'immediate' | 'watchlist' | 'developing';
+        reasoning: string;
+        direction: 'long' | 'short';
+    } | null;
+    // Phase 3 — Conflict resolution actions
+    conflict_resolution?: Array<{
+        action: string;
+        existingSignalId: string;
+        existingTicker: string;
+        reason: string;
+    }> | null;
     // Legacy fields for older signals
     event_detector?: any;
     bias_classifier?: any;
@@ -350,4 +387,8 @@ export interface SignalOutcome {
     max_gain: number | null;
     tracked_at: string;
     completed_at: string | null;
+    user_outcome_notes: string | null;
+    user_reported_result: string | null;
+    confirmed_biases: string[] | null;
+    lessons_learned: string | null;
 }

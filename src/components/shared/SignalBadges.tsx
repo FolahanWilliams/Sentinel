@@ -5,9 +5,9 @@
  * Dashboard, ScanResults, SignalsSection, and HighConvictionSetups.
  */
 
-import { Shield, AlertTriangle, BarChart3, Users } from 'lucide-react';
+import { Shield, AlertTriangle, BarChart3, Users, Lightbulb, GitBranch, CheckCircle2 } from 'lucide-react';
 import type { DecisionTwinResult } from '@/types/agents';
-import type { ConfluenceLevel } from '@/types/signals';
+import type { ConfluenceLevel, AgentOutputsJson } from '@/types/signals';
 
 // ── Color utilities ───────────────────────────────────────────────
 
@@ -200,6 +200,80 @@ export function LynchBadge({ category }: { category: string | null | undefined }
             title={`Lynch: ${category.replace('_', ' ')}`}
         >
             {category.replace('_', ' ').toUpperCase()}
+        </span>
+    );
+}
+
+/**
+ * Proactive Thesis badge — shows that this signal was proactively generated
+ * without a news catalyst (TA setup, peer dislocation, mean reversion).
+ */
+export function ProactiveBadge({ thesis }: { thesis: AgentOutputsJson['proactive_thesis'] }) {
+    if (!thesis) return null;
+
+    const catalystLabels: Record<string, string> = {
+        technical_setup: 'TA SETUP',
+        earnings_anticipation: 'PRE-EARNINGS',
+        sector_rotation: 'ROTATION',
+        peer_dislocation: 'PEER GAP',
+        mean_reversion: 'MEAN REV',
+        catalyst_anticipation: 'CATALYST',
+    };
+
+    const urgencyColors: Record<string, string> = {
+        immediate: 'bg-red-500/15 text-red-400 ring-red-500/30',
+        watchlist: 'bg-amber-500/15 text-amber-400 ring-amber-500/30',
+        developing: 'bg-blue-500/10 text-blue-400 ring-blue-500/20',
+    };
+
+    return (
+        <span
+            className={`px-2 py-0.5 text-[10px] font-bold rounded ring-1 ${urgencyColors[thesis.urgency] ?? urgencyColors.watchlist}`}
+            title={`Proactive: ${thesis.catalyst.replace(/_/g, ' ')} | Urgency: ${thesis.urgency} | ${thesis.reasoning.slice(0, 150)}`}
+        >
+            <Lightbulb className="w-2.5 h-2.5 inline mr-0.5" />{catalystLabels[thesis.catalyst] ?? 'PROACTIVE'} ({thesis.urgency.toUpperCase()})
+        </span>
+    );
+}
+
+/**
+ * Confidence Trail badge — compact view of the confidence audit trail
+ * showing how confidence changed through the pipeline.
+ */
+export function ConfidenceTrailBadge({ trail }: { trail: AgentOutputsJson['context_bus'] }) {
+    if (!trail?.confidence_trail || trail.confidence_trail.length === 0) return null;
+
+    const totalAdjustment = trail.confidence_trail.reduce((sum, t) => sum + t.adjustment, 0);
+    const stageCount = trail.stages_completed.length;
+
+    return (
+        <span
+            className={`px-2 py-0.5 text-[10px] font-bold font-mono rounded ring-1 ${
+                totalAdjustment > 0
+                    ? 'bg-emerald-500/10 text-emerald-400 ring-emerald-500/20'
+                    : totalAdjustment < -10
+                        ? 'bg-red-500/10 text-red-400 ring-red-500/20'
+                        : 'bg-sentinel-800/50 text-sentinel-400 ring-sentinel-700/30'
+            }`}
+            title={trail.confidence_trail.map(t => `${t.stage}: ${t.before} → ${t.after} (${t.adjustment > 0 ? '+' : ''}${t.adjustment})`).join('\n')}
+        >
+            <GitBranch className="w-2.5 h-2.5 inline mr-0.5" />{stageCount} stages ({totalAdjustment > 0 ? '+' : ''}{totalAdjustment})
+        </span>
+    );
+}
+
+/**
+ * Conflict Resolution badge — shows that conflicts were auto-resolved.
+ */
+export function ConflictResolutionBadge({ resolutions }: { resolutions: AgentOutputsJson['conflict_resolution'] }) {
+    if (!resolutions || resolutions.length === 0) return null;
+
+    return (
+        <span
+            className="px-2 py-0.5 text-[10px] font-bold rounded ring-1 bg-amber-500/10 text-amber-400 ring-amber-500/20"
+            title={resolutions.map(r => `${r.action}: ${r.existingTicker} — ${r.reason}`).join('\n')}
+        >
+            <CheckCircle2 className="w-2.5 h-2.5 inline mr-0.5" />{resolutions.length} RESOLVED
         </span>
     );
 }

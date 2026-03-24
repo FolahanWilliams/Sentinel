@@ -23,6 +23,7 @@ import { useDeviceCapability } from '@/hooks/useDeviceCapability';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { OutcomeTracker } from '@/services/outcomeTracker';
 import { ExposureMonitor } from '@/services/exposureMonitor';
+import { BrowserNotificationService } from '@/services/browserNotifications';
 
 export function AppLayout() {
     const { isLowEnd } = useDeviceCapability();
@@ -80,6 +81,14 @@ export function AppLayout() {
         // Initial run after 60s to avoid blocking app startup
         const startupTimeout = setTimeout(() => {
             OutcomeTracker.updatePendingOutcomes().catch(() => {});
+            // Mark overdue outcomes + send browser notification if needed
+            OutcomeTracker.markOverdueOutcomes().then(() => {
+                OutcomeTracker.getComplianceStats().then(stats => {
+                    if (stats.overdue > 0 || stats.pending > 3) {
+                        BrowserNotificationService.notifyOutcomeReminder(stats.overdue, stats.pending);
+                    }
+                }).catch(() => {});
+            }).catch(() => {});
         }, 60_000);
 
         outcomeIntervalRef.current = setInterval(() => {

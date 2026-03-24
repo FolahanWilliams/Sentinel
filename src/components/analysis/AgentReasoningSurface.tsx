@@ -68,6 +68,28 @@ interface AgentReasoningSurfaceProps {
             } | null;
             decision_twin?: DecisionTwinResult | null;
             swot?: SWOTResult | null;
+            proactive_thesis?: {
+                catalyst: string;
+                urgency: 'immediate' | 'watchlist' | 'developing';
+                reasoning: string;
+                direction: 'long' | 'short';
+            } | null;
+            context_bus?: {
+                confidence_trail: Array<{
+                    stage: string;
+                    before: number;
+                    after: number;
+                    adjustment: number;
+                    reason: string;
+                }>;
+                stages_completed: string[];
+            } | null;
+            conflict_resolution?: Array<{
+                action: string;
+                existingSignalId: string;
+                existingTicker: string;
+                reason: string;
+            }> | null;
         };
     };
 }
@@ -162,6 +184,102 @@ export function AgentReasoningSurface({ signal }: AgentReasoningSurfaceProps) {
                 <Brain className="w-4 h-4 text-sentinel-400" />
                 Agent Reasoning Surface
             </h3>
+
+            {/* Proactive Thesis Engine Block (if this is a proactive signal) */}
+            {agent_outputs.proactive_thesis && (
+                <div className="rounded-lg border border-amber-500/30 bg-amber-950/15 p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                        <Zap className="w-4 h-4 text-amber-400" />
+                        <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">Proactive Thesis Engine</span>
+                        <span className={`ml-auto px-2 py-0.5 text-[10px] font-bold rounded ring-1 ${
+                            agent_outputs.proactive_thesis.urgency === 'immediate'
+                                ? 'bg-red-500/15 text-red-400 ring-red-500/30'
+                                : agent_outputs.proactive_thesis.urgency === 'watchlist'
+                                    ? 'bg-amber-500/15 text-amber-400 ring-amber-500/30'
+                                    : 'bg-blue-500/10 text-blue-400 ring-blue-500/20'
+                        }`}>
+                            {agent_outputs.proactive_thesis.urgency.toUpperCase()}
+                        </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 mb-3">
+                        <div className="text-[11px]">
+                            <span className="text-sentinel-500">Catalyst:</span>{' '}
+                            <span className="text-sentinel-200 font-medium">{agent_outputs.proactive_thesis.catalyst.replace(/_/g, ' ')}</span>
+                        </div>
+                        <div className="text-[11px]">
+                            <span className="text-sentinel-500">Direction:</span>{' '}
+                            <span className={`font-medium ${agent_outputs.proactive_thesis.direction === 'long' ? 'text-emerald-400' : 'text-red-400'}`}>
+                                {agent_outputs.proactive_thesis.direction.toUpperCase()}
+                            </span>
+                        </div>
+                    </div>
+                    <p className="text-sm text-sentinel-300 leading-relaxed">{agent_outputs.proactive_thesis.reasoning}</p>
+                    <p className="text-[10px] text-amber-500/70 mt-2 italic">
+                        This signal was generated proactively from technical/relative-value analysis — no news catalyst required.
+                    </p>
+                </div>
+            )}
+
+            {/* Confidence Pipeline Trail (if context bus data exists) */}
+            {agent_outputs.context_bus?.confidence_trail && agent_outputs.context_bus.confidence_trail.length > 0 && (
+                <div className="rounded-lg border border-sentinel-700/40 bg-sentinel-800/20 p-4">
+                    <div className="flex items-center gap-2 mb-3">
+                        <GitBranch className="w-4 h-4 text-sentinel-400" />
+                        <span className="text-xs font-semibold text-sentinel-400 uppercase tracking-wider">Confidence Pipeline</span>
+                        <span className="ml-auto text-[10px] font-mono text-sentinel-500">
+                            {agent_outputs.context_bus.stages_completed.length} stages
+                        </span>
+                    </div>
+                    <div className="space-y-1.5">
+                        {agent_outputs.context_bus.confidence_trail.map((step, i) => {
+                            const pct = Math.abs(step.adjustment);
+                            return (
+                                <div key={i} className="flex items-center gap-2 group">
+                                    <span className="text-[10px] text-sentinel-500 font-mono w-28 truncate">{step.stage.replace(/_/g, ' ')}</span>
+                                    <div className="flex-1 h-1.5 bg-sentinel-800 rounded-full overflow-hidden">
+                                        <div
+                                            className={`h-full rounded-full ${step.adjustment > 0 ? 'bg-emerald-500' : step.adjustment < 0 ? 'bg-red-500' : 'bg-sentinel-600'}`}
+                                            style={{ width: `${Math.min(100, pct * 3)}%` }}
+                                        />
+                                    </div>
+                                    <span className="text-[10px] font-mono text-sentinel-400 w-12 text-right">{step.before} &rarr; {step.after}</span>
+                                    <span className={`text-[10px] font-mono font-bold w-8 text-right ${step.adjustment > 0 ? 'text-emerald-400' : step.adjustment < 0 ? 'text-red-400' : 'text-sentinel-500'}`}>
+                                        {step.adjustment > 0 ? '+' : ''}{step.adjustment}
+                                    </span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+
+            {/* Conflict Resolutions (if any auto-resolved) */}
+            {agent_outputs.conflict_resolution && agent_outputs.conflict_resolution.length > 0 && (
+                <div className="rounded-lg border border-amber-500/25 bg-amber-950/15 p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                        <AlertTriangle className="w-4 h-4 text-amber-400" />
+                        <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">Conflicts Auto-Resolved</span>
+                    </div>
+                    <div className="space-y-1.5">
+                        {agent_outputs.conflict_resolution.map((r, i) => (
+                            <div key={i} className="flex items-center gap-2 text-[11px]">
+                                <span className="text-sentinel-200 font-medium">{r.existingTicker}</span>
+                                <span className="text-sentinel-600">&mdash;</span>
+                                <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                                    r.action === 'expire_existing'
+                                        ? 'bg-red-500/10 text-red-400'
+                                        : r.action === 'reduce_existing_confidence'
+                                            ? 'bg-amber-500/10 text-amber-400'
+                                            : 'bg-sentinel-800 text-sentinel-400'
+                                }`}>
+                                    {r.action.replace(/_/g, ' ').toUpperCase()}
+                                </span>
+                                <span className="text-sentinel-400 flex-1 truncate">{r.reason}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {/* Thesis & Counter-Thesis */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

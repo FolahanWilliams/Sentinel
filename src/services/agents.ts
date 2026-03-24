@@ -443,8 +443,13 @@ export class AgentService {
         thesis: string,
         reasoning: string,
         originalConfidence: number,
-        agentName: string
+        agentName: string,
+        monetaryValue?: number | null,
+        currency?: string | null
     ): Promise<AgentResult<BiasDetectiveResult>> {
+        const monetaryContext = monetaryValue
+            ? `\n\nDECISION VALUE: ${currency || 'USD'} ${monetaryValue.toLocaleString()}. Frame every bias finding in terms of estimated monetary cost impact. For example: "If this bias leads to a 5% worse outcome, estimated cost: ${currency || '$'}${Math.round(monetaryValue * 0.05).toLocaleString()}."`
+            : '';
         const prompt = `
 ORIGINATING AGENT: ${agentName}
 ORIGINAL CONFIDENCE: ${originalConfidence}/100
@@ -453,7 +458,7 @@ THESIS TO AUDIT:
 "${thesis}"
 
 REASONING TO AUDIT:
-"${reasoning}"
+"${reasoning}"${monetaryContext}
 
 Scan the above thesis and reasoning for cognitive biases using the full 15-bias taxonomy.
 For each bias you find evidence for, record: bias_name, severity (1/2/3), evidence (direct quote), and penalty.

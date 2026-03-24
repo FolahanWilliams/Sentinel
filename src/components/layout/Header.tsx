@@ -63,19 +63,13 @@ function useMarketStatus() {
 
 const PAGE_TITLES: Record<string, string> = {
     '/': 'Dashboard',
-    '/legacy': 'Legacy Dashboard',
-    '/watchlist': 'Watchlist',
     '/scanner': 'Scanner',
-    '/backtest': 'Backtest',
+    '/backtest': 'Analytics',
     '/journal': 'Journal',
     '/settings': 'Settings',
     '/research': 'Research',
     '/positions': 'Positions',
-    '/performance': 'Performance',
-    '/alerts': 'Alerts',
     '/risk': 'Risk Dashboard',
-    '/leaderboard': 'Leaderboard',
-    '/earnings': 'Earnings Calendar',
 };
 
 export function Header() {

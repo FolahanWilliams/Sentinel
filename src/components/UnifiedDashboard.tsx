@@ -15,14 +15,16 @@ import { formatPrice, formatPercent } from '@/utils/formatters';
 import { calcUnrealizedPnl, getPositionPrice } from '@/utils/portfolio';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 import { SignalsSection } from '@/components/dashboard/SignalsSection';
+import { OutcomeComplianceBanner } from '@/components/dashboard/OutcomeComplianceBanner';
 
 // Lazy-load tab components — only one tab is visible at a time
 const UnifiedPortfolioView = lazy(() => import('@/components/dashboard/UnifiedPortfolioView').then(m => ({ default: m.UnifiedPortfolioView })));
 const WatchlistSection = lazy(() => import('@/components/dashboard/WatchlistSection').then(m => ({ default: m.WatchlistSection })));
 const PerformanceMetrics = lazy(() => import('@/components/dashboard/PerformanceMetrics').then(m => ({ default: m.PerformanceMetrics })));
 const SentinelPanel = lazy(() => import('@/components/sentinel/SentinelPanel').then(m => ({ default: m.SentinelPanel })));
+const Alerts = lazy(() => import('@/pages/Alerts').then(m => ({ default: m.Alerts })));
 import {
-    Activity, Briefcase, Eye, BarChart3, Zap, User, TrendingUp, Newspaper,
+    Activity, Briefcase, Eye, BarChart3, Zap, User, TrendingUp, Newspaper, Bell,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MarketSnapshot } from '@/components/dashboard/MarketSnapshot';
@@ -36,6 +38,7 @@ const TABS: { id: DashboardTab; label: string; icon: typeof Activity }[] = [
     { id: 'portfolio', label: 'My Portfolio', icon: Briefcase },
     { id: 'watchlist', label: 'Watchlist', icon: Eye },
     { id: 'performance', label: 'Performance', icon: BarChart3 },
+    { id: 'alerts', label: 'Alerts', icon: Bell },
 ];
 
 export function UnifiedDashboard() {
@@ -43,7 +46,7 @@ export function UnifiedDashboard() {
     const [searchParams] = useSearchParams();
     const initialTab = (searchParams.get('tab') as DashboardTab) || 'signals';
     const [activeTab, setActiveTab] = useState<DashboardTab>(
-        (['signals', 'intelligence', 'portfolio', 'watchlist', 'performance'] as DashboardTab[]).includes(initialTab)
+        (['signals', 'intelligence', 'portfolio', 'watchlist', 'performance', 'alerts'] as DashboardTab[]).includes(initialTab)
             ? initialTab
             : 'signals'
     );
@@ -222,6 +225,9 @@ export function UnifiedDashboard() {
                     <GlassMaterialize delay={0}><MarketSnapshot /></GlassMaterialize>
                 </div>
 
+                {/* Outcome Compliance Banner */}
+                <OutcomeComplianceBanner />
+
                 {/* Tab Bar */}
                 <div className="flex items-center gap-1 p-1 bg-sentinel-900/70 rounded-xl ring-1 ring-sentinel-800/50 mb-6 overflow-x-auto mobile-scroll-x" role="tablist" aria-label="Dashboard sections">
                     {TABS.map(tab => {
@@ -275,6 +281,7 @@ export function UnifiedDashboard() {
                             {activeTab === 'portfolio' && <UnifiedPortfolioView />}
                             {activeTab === 'watchlist' && <WatchlistSection />}
                             {activeTab === 'performance' && <PerformanceMetrics />}
+                            {activeTab === 'alerts' && <Alerts />}
                         </Suspense>
                     </motion.div>
                 </AnimatePresence>

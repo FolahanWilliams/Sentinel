@@ -45,6 +45,9 @@ import { NoiseAwareConfidenceService } from './noiseAwareConfidence';
 import { DecisionTwinService } from './decisionTwin';
 import { SWOTAnalysisService } from './swotAnalysis';
 import { fetchExternalSentiment, buildScanContext } from './scannerPipeline/contextStage';
+import { ProactiveThesisEngine } from './proactiveThesisEngine';
+import { AgentContextBus } from './agentContextBus';
+import { ABTestingFramework } from './abTestingFramework';
 import { DEFAULT_MIN_CONFIDENCE, DEFAULT_MIN_PRICE_RISE_PCT, CONFIDENCE_GATE_OVERREACTION, CONFIDENCE_GATE_CATALYST, CONFIDENCE_GATE_CONTAGION, CONFIDENCE_GATE_CRITIQUE, CONFIDENCE_FLOOR, SEVERITY_THRESHOLD } from '@/config/constants';
 import type { MultiTimeframeResult } from './technicalAnalysis';
 import type { AgentOutputsJson, LynchCategory } from '@/types/signals';
@@ -789,7 +792,12 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                 }
 
                                 // Diagnostic logging — show WHY signals are accepted/rejected
-                                const gate = catalystAgentUsed ? CONFIDENCE_GATE_CATALYST : CONFIDENCE_GATE_OVERREACTION;
+                                // A/B test can override confidence gates
+                                const gate = ABTestingFramework.getParam(
+                                    abAssignments,
+                                    catalystAgentUsed ? 'confidence_gate_catalyst' : 'confidence_gate_overreaction',
+                                    catalystAgentUsed ? CONFIDENCE_GATE_CATALYST : CONFIDENCE_GATE_OVERREACTION
+                                );
                                 if (analysis.success) {
                                     console.log(`[Scanner] ${catalystAgentUsed ? 'Catalyst' : 'Overreaction'} result for ${ev.ticker}: pass=${analysis.data?.is_overreaction}, confidence=${analysis.data?.confidence_score}, thesis="${(analysis.data?.thesis || '').slice(0, 80)}..."`);
                                 } else {
@@ -797,6 +805,14 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                 }
 
                                 if (analysis.success && validation.valid && analysis.data?.is_overreaction && analysis.data.confidence_score > gate) {
+
+                                    // Initialize Agent Context Bus for cascading intelligence
+                                    const agentCtx = AgentContextBus.create(ev.ticker, ev.headline, signalType);
+                                    AgentContextBus.setPrimaryAgent(agentCtx, analysis.data, catalystAgentUsed ? 'BULLISH_CATALYST_AGENT' : 'OVERREACTION_AGENT');
+                                    agentCtx.regime = regimeResult?.regime;
+
+                                    // A/B Test assignment for this signal
+                                    const abAssignments = await ABTestingFramework.assignVariants(ev.ticker);
 
                                     // 6.5. TA CONFIRMATION LAYER — use pre-fetched TA snapshot
                                     let taSnapshot = earlyTaSnapshot;
@@ -828,9 +844,11 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                         console.warn(`[Scanner] TA fetch failed for ${ev.ticker}, proceeding without TA:`, taErr);
                                     }
 
-                                    // 7. SANITY CHECK (Red Team) — with cascading context from originating agent
-                                    // The Red Team receives the full structured output of the prior agent so it can
-                                    // mount a targeted challenge against specific weak points (not just the thesis string).
+                                    // Record TA adjustment in context bus
+                                    agentCtx.taSnapshot = earlyTaSnapshot;
+                                    agentCtx.taAlignment = taAlignment;
+
+                                    // 7. SANITY CHECK (Red Team) — with cascading context from ALL upstream agents
                                     const priorContext: PriorAgentContext = {
                                         agentName: catalystAgentUsed ? 'BULLISH_CATALYST_AGENT' : 'OVERREACTION_AGENT',
                                         confidence: analysis.data.confidence_score,
@@ -841,9 +859,11 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                         moatRating: analysis.data.moat_rating,
                                         financialImpact: analysis.data.financial_impact_assessment,
                                     };
+                                    // Inject cascading context from bias detective (if it ran before red team)
+                                    const redTeamCascadeCtx = AgentContextBus.buildPromptContext(agentCtx, 'red_team');
                                     const sanity = await AgentService.runSanityCheck(
                                         ev.ticker,
-                                        analysis.data.thesis,
+                                        analysis.data.thesis + redTeamCascadeCtx,
                                         analysis.data.target_price,
                                         analysis.data.stop_loss,
                                         catalystAgentUsed ? 'BULLISH_CATALYST_AGENT' : 'OVERREACTION_AGENT',
@@ -860,6 +880,10 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                         console.warn(`[Scanner] Sanity check FAILED for ${ev.ticker}: ${sanity.error}`);
                                     }
 
+                                    if (sanity.success && sanity.data) {
+                                        AgentContextBus.setRedTeam(agentCtx, sanity.data);
+                                    }
+
                                     if (sanity.success && sanity.data?.passes_sanity_check) {
                                         // 7.4.5. BIAS DETECTIVE — audit primary agent's reasoning for cognitive biases
                                         let biasDetectiveOutput: import('@/types/agents').BiasDetectiveResult | null = null;
@@ -872,11 +896,13 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             );
                                             if (biasResult.success && biasResult.data) {
                                                 biasDetectiveOutput = biasResult.data;
+                                                AgentContextBus.setBiasDetective(agentCtx, biasResult.data);
                                                 if (biasResult.data.total_penalty > 0) {
                                                     const before = analysis.data.confidence_score;
                                                     analysis.data.confidence_score = Math.max(CONFIDENCE_FLOOR,
                                                         analysis.data.confidence_score - biasResult.data.total_penalty
                                                     );
+                                                    AgentContextBus.recordAdjustment(agentCtx, 'bias_detective', before, analysis.data.confidence_score, `dominant: ${biasResult.data.dominant_bias}`);
                                                     console.log(`[Scanner] Bias Detective penalised ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (dominant: ${biasResult.data.dominant_bias}, penalty: -${biasResult.data.total_penalty})`);
                                                 } else {
                                                     console.log(`[Scanner] Bias Detective: ${ev.ticker} is bias-free (dominant: ${biasResult.data.dominant_bias})`);
@@ -886,21 +912,30 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             console.warn(`[Scanner] Bias Detective failed for ${ev.ticker} (non-fatal):`, biasErr);
                                         }
 
-                                        // 7.5. SELF-CRITIQUE — second-pass confidence adjustment
+                                        // 7.5. SELF-CRITIQUE — second-pass confidence adjustment (with cascading context)
                                         let critiqueOutput = null;
                                         try {
+                                            const selfCritiqueCascadeCtx = AgentContextBus.buildPromptContext(agentCtx, 'self_critique');
                                             const critique = await SelfCritiqueAgent.critique(
                                                 ev.ticker,
-                                                analysis.data.thesis,
+                                                analysis.data.thesis + selfCritiqueCascadeCtx,
                                                 analysis.data.reasoning || analysis.data.thesis,
                                                 analysis.data.confidence_score,
                                                 sanity.data.counter_thesis,
                                                 signalType
                                             );
                                             critiqueOutput = critique;
+                                            // Store in context bus
+                                            agentCtx.selfCritique = {
+                                                criticalFlaws: critique.criticalFlaws || [],
+                                                minorFlaws: critique.minorFlaws || [],
+                                                adjustedConfidence: critique.adjustedConfidence,
+                                            };
                                             if (critique.hasFlaws && critique.adjustedConfidence < analysis.data.confidence_score) {
+                                                const before = analysis.data.confidence_score;
                                                 console.log(`[Scanner] Self-critique adjusted confidence for ${ev.ticker}: ${analysis.data.confidence_score} → ${critique.adjustedConfidence} (${critique.criticalFlaws.length} critical, ${critique.minorFlaws.length} minor flaws)`);
                                                 analysis.data.confidence_score = critique.adjustedConfidence;
+                                                AgentContextBus.recordAdjustment(agentCtx, 'self_critique', before, critique.adjustedConfidence, `${critique.criticalFlaws.length} critical flaws`);
                                             }
                                             // Drop signal if critique brings confidence below threshold
                                             if (critique.adjustedConfidence < CONFIDENCE_GATE_CRITIQUE) {
@@ -914,16 +949,20 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                         // 7.5.5. NOISE-AWARE CONFIDENCE — 3-judge panel to measure LLM certainty
                                         let noiseConfidenceOutput: import('@/types/agents').NoiseConfidenceResult | null = null;
                                         try {
+                                            const noiseCascadeCtx = AgentContextBus.buildPromptContext(agentCtx, 'noise_panel');
                                             const noiseResult = await NoiseAwareConfidenceService.evaluate(
                                                 analysis.data.thesis,
                                                 analysis.data.reasoning || analysis.data.thesis,
                                                 analysis.data.confidence_score,
-                                                catalystAgentUsed ? 'BULLISH_CATALYST_AGENT' : 'OVERREACTION_AGENT'
+                                                catalystAgentUsed ? 'BULLISH_CATALYST_AGENT' : 'OVERREACTION_AGENT',
+                                                noiseCascadeCtx || undefined,
                                             );
                                             noiseConfidenceOutput = noiseResult;
+                                            AgentContextBus.setNoisePanel(agentCtx, noiseResult);
                                             if (noiseResult.confidence_adjustment !== 0) {
                                                 const before = analysis.data.confidence_score;
                                                 analysis.data.confidence_score = noiseResult.adjusted_confidence;
+                                                AgentContextBus.recordAdjustment(agentCtx, 'noise_panel', before, analysis.data.confidence_score, noiseResult.summary);
                                                 console.log(`[Scanner] Noise-Aware Confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${noiseResult.summary})`);
                                             }
                                         } catch (noiseErr) {
@@ -956,11 +995,15 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                 // Risk inputs
                                                 vix: regimeResult?.vixLevel ?? null,
                                                 regime: regimeResult?.regime,
+                                                // Cascading context from upstream agents
+                                                cascadingContext: AgentContextBus.buildPromptContext(agentCtx, 'decision_twin') || undefined,
                                             });
 
+                                            AgentContextBus.setDecisionTwin(agentCtx, decisionTwinOutput);
                                             if (decisionTwinOutput.confidence_adjustment !== 0) {
                                                 const before = analysis.data.confidence_score;
                                                 analysis.data.confidence_score = decisionTwinOutput.adjusted_confidence;
+                                                AgentContextBus.recordAdjustment(agentCtx, 'decision_twin', before, analysis.data.confidence_score, decisionTwinOutput.summary);
                                                 console.log(`[Scanner] Decision Twin for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${decisionTwinOutput.summary})`);
                                             } else {
                                                 console.log(`[Scanner] Decision Twin for ${ev.ticker}: no adjustment. ${decisionTwinOutput.summary}`);
@@ -1483,6 +1526,9 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                     penalty: conflictResult.confidencePenalty,
                                                     summary: conflictResult.summary,
                                                 } : null,
+                                                conflict_resolution: conflictResult?.resolutions?.filter(r => r.action !== 'none').length
+                                                    ? conflictResult.resolutions.filter(r => r.action !== 'none')
+                                                    : null,
                                                 fear_greed: fearGreedScore !== undefined ? {
                                                     score: fearGreedScore,
                                                     rating: fearGreedRating,
@@ -1536,6 +1582,14 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                 noise_confidence: noiseConfidenceOutput,
                                                 decision_twin: decisionTwinOutput,
                                                 swot: swotOutput,
+                                                // Agent Context Bus — cascading intelligence audit trail
+                                                context_bus: AgentContextBus.serialize(agentCtx),
+                                                // A/B experiment assignment (if any)
+                                                ab_experiment: abAssignments.length > 0 ? {
+                                                    experiment_id: abAssignments[0].experimentId,
+                                                    variant: abAssignments[0].variant,
+                                                    params: abAssignments[0].params,
+                                                } : null,
                                             } as unknown as Json,
                                             margin_of_safety_pct: marginOfSafetyPct,
                                             conviction_score: typeof analysis.data.conviction_score === 'number'
@@ -1548,7 +1602,10 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             status: 'active',
                                             secondary_biases: [],
                                             sources: [],
-                                            is_paper: false
+                                            is_paper: false,
+                                            outcome_status: 'pending_outcome',
+                                            outcome_due_at: new Date(Date.now() + (analysis.data.timeframe_days || 30) * 2 * 24 * 60 * 60 * 1000).toISOString(),
+                                            outcome_review_days: (analysis.data.timeframe_days || 30) * 2
                                         }).select().single();
 
                                         if (signalInsertErr) {
@@ -1734,7 +1791,10 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                                 data_quality: 'partial',
                                                                 secondary_biases: ['herding'],
                                                                 sources: [],
-                                                                is_paper: false
+                                                                is_paper: false,
+                                                                outcome_status: 'pending_outcome',
+                                                                outcome_due_at: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(),
+                                                                outcome_review_days: 60
                                                             }).select().single();
 
                                                             if (contagionInsertErr) {
@@ -1782,22 +1842,125 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                 console.warn('[Scanner] Outcome tracker error:', outcomeErr.message);
             }
 
-            // 11b. Auto-Learning — periodically re-analyze pipeline weights
+            // 11b. Auto-Learning — automatic trigger (replaces manual 20-outcome check)
             try {
-                const { count: completedCount } = await supabase
-                    .from('signal_outcomes')
-                    .select('*', { count: 'exact', head: true })
-                    .neq('outcome', 'pending');
+                void AutoLearningService.checkAndTrigger().catch(e =>
+                    console.warn('[Scanner] Auto-learning check failed (non-fatal):', e)
+                );
+            } catch { /* non-fatal */ }
 
-                // Trigger auto-learning every 20 completed outcomes
-                if (completedCount && completedCount >= 10 && completedCount % 20 === 0) {
-                    console.log(`[Scanner] Triggering auto-learning analysis (${completedCount} completed outcomes)...`);
-                    void AutoLearningService.analyzeAndUpdateWeights().catch(e =>
-                        console.warn('[Scanner] Auto-learning failed (non-fatal):', e)
-                    );
+            // 11c. Proactive Thesis Generation — generate trade hypotheses without events
+            // Runs AFTER reactive scan to use remaining budget on proactive setups
+            try {
+                const proactiveResult = await ProactiveThesisEngine.scan(
+                    tickersToScan.map(t => ({ ticker: t.ticker, sector: t.sector })),
+                    regimeResult?.regime,
+                );
+                if (proactiveResult.theses.length > 0) {
+                    console.log(`[Scanner] Proactive engine found ${proactiveResult.theses.length} setups`);
+                    for (const thesis of proactiveResult.theses) {
+                        try {
+                            await this.ensureWatchlistEntry(thesis.ticker);
+
+                            // Quality Gate 1: Conflict Detection — check for contradictions with active signals
+                            const tickerSectorForConflict = tickersToScan.find(t => t.ticker === thesis.ticker)?.sector || 'Unknown';
+                            let proactiveConflictResult: import('./conflictDetector').ConflictResult | null = null;
+                            try {
+                                proactiveConflictResult = await ConflictDetector.checkConflicts(
+                                    thesis.ticker,
+                                    thesis.direction,
+                                    thesis.thesis,
+                                    tickerSectorForConflict,
+                                );
+                                if (proactiveConflictResult.shouldBlock) {
+                                    console.warn(`[Scanner] Proactive thesis for ${thesis.ticker} BLOCKED by conflict detector: ${proactiveConflictResult.summary}`);
+                                    continue;
+                                }
+                                // Apply conflict penalty
+                                if (proactiveConflictResult.confidencePenalty !== 0) {
+                                    thesis.confidence = Math.max(CONFIDENCE_FLOOR, thesis.confidence + proactiveConflictResult.confidencePenalty);
+                                    console.log(`[Scanner] Proactive conflict penalty for ${thesis.ticker}: ${proactiveConflictResult.confidencePenalty}`);
+                                }
+                            } catch { /* non-fatal */ }
+
+                            // Quality Gate 2: Sanity Check (Red Team) — attack the proactive thesis
+                            try {
+                                const sanityResult = await AgentService.runSanityCheck(
+                                    thesis.ticker,
+                                    thesis.thesis,
+                                    thesis.target_price,
+                                    thesis.stop_loss,
+                                    'PROACTIVE_THESIS_ENGINE',
+                                );
+                                if (sanityResult.success && sanityResult.data) {
+                                    if (!sanityResult.data.passes_sanity_check) {
+                                        console.warn(`[Scanner] Proactive thesis for ${thesis.ticker} FAILED sanity check: ${sanityResult.data.fatal_flaws?.join(', ')}`);
+                                        continue;
+                                    }
+                                }
+                            } catch { /* non-fatal — save anyway if sanity check fails */ }
+
+                            // Quality Gate 3: Minimum confidence after adjustments
+                            if (thesis.confidence < adaptiveMinConfidence) {
+                                console.warn(`[Scanner] Proactive thesis for ${thesis.ticker} below min confidence (${thesis.confidence} < ${adaptiveMinConfidence})`);
+                                continue;
+                            }
+
+                            // Save proactive thesis as a signal (passed quality gates)
+                            await supabase.from('signals').insert({
+                                ticker: thesis.ticker,
+                                signal_type: thesis.direction === 'short' ? 'short_overreaction' : 'long_overreaction',
+                                status: 'active',
+                                confidence_score: thesis.confidence,
+                                risk_level: thesis.confidence >= 75 ? 'low' : thesis.confidence >= 60 ? 'medium' : 'high',
+                                thesis: `[PROACTIVE: ${thesis.catalyst}] ${thesis.thesis}`,
+                                bias_type: 'overreaction',
+                                secondary_biases: [],
+                                bias_explanation: thesis.reasoning,
+                                counter_argument: '',
+                                suggested_entry_low: thesis.suggested_entry_low,
+                                suggested_entry_high: thesis.suggested_entry_high,
+                                stop_loss: thesis.stop_loss,
+                                target_price: thesis.target_price,
+                                expected_timeframe_days: thesis.timeframe_days,
+                                sources: ['proactive_thesis_engine'],
+                                agent_outputs: {
+                                    proactive_thesis: {
+                                        catalyst: thesis.catalyst,
+                                        urgency: thesis.urgency,
+                                        reasoning: thesis.reasoning,
+                                        direction: thesis.direction,
+                                    },
+                                    conflict_check: proactiveConflictResult?.hasConflicts ? {
+                                        has_conflicts: true,
+                                        conflict_count: proactiveConflictResult.conflicts.length,
+                                        penalty: proactiveConflictResult.confidencePenalty,
+                                        summary: proactiveConflictResult.summary,
+                                    } : null,
+                                    conflict_resolution: proactiveConflictResult?.resolutions?.filter(r => r.action !== 'none').length
+                                        ? proactiveConflictResult.resolutions.filter(r => r.action !== 'none')
+                                        : null,
+                                } as any,
+                                data_quality: 'partial',
+                                is_paper: true,
+                            });
+                            signalsGenerated++;
+                            console.log(`[Scanner] Proactive signal saved: ${thesis.ticker} (${thesis.catalyst}, ${thesis.urgency}, conf=${thesis.confidence})`);
+                        } catch (saveErr) {
+                            console.warn(`[Scanner] Failed to save proactive thesis for ${thesis.ticker}:`, saveErr);
+                        }
+                    }
                 }
-            } catch { /* non-fatal */
+            } catch (proactiveErr) {
+                console.warn('[Scanner] Proactive thesis engine failed (non-fatal):', proactiveErr);
             }
+
+            // 11d. Signal Decay — set regime for adaptive decay
+            try {
+                if (regimeResult?.regime) {
+                    SignalDecayEngine.setRegime(regimeResult.regime);
+                }
+            } catch { /* non-fatal */ }
 
             // 12. Update Scan Log
             const durationMs = Date.now() - startTime;
@@ -2127,7 +2290,10 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                             status: 'active',
                             data_quality: singleTaSnapshot ? 'full' : 'partial',
                             sources: [],
-                            is_paper: isPaper
+                            is_paper: isPaper,
+                            outcome_status: 'pending_outcome',
+                            outcome_due_at: new Date(Date.now() + (analysis.data.timeframe_days || 30) * 2 * 24 * 60 * 60 * 1000).toISOString(),
+                            outcome_review_days: (analysis.data.timeframe_days || 30) * 2
                         } as any).select().single();
 
                         if (discSignalErr) {
