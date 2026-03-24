@@ -203,8 +203,8 @@ function PersonaRadarChart({
 
     // Vertex positions scaled by actual confidence scores
     const scorePts = ANGLES.map((a, i) => ({
-        x: CX + R * scores[i] * Math.cos(a),
-        y: CY + R * scores[i] * Math.sin(a),
+        x: CX + R * (scores[i] ?? 0) * Math.cos(a),
+        y: CY + R * (scores[i] ?? 0) * Math.sin(a),
     }));
 
     const toStr = (pts: { x: number; y: number }[]) =>
@@ -270,7 +270,7 @@ function PersonaRadarChart({
                     cx={pt.x}
                     cy={pt.y}
                     r="3.5"
-                    fill={personas[i].color}
+                    fill={personas[i]?.color}
                     stroke="rgba(15,23,42,0.8)"
                     strokeWidth="1"
                 />
@@ -278,8 +278,8 @@ function PersonaRadarChart({
 
             {/* Labels — persona name + score */}
             {personas.map((p, i) => {
-                const lx = CX + (R + LABEL_OFFSET) * Math.cos(p.angle);
-                const ly = CY + (R + LABEL_OFFSET) * Math.sin(p.angle);
+                const lx = CX + (R + LABEL_OFFSET) * Math.cos(p.angle ?? 0);
+                const ly = CY + (R + LABEL_OFFSET) * Math.sin(p.angle ?? 0);
                 // Determine text-anchor based on position
                 const anchor = i === 0 ? 'middle' : i === 1 ? 'start' : 'end';
                 return (

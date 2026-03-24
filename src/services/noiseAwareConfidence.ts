@@ -97,9 +97,9 @@ Return JSON.
             )
         );
 
-        const low  = lowSettled.status  === 'fulfilled' ? lowSettled.value  : null;
-        const mid  = midSettled.status  === 'fulfilled' ? midSettled.value  : null;
-        const high = highSettled.status === 'fulfilled' ? highSettled.value : null;
+        const low  = lowSettled?.status  === 'fulfilled' ? lowSettled.value  : null;
+        const mid  = midSettled?.status  === 'fulfilled' ? midSettled.value  : null;
+        const high = highSettled?.status === 'fulfilled' ? highSettled.value : null;
 
         // Extract scores — fall back to original confidence if a judge call failed
         const scores: [number, number, number] = [
