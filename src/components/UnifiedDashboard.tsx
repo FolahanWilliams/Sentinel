@@ -22,8 +22,9 @@ const UnifiedPortfolioView = lazy(() => import('@/components/dashboard/UnifiedPo
 const WatchlistSection = lazy(() => import('@/components/dashboard/WatchlistSection').then(m => ({ default: m.WatchlistSection })));
 const PerformanceMetrics = lazy(() => import('@/components/dashboard/PerformanceMetrics').then(m => ({ default: m.PerformanceMetrics })));
 const SentinelPanel = lazy(() => import('@/components/sentinel/SentinelPanel').then(m => ({ default: m.SentinelPanel })));
+const Alerts = lazy(() => import('@/pages/Alerts').then(m => ({ default: m.Alerts })));
 import {
-    Activity, Briefcase, Eye, BarChart3, Zap, User, TrendingUp, Newspaper,
+    Activity, Briefcase, Eye, BarChart3, Zap, User, TrendingUp, Newspaper, Bell,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MarketSnapshot } from '@/components/dashboard/MarketSnapshot';
@@ -37,6 +38,7 @@ const TABS: { id: DashboardTab; label: string; icon: typeof Activity }[] = [
     { id: 'portfolio', label: 'My Portfolio', icon: Briefcase },
     { id: 'watchlist', label: 'Watchlist', icon: Eye },
     { id: 'performance', label: 'Performance', icon: BarChart3 },
+    { id: 'alerts', label: 'Alerts', icon: Bell },
 ];
 
 export function UnifiedDashboard() {
@@ -44,7 +46,7 @@ export function UnifiedDashboard() {
     const [searchParams] = useSearchParams();
     const initialTab = (searchParams.get('tab') as DashboardTab) || 'signals';
     const [activeTab, setActiveTab] = useState<DashboardTab>(
-        (['signals', 'intelligence', 'portfolio', 'watchlist', 'performance'] as DashboardTab[]).includes(initialTab)
+        (['signals', 'intelligence', 'portfolio', 'watchlist', 'performance', 'alerts'] as DashboardTab[]).includes(initialTab)
             ? initialTab
             : 'signals'
     );
@@ -279,6 +281,7 @@ export function UnifiedDashboard() {
                             {activeTab === 'portfolio' && <UnifiedPortfolioView />}
                             {activeTab === 'watchlist' && <WatchlistSection />}
                             {activeTab === 'performance' && <PerformanceMetrics />}
+                            {activeTab === 'alerts' && <Alerts />}
                         </Suspense>
                     </motion.div>
                 </AnimatePresence>

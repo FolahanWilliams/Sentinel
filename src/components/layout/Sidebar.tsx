@@ -13,7 +13,6 @@ import { motion } from 'framer-motion';
 import { CursorGlow } from '@/components/shared/CursorGlow';
 import {
     LayoutDashboard,
-    List,
     Radar,
     Microscope,
     FlaskConical,
@@ -21,11 +20,7 @@ import {
     BookOpen,
     Newspaper,
     Briefcase,
-    Bell,
     Shield,
-    Trophy,
-    Calendar,
-    Target,
     ChevronLeft,
     ChevronRight,
     LogOut,
@@ -34,17 +29,12 @@ import {
 const NAV_ITEMS = [
     { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
     { to: '/?tab=intelligence', icon: Newspaper, label: 'Intelligence' },
-    { to: '/watchlist', icon: List, label: 'Watchlist' },
     { to: '/positions', icon: Briefcase, label: 'Positions' },
     { to: '/scanner', icon: Radar, label: 'Scanner' },
     { to: '/research', icon: Microscope, label: 'Research' },
-    { to: '/backtest', icon: FlaskConical, label: 'Backtest' },
+    { to: '/backtest', icon: FlaskConical, label: 'Analytics' },
     { to: '/journal', icon: BookOpen, label: 'Journal' },
-    { to: '/alerts', icon: Bell, label: 'Alerts' },
     { to: '/risk', icon: Shield, label: 'Risk' },
-    { to: '/accuracy', icon: Target, label: 'Accuracy' },
-    { to: '/leaderboard', icon: Trophy, label: 'Leaderboard' },
-    { to: '/earnings', icon: Calendar, label: 'Earnings' },
     { to: '/settings', icon: Settings, label: 'Settings' },
 ] as const;
 

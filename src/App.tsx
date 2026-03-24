@@ -43,18 +43,13 @@ function lazyWithRetry<T extends Record<string, unknown>>(
 
 // ── Lazy-loaded routes ──────────────────────────────────────────────
 const Analysis = lazyWithRetry(() => import('@/pages/Analysis'), 'Analysis');
-const Watchlist = lazyWithRetry(() => import('@/pages/Watchlist'), 'Watchlist');
 const Backtest = lazyWithRetry(() => import('@/pages/Backtest'), 'Backtest');
 const Scanner = lazyWithRetry(() => import('@/pages/Scanner'), 'Scanner');
 const Settings = lazyWithRetry(() => import('@/pages/Settings'), 'Settings');
 const Journal = lazyWithRetry(() => import('@/pages/Journal'), 'Journal');
 const StockAnalysis = lazyWithRetry(() => import('@/pages/StockAnalysis'), 'StockAnalysis');
 const Positions = lazyWithRetry(() => import('@/pages/Positions'), 'Positions');
-const Alerts = lazyWithRetry(() => import('@/pages/Alerts'), 'Alerts');
 const RiskDashboard = lazyWithRetry(() => import('@/pages/RiskDashboard'), 'RiskDashboard');
-const Leaderboard = lazyWithRetry(() => import('@/pages/Leaderboard'), 'Leaderboard');
-const EarningsCalendar = lazyWithRetry(() => import('@/pages/EarningsCalendar'), 'EarningsCalendar');
-const DecisionAccuracy = lazyWithRetry(() => import('@/pages/DecisionAccuracy'), 'DecisionAccuracy');
 const NotFound = lazyWithRetry(() => import('@/pages/NotFound'), 'NotFound');
 
 /** Minimal loading spinner shown while a lazy chunk loads */
@@ -137,10 +132,9 @@ export default function App() {
                         <Routes>
                             <Route element={<AppLayout />}>
                                 <Route path="/" element={<UnifiedDashboard />} />
-                                {/* Phase 3 fix (Audit C16): /analysis base route redirects to dashboard */}
+                                {/* /analysis base route redirects to dashboard */}
                                 <Route path="/analysis" element={<Navigate to="/" replace />} />
                                 <Route path="/analysis/:ticker" element={<Analysis />} />
-                                <Route path="/watchlist" element={<Watchlist />} />
                                 <Route path="/backtest" element={<Backtest />} />
                                 <Route path="/scanner" element={<Scanner />} />
                                 <Route path="/research" element={<StockAnalysis />} />
@@ -148,14 +142,16 @@ export default function App() {
                                 <Route path="/settings" element={<Settings />} />
                                 <Route path="/journal" element={<Journal />} />
                                 <Route path="/positions" element={<Positions />} />
+                                <Route path="/risk" element={<RiskDashboard />} />
+                                {/* Redirects for consolidated pages */}
+                                <Route path="/watchlist" element={<Navigate to="/?tab=watchlist" replace />} />
                                 <Route path="/performance" element={<Navigate to="/backtest?tab=performance" replace />} />
                                 <Route path="/intelligence" element={<Navigate to="/?tab=intelligence" replace />} />
-                                <Route path="/alerts" element={<Alerts />} />
-                                <Route path="/risk" element={<RiskDashboard />} />
-                                <Route path="/leaderboard" element={<Leaderboard />} />
-                                <Route path="/earnings" element={<EarningsCalendar />} />
-                                <Route path="/accuracy" element={<DecisionAccuracy />} />
-                                {/* Phase 3 fix (Audit C15): 404 catch-all route */}
+                                <Route path="/alerts" element={<Navigate to="/?tab=alerts" replace />} />
+                                <Route path="/leaderboard" element={<Navigate to="/backtest?tab=leaderboard" replace />} />
+                                <Route path="/earnings" element={<Navigate to="/backtest?tab=earnings" replace />} />
+                                <Route path="/accuracy" element={<Navigate to="/backtest?tab=accuracy" replace />} />
+                                {/* 404 catch-all */}
                                 <Route path="*" element={<NotFound />} />
                             </Route>
                         </Routes>

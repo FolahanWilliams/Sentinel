@@ -7,7 +7,7 @@
  */
 
 import { DEFAULT_STARTING_CAPITAL, DEFAULT_MIN_CONFIDENCE } from '@/config/constants';
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, lazy, Suspense } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
     History, Play, BarChart3, TrendingUp, TrendingDown,
@@ -166,20 +166,36 @@ function MonthlyHeatmap({ data }: { data: MonthlyReturn[] }) {
     );
 }
 
+// ────────────── Lazy-load merged page components ──────────────
+
+const Leaderboard = lazy(() => import('@/pages/Leaderboard').then(m => ({ default: m.Leaderboard })));
+const EarningsCalendar = lazy(() => import('@/pages/EarningsCalendar').then(m => ({ default: m.EarningsCalendar })));
+const DecisionAccuracy = lazy(() => import('@/pages/DecisionAccuracy').then(m => ({ default: m.DecisionAccuracy })));
+
 // ────────────── Main Component ──────────────
 
-type ActiveTab = 'performance' | 'backtest';
+const ANALYTICS_TABS = [
+    { id: 'backtest', label: 'Backtest Engine', icon: History, color: 'purple' },
+    { id: 'performance', label: 'Performance', icon: BarChart3, color: 'emerald' },
+    { id: 'accuracy', label: 'Accuracy', icon: Target, color: 'blue' },
+    { id: 'leaderboard', label: 'Leaderboard', icon: Award, color: 'amber' },
+    { id: 'earnings', label: 'Earnings', icon: Calendar, color: 'cyan' },
+] as const;
+
+type ActiveTab = typeof ANALYTICS_TABS[number]['id'];
 
 export function Backtest() {
     const [searchParams, setSearchParams] = useSearchParams();
     const [activeTab, setActiveTab] = useState<ActiveTab>(
-        (searchParams.get('tab') as ActiveTab) || 'backtest'
+        (ANALYTICS_TABS.some(t => t.id === searchParams.get('tab')) ? searchParams.get('tab') as ActiveTab : 'backtest')
     );
 
     const handleTabChange = (tab: ActiveTab) => {
         setActiveTab(tab);
         setSearchParams(tab === 'backtest' ? {} : { tab });
     };
+
+    const currentTab = ANALYTICS_TABS.find(t => t.id === activeTab) ?? ANALYTICS_TABS[0];
 
     return (
         <div className="space-y-6 animate-in fade-in duration-500">
@@ -188,42 +204,46 @@ export function Backtest() {
                 <div>
                     <h1 className="text-3xl font-bold font-display tracking-tight text-sentinel-100 flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center ring-1 ring-purple-500/20">
-                            {activeTab === 'performance' ? <BarChart3 className="w-5 h-5 text-emerald-400" /> : <History className="w-5 h-5 text-purple-400" />}
+                            <currentTab.icon className="w-5 h-5 text-purple-400" />
                         </div>
-                        {activeTab === 'performance' ? 'Signal Performance' : 'Backtest Engine'}
+                        Analytics
                     </h1>
                     <p className="text-sentinel-400 mt-1.5 text-sm">
-                        {activeTab === 'performance'
-                            ? 'How Sentinel\'s AI signals have performed over time'
-                            : 'Replay historical signal outcomes to evaluate AI agent accuracy and calibration'}
+                        Performance tracking, backtesting, accuracy calibration, and source leaderboards
                     </p>
-                </div>
-                <div className="flex gap-1 bg-sentinel-900/50 rounded-xl p-1 ring-1 ring-sentinel-800/50">
-                    <button
-                        onClick={() => handleTabChange('performance')}
-                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors border-none cursor-pointer flex items-center gap-2 ${
-                            activeTab === 'performance'
-                                ? 'bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/30'
-                                : 'text-sentinel-400 hover:text-sentinel-200'
-                        }`}
-                    >
-                        <BarChart3 className="w-4 h-4" /> Live Performance
-                    </button>
-                    <button
-                        onClick={() => handleTabChange('backtest')}
-                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors border-none cursor-pointer flex items-center gap-2 ${
-                            activeTab === 'backtest'
-                                ? 'bg-purple-500/15 text-purple-400 ring-1 ring-purple-500/30'
-                                : 'text-sentinel-400 hover:text-sentinel-200'
-                        }`}
-                    >
-                        <History className="w-4 h-4" /> Backtest Engine
-                    </button>
                 </div>
             </div>
 
+            {/* Tab Bar */}
+            <div className="flex items-center gap-1 p-1 bg-sentinel-900/50 rounded-xl ring-1 ring-sentinel-800/50 overflow-x-auto mobile-scroll-x">
+                {ANALYTICS_TABS.map(tab => {
+                    const Icon = tab.icon;
+                    const isActive = activeTab === tab.id;
+                    return (
+                        <button
+                            key={tab.id}
+                            onClick={() => handleTabChange(tab.id)}
+                            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all whitespace-nowrap border-none cursor-pointer ${
+                                isActive
+                                    ? 'bg-sentinel-800/80 text-sentinel-100'
+                                    : 'text-sentinel-500 hover:text-sentinel-300 hover:bg-sentinel-800/30 bg-transparent'
+                            }`}
+                        >
+                            <Icon className="w-4 h-4" />
+                            <span className="hidden sm:inline">{tab.label}</span>
+                        </button>
+                    );
+                })}
+            </div>
+
             {/* Tab Content */}
-            {activeTab === 'performance' ? <Performance embedded /> : <BacktestEngine />}
+            <Suspense fallback={<div className="flex items-center justify-center py-16"><div className="w-6 h-6 border-2 border-sentinel-600 border-t-sentinel-300 rounded-full animate-spin" /></div>}>
+                {activeTab === 'performance' && <Performance embedded />}
+                {activeTab === 'backtest' && <BacktestEngine />}
+                {activeTab === 'accuracy' && <DecisionAccuracy />}
+                {activeTab === 'leaderboard' && <Leaderboard />}
+                {activeTab === 'earnings' && <EarningsCalendar />}
+            </Suspense>
         </div>
     );
 }

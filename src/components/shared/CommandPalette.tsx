@@ -14,7 +14,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Search, LayoutDashboard, Briefcase, Zap, BarChart3,
-    Activity, Settings, Command,
+    Activity, Settings, Command, Target,
     ArrowRight, Clock, Newspaper, BookOpen, Shield, Bell,
     Trophy, Calendar, FlaskConical, Radar, Plus, Microscope, List,
 } from 'lucide-react';
@@ -72,15 +72,16 @@ export function CommandPalette() {
         { id: 'nav-dashboard', label: 'Dashboard', description: 'Intelligence Overview', icon: <LayoutDashboard className="w-4 h-4" />, group: 'Pages', action: () => navigate('/'), shortcut: 'G D' },
         { id: 'nav-intelligence', label: 'Intelligence Feed', description: 'News & Research', icon: <Newspaper className="w-4 h-4" />, group: 'Pages', action: () => navigate('/?tab=intelligence'), shortcut: 'G I' },
         { id: 'nav-positions', label: 'Positions', description: 'Trade Tracker & PnL', icon: <Briefcase className="w-4 h-4" />, group: 'Pages', action: () => navigate('/positions'), shortcut: 'G P' },
-        { id: 'nav-watchlist', label: 'Watchlist', description: 'Monitored Tickers', icon: <List className="w-4 h-4" />, group: 'Pages', action: () => navigate('/watchlist'), shortcut: 'G W' },
+        { id: 'nav-watchlist', label: 'Watchlist', description: 'Monitored Tickers', icon: <List className="w-4 h-4" />, group: 'Pages', action: () => navigate('/?tab=watchlist'), shortcut: 'G W' },
         { id: 'nav-scanner', label: 'Scanner', description: 'AI Signal Discovery', icon: <Radar className="w-4 h-4" />, group: 'Pages', action: () => navigate('/scanner'), shortcut: 'G S' },
         { id: 'nav-research', label: 'Research', description: 'Deep Stock Analysis', icon: <Microscope className="w-4 h-4" />, group: 'Pages', action: () => navigate('/research') },
-        { id: 'nav-backtest', label: 'Backtest', description: 'Strategy Backtesting', icon: <FlaskConical className="w-4 h-4" />, group: 'Pages', action: () => navigate('/backtest'), shortcut: 'G B' },
+        { id: 'nav-backtest', label: 'Analytics', description: 'Backtest & Performance', icon: <FlaskConical className="w-4 h-4" />, group: 'Pages', action: () => navigate('/backtest'), shortcut: 'G B' },
         { id: 'nav-journal', label: 'Journal', description: 'Trading Journal', icon: <BookOpen className="w-4 h-4" />, group: 'Pages', action: () => navigate('/journal'), shortcut: 'G J' },
-        { id: 'nav-alerts', label: 'Alerts', description: 'Price & Signal Alerts', icon: <Bell className="w-4 h-4" />, group: 'Pages', action: () => navigate('/alerts'), shortcut: 'G A' },
+        { id: 'nav-alerts', label: 'Alerts', description: 'Price & Signal Alerts', icon: <Bell className="w-4 h-4" />, group: 'Pages', action: () => navigate('/?tab=alerts'), shortcut: 'G A' },
         { id: 'nav-risk', label: 'Risk Dashboard', description: 'Exposure & Risk Metrics', icon: <Shield className="w-4 h-4" />, group: 'Pages', action: () => navigate('/risk'), shortcut: 'G R' },
-        { id: 'nav-leaderboard', label: 'Leaderboard', description: 'Strategy Leaderboard', icon: <Trophy className="w-4 h-4" />, group: 'Pages', action: () => navigate('/leaderboard') },
-        { id: 'nav-earnings', label: 'Earnings Calendar', description: 'Upcoming Earnings', icon: <Calendar className="w-4 h-4" />, group: 'Pages', action: () => navigate('/earnings'), shortcut: 'G E' },
+        { id: 'nav-leaderboard', label: 'Leaderboard', description: 'Source Rankings', icon: <Trophy className="w-4 h-4" />, group: 'Pages', action: () => navigate('/backtest?tab=leaderboard') },
+        { id: 'nav-earnings', label: 'Earnings', description: 'Upcoming Earnings', icon: <Calendar className="w-4 h-4" />, group: 'Pages', action: () => navigate('/backtest?tab=earnings'), shortcut: 'G E' },
+        { id: 'nav-accuracy', label: 'Decision Accuracy', description: 'Calibration & Bias Tracking', icon: <Target className="w-4 h-4" />, group: 'Pages', action: () => navigate('/backtest?tab=accuracy') },
         { id: 'nav-settings', label: 'Settings', description: 'App Configuration', icon: <Settings className="w-4 h-4" />, group: 'Pages', action: () => navigate('/settings') },
     ], [navigate]);
 

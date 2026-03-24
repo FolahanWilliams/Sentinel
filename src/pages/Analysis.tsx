@@ -9,12 +9,11 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
-import { Filter, ChevronDown, ChevronRight, Clock, ArrowLeft, Radar } from 'lucide-react';
+import { Filter, ChevronDown, ChevronRight, Clock, ArrowLeft, Radar, BarChart3, Brain, FileText, Crosshair } from 'lucide-react';
 import { formatPrice } from '@/utils/formatters';
 import { PositionSizeCard } from '@/components/analysis/PositionSizeCard';
 import { TickerAnalysisPanel } from '@/components/analysis/TickerAnalysisPanel';
 import { HistoricalPrecedent } from '@/components/analysis/HistoricalPrecedent';
-import { AgentReasoning } from '@/components/analysis/AgentReasoning';
 import { AgentReasoningSurface } from '@/components/analysis/AgentReasoningSurface';
 import { RiskRewardChart } from '@/components/analysis/RiskRewardChart';
 import { OutcomeNarrativeCard } from '@/components/analysis/OutcomeNarrativeCard';
@@ -29,11 +28,21 @@ import { MultiTimeframeChart } from '@/components/analysis/MultiTimeframeChart';
 import { StrategyChart } from '@/components/analysis/StrategyChart';
 import { SourceCitations } from '@/components/shared/SourceCitations';
 
+const ANALYSIS_TABS = [
+    { id: 'chart', label: 'Charts', icon: BarChart3 },
+    { id: 'insights', label: 'AI Insights', icon: Brain },
+    { id: 'fundamentals', label: 'Fundamentals', icon: FileText },
+    { id: 'trade', label: 'Trade Plan', icon: Crosshair },
+] as const;
+
+type AnalysisTab = typeof ANALYSIS_TABS[number]['id'];
+
 export function Analysis() {
     const { ticker: urlTicker } = useParams<{ ticker?: string }>();
     const [signals, setSignals] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [expandedId, setExpandedId] = useState<string | null>(null);
+    const [analysisTab, setAnalysisTab] = useState<AnalysisTab>('chart');
     const [events, setEvents] = useState<Record<string, any[]>>({});
     const [compareSignals, setCompareSignals] = useState<any[]>([]);
     const [showComparison, setShowComparison] = useState(false);
@@ -186,9 +195,6 @@ export function Analysis() {
                 </div>
             )}
 
-            {/* Per-ticker news context */}
-            {urlTicker && <TickerNewsFeed ticker={urlTicker.toUpperCase()} />}
-
             {signals.length === 0 ? (
                 <div className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 p-12 text-center space-y-4">
                     <p className="text-sentinel-400">
@@ -302,17 +308,14 @@ export function Analysis() {
                                     </div>
                                 </div>
 
-                                {/* Expanded Content — Modular Components */}
+                                {/* Expanded Content — Tabbed Layout */}
                                 {isExpanded && (
                                     <div className="px-5 pb-5 pt-2 border-t border-sentinel-800/50 bg-sentinel-950/30">
-                                        {/* TA Confirmation + Primary Thesis */}
-                                        <div className="mb-6 mt-4 space-y-3">
+                                        {/* Thesis (always visible) */}
+                                        <div className="mb-4 mt-4 space-y-3">
                                             {signal.ta_alignment && (
                                                 <div className="flex items-center gap-3">
-                                                    <TABadge
-                                                        taAlignment={signal.ta_alignment}
-                                                        taSnapshot={signal.ta_snapshot}
-                                                    />
+                                                    <TABadge taAlignment={signal.ta_alignment} taSnapshot={signal.ta_snapshot} />
                                                     {signal.trailing_stop_rule && (
                                                         <span className="text-[10px] text-sentinel-500 font-mono bg-sentinel-900/50 px-2 py-1 rounded border border-sentinel-700/30">
                                                             {signal.trailing_stop_rule}
@@ -325,51 +328,89 @@ export function Analysis() {
                                             </p>
                                         </div>
 
-                                        {/* Multi-Timeframe Chart */}
-                                        <div className="mb-6">
-                                            <MultiTimeframeChart ticker={signal.ticker} signal={signal} height={450} />
+                                        {/* Analysis Sub-Tabs */}
+                                        <div className="flex items-center gap-1 p-1 bg-sentinel-900/50 rounded-xl ring-1 ring-sentinel-800/50 mb-5 overflow-x-auto">
+                                            {ANALYSIS_TABS.map(tab => {
+                                                const TabIcon = tab.icon;
+                                                const isTabActive = analysisTab === tab.id;
+                                                return (
+                                                    <button
+                                                        key={tab.id}
+                                                        onClick={() => setAnalysisTab(tab.id)}
+                                                        className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all whitespace-nowrap border-none cursor-pointer ${
+                                                            isTabActive
+                                                                ? 'bg-sentinel-800/80 text-sentinel-100'
+                                                                : 'text-sentinel-500 hover:text-sentinel-300 hover:bg-sentinel-800/30 bg-transparent'
+                                                        }`}
+                                                    >
+                                                        <TabIcon className="w-3.5 h-3.5" />
+                                                        {tab.label}
+                                                    </button>
+                                                );
+                                            })}
                                         </div>
 
-                                        {/* TA Strategy Signals — backtested buy/sell overlays */}
-                                        <div className="mb-6">
-                                            <StrategyChart ticker={signal.ticker} height={400} />
-                                        </div>
+                                        {/* Tab: Charts */}
+                                        {analysisTab === 'chart' && (
+                                            <div className="space-y-6">
+                                                <MultiTimeframeChart ticker={signal.ticker} signal={signal} height={450} />
+                                                <StrategyChart ticker={signal.ticker} height={400} />
+                                                <RiskRewardChart
+                                                    entryLow={signal.suggested_entry_low}
+                                                    entryHigh={signal.suggested_entry_high}
+                                                    stopLoss={signal.stop_loss}
+                                                    targetPrice={signal.target_price}
+                                                    currentPrice={signal.suggested_entry_high}
+                                                    ticker={signal.ticker}
+                                                />
+                                            </div>
+                                        )}
 
-                                        {/* Agent Reasoning Surface — thesis, counter-thesis, confidence waterfall */}
-                                        <div className="mb-6">
-                                            <AgentReasoningSurface signal={signal} />
-                                        </div>
+                                        {/* Tab: AI Insights */}
+                                        {analysisTab === 'insights' && (
+                                            <div className="space-y-6">
+                                                <AgentReasoningSurface signal={signal} />
+                                                <HistoricalPrecedent
+                                                    matches={agentOutputs.historical_matcher?.matches}
+                                                    aggregateStats={agentOutputs.historical_matcher?.aggregate_stats}
+                                                    patternConfidence={agentOutputs.historical_matcher?.pattern_confidence}
+                                                    caveats={agentOutputs.historical_matcher?.caveats}
+                                                    source={agentOutputs.historical_matcher?.source}
+                                                />
+                                                {tickerAnalysis?.groundingSources && tickerAnalysis.groundingSources.length > 0 && (
+                                                    <SourceCitations sources={tickerAnalysis.groundingSources} />
+                                                )}
+                                                <TickerNewsFeed ticker={signal.ticker} />
+                                            </div>
+                                        )}
 
-                                        {/* Risk/Reward Visualization */}
-                                        <div className="mb-6">
-                                            <RiskRewardChart
-                                                entryLow={signal.suggested_entry_low}
-                                                entryHigh={signal.suggested_entry_high}
-                                                stopLoss={signal.stop_loss}
-                                                targetPrice={signal.target_price}
-                                                currentPrice={signal.suggested_entry_high}
-                                                ticker={signal.ticker}
-                                            />
-                                        </div>
+                                        {/* Tab: Fundamentals */}
+                                        {analysisTab === 'fundamentals' && (
+                                            <div className="space-y-6">
+                                                <TickerAnalysisPanel
+                                                    ticker={signal.ticker}
+                                                    biasType={signal.bias_type}
+                                                    secondaryBiases={signal.secondary_biases}
+                                                    biasExplanation={signal.bias_explanation}
+                                                    counterArgument={signal.counter_argument}
+                                                    confidenceScore={signal.confidence_score}
+                                                    agentOutputs={agentOutputs}
+                                                    biasWeights={tickerAnalysis?.biasWeights}
+                                                    weightsLoading={isLoadingAnalysis}
+                                                    sanityCheck={agentOutputs.sanity_checker || agentOutputs.red_team}
+                                                    fundamentals={tickerAnalysis?.fundamentals}
+                                                    fundamentalsLoading={isLoadingAnalysis}
+                                                    onRefresh={() => fetchAnalysis(signal.ticker)}
+                                                    events={tickerEvents}
+                                                    aiEvents={tickerAnalysis?.events}
+                                                    aiEventsLoading={isLoadingAnalysis}
+                                                />
+                                            </div>
+                                        )}
 
-                                        <TickerAnalysisPanel
-                                            ticker={signal.ticker}
-                                            biasType={signal.bias_type}
-                                            secondaryBiases={signal.secondary_biases}
-                                            biasExplanation={signal.bias_explanation}
-                                            counterArgument={signal.counter_argument}
-                                            confidenceScore={signal.confidence_score}
-                                            agentOutputs={agentOutputs}
-                                            biasWeights={tickerAnalysis?.biasWeights}
-                                            weightsLoading={isLoadingAnalysis}
-                                            sanityCheck={agentOutputs.sanity_checker || agentOutputs.red_team}
-                                            fundamentals={tickerAnalysis?.fundamentals}
-                                            fundamentalsLoading={isLoadingAnalysis}
-                                            onRefresh={() => fetchAnalysis(signal.ticker)}
-                                            events={tickerEvents}
-                                            aiEvents={tickerAnalysis?.events}
-                                            aiEventsLoading={isLoadingAnalysis}
-                                            leftExtra={
+                                        {/* Tab: Trade Plan */}
+                                        {analysisTab === 'trade' && (
+                                            <div className="space-y-6">
                                                 <PositionSizeCard
                                                     ticker={signal.ticker}
                                                     currentPrice={signal.suggested_entry_high || 100}
@@ -377,54 +418,34 @@ export function Analysis() {
                                                     targetPrice={signal.target_price}
                                                     confidenceScore={signal.confidence_score}
                                                 />
-                                            }
-                                            rightExtra={
-                                                <>
-                                                    {tickerAnalysis?.groundingSources && tickerAnalysis.groundingSources.length > 0 && (
-                                                        <SourceCitations sources={tickerAnalysis.groundingSources} />
-                                                    )}
-                                                    <HistoricalPrecedent
-                                                        matches={agentOutputs.historical_matcher?.matches}
-                                                        aggregateStats={agentOutputs.historical_matcher?.aggregate_stats}
-                                                        patternConfidence={agentOutputs.historical_matcher?.pattern_confidence}
-                                                        caveats={agentOutputs.historical_matcher?.caveats}
-                                                        source={agentOutputs.historical_matcher?.source}
-                                                    />
-                                                    <AgentReasoning agentOutputs={agentOutputs} />
-                                                </>
-                                            }
-                                        />
-
-                                        {/* Outcome data */}
-                                        {outcomeData && (
-                                            <div className="mt-6 p-4 bg-sentinel-950/50 rounded-xl border border-sentinel-800/50">
-                                                <h4 className="text-xs font-semibold text-sentinel-500 uppercase tracking-wider mb-3">Outcome Tracking</h4>
-                                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
-                                                    {[
-                                                        { label: '1d Return', val: outcomeData.return_at_1d },
-                                                        { label: '5d Return', val: outcomeData.return_at_5d },
-                                                        { label: '10d Return', val: outcomeData.return_at_10d },
-                                                        { label: '30d Return', val: outcomeData.return_at_30d },
-                                                    ].map(({ label, val }) => (
-                                                        <div key={label}>
-                                                            <p className="text-xs text-sentinel-500 mb-1">{label}</p>
-                                                            <p className={`text-sm font-bold font-mono ${val == null ? 'text-sentinel-600' : val >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                                                {val != null ? `${val >= 0 ? '+' : ''}${val.toFixed(1)}%` : '--'}
-                                                            </p>
+                                                {/* Outcome data */}
+                                                {outcomeData && (
+                                                    <div className="p-4 bg-sentinel-950/50 rounded-xl border border-sentinel-800/50">
+                                                        <h4 className="text-xs font-semibold text-sentinel-500 uppercase tracking-wider mb-3">Outcome Tracking</h4>
+                                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
+                                                            {[
+                                                                { label: '1d Return', val: outcomeData.return_at_1d },
+                                                                { label: '5d Return', val: outcomeData.return_at_5d },
+                                                                { label: '10d Return', val: outcomeData.return_at_10d },
+                                                                { label: '30d Return', val: outcomeData.return_at_30d },
+                                                            ].map(({ label, val }) => (
+                                                                <div key={label}>
+                                                                    <p className="text-xs text-sentinel-500 mb-1">{label}</p>
+                                                                    <p className={`text-sm font-bold font-mono ${val == null ? 'text-sentinel-600' : val >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                                                        {val != null ? `${val >= 0 ? '+' : ''}${val.toFixed(1)}%` : '--'}
+                                                                    </p>
+                                                                </div>
+                                                            ))}
                                                         </div>
-                                                    ))}
-                                                </div>
+                                                    </div>
+                                                )}
+                                                <OutcomeNarrativeCard
+                                                    signalId={signal.id}
+                                                    ticker={signal.ticker}
+                                                    thesis={signal.thesis}
+                                                />
                                             </div>
                                         )}
-
-                                        {/* Outcome Narrative with AI context */}
-                                        <div className="mt-6">
-                                            <OutcomeNarrativeCard
-                                                signalId={signal.id}
-                                                ticker={signal.ticker}
-                                                thesis={signal.thesis}
-                                            />
-                                        </div>
                                     </div>
                                 )}
                             </div>
