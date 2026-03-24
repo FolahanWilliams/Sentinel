@@ -13,7 +13,6 @@
  * ahead of events, positioning before the crowd reacts.
  */
 
-import { supabase } from '@/config/supabase';
 import { GeminiService } from './gemini';
 import { TechnicalAnalysisService } from './technicalAnalysis';
 import { PeerStrengthService } from './peerStrengthService';
@@ -177,7 +176,7 @@ export class ProactiveThesisEngine {
 
                     // Check for peer dislocation
                     try {
-                        const peerResult = await PeerStrengthService.analyze(ticker, sector, 0);
+                        const peerResult = await PeerStrengthService.analyze(ticker, 0);
                         if (peerResult && Math.abs(peerResult.relativeStrength) > PEER_DIVERGENCE_THRESHOLD) {
                             return {
                                 ticker,

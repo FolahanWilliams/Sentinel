@@ -75,12 +75,13 @@ export function useDecisionAccuracy(): DecisionAccuracyData {
             const WINDOW = 30;
 
             for (let i = 0; i < outcomes.length; i++) {
+                const current = outcomes[i]!;
                 const windowStart = Math.max(0, i - WINDOW + 1);
                 const windowSlice = outcomes.slice(windowStart, i + 1);
                 const wins = windowSlice.filter(o => o.outcome === 'win').length;
 
                 accuracyOverTime.push({
-                    date: outcomes[i].completed_at || outcomes[i].tracked_at,
+                    date: current.completed_at || current.tracked_at,
                     winRate: windowSlice.length > 0 ? (wins / windowSlice.length) * 100 : 0,
                     totalOutcomes: i + 1,
                     rollingWins: wins,

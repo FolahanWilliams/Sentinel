@@ -27,11 +27,7 @@ export function CalibrationCurve({ data }: Props) {
     // Only show buckets with data
     const filtered = data.filter(d => d.count > 0);
 
-    // Perfect calibration line data
-    const perfectLine = [
-        { expectedWinRate: 0, actualWinRate: 0 },
-        { expectedWinRate: 100, actualWinRate: 100 },
-    ];
+
 
     return (
         <div className="h-64">
