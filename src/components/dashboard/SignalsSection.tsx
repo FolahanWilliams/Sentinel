@@ -53,6 +53,7 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
     const [notesText, setNotesText] = useState('');
     const [savingNotes, setSavingNotes] = useState(false);
     const [closingId, setClosingId] = useState<string | null>(null);
+    const [outcomePickerSignalId, setOutcomePickerSignalId] = useState<string | null>(null);
 
     // Filters
     const [showFilters, setShowFilters] = useState(false);
@@ -260,10 +261,22 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
     }, [notesText]);
 
     const handleMarkTriggered = useCallback(async (signalId: string) => {
+        // Show the outcome timeframe picker instead of immediately marking triggered
+        setOutcomePickerSignalId(signalId);
+    }, []);
+
+    const handleConfirmTriggered = useCallback(async (signalId: string, reviewDays: number) => {
         try {
-            const { error } = await supabase.from('signals').update({ status: 'triggered' }).eq('id', signalId);
+            const outcomeDueAt = new Date(Date.now() + reviewDays * 24 * 60 * 60 * 1000).toISOString();
+            const { error } = await supabase.from('signals').update({
+                status: 'triggered',
+                outcome_review_days: reviewDays,
+                outcome_due_at: outcomeDueAt,
+                outcome_status: 'pending_outcome',
+            }).eq('id', signalId);
             if (error) throw error;
-            setSignals(prev => prev.map(s => s.id === signalId ? { ...s, status: 'triggered' } : s));
+            setSignals(prev => prev.map(s => s.id === signalId ? { ...s, status: 'triggered' as const } : s));
+            setOutcomePickerSignalId(null);
         } catch (err) {
             console.error('[SignalsSection] Failed to mark signal triggered:', err);
         }
@@ -978,6 +991,33 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                     </div>
                 )}
             </div>
+
+            {/* Outcome Timeframe Picker Modal */}
+            {outcomePickerSignalId && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setOutcomePickerSignalId(null)}>
+                    <div className="bg-sentinel-900 rounded-2xl ring-1 ring-sentinel-700/50 shadow-2xl w-full max-w-sm mx-4 p-5" onClick={e => e.stopPropagation()}>
+                        <h3 className="text-sm font-bold text-sentinel-100 mb-1">When will you review this outcome?</h3>
+                        <p className="text-xs text-sentinel-500 mb-4">Set a review date to track your decision accuracy.</p>
+                        <div className="grid grid-cols-4 gap-2 mb-4">
+                            {[30, 60, 90, 120].map(days => (
+                                <button
+                                    key={days}
+                                    onClick={() => handleConfirmTriggered(outcomePickerSignalId, days)}
+                                    className="px-3 py-2.5 bg-sentinel-800/70 hover:bg-sentinel-700/70 text-sentinel-200 rounded-xl text-sm font-medium transition-colors ring-1 ring-sentinel-700/50 hover:ring-emerald-500/30 border-none cursor-pointer"
+                                >
+                                    {days}d
+                                </button>
+                            ))}
+                        </div>
+                        <button
+                            onClick={() => setOutcomePickerSignalId(null)}
+                            className="w-full px-3 py-2 text-xs text-sentinel-500 hover:text-sentinel-300 transition-colors border-none cursor-pointer bg-transparent"
+                        >
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            )}
         </ErrorBoundary>
     );
 }

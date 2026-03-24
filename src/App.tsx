@@ -52,6 +52,7 @@ const Alerts = lazyWithRetry(() => import('@/pages/Alerts'), 'Alerts');
 const RiskDashboard = lazyWithRetry(() => import('@/pages/RiskDashboard'), 'RiskDashboard');
 const Leaderboard = lazyWithRetry(() => import('@/pages/Leaderboard'), 'Leaderboard');
 const EarningsCalendar = lazyWithRetry(() => import('@/pages/EarningsCalendar'), 'EarningsCalendar');
+const DecisionAccuracy = lazyWithRetry(() => import('@/pages/DecisionAccuracy'), 'DecisionAccuracy');
 const NotFound = lazyWithRetry(() => import('@/pages/NotFound'), 'NotFound');
 
 /** Minimal loading spinner shown while a lazy chunk loads */
@@ -151,6 +152,7 @@ export default function App() {
                                 <Route path="/risk" element={<RiskDashboard />} />
                                 <Route path="/leaderboard" element={<Leaderboard />} />
                                 <Route path="/earnings" element={<EarningsCalendar />} />
+                                <Route path="/accuracy" element={<DecisionAccuracy />} />
                                 {/* Phase 3 fix (Audit C15): 404 catch-all route */}
                                 <Route path="*" element={<NotFound />} />
                             </Route>

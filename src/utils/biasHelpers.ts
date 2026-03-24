@@ -1,6 +1,6 @@
 import { BIAS_TYPES, type BiasType } from '@/config/constants';
 
-const BIAS_LABELS: Record<BiasType, string> = {
+export const BIAS_LABELS: Record<BiasType, string> = {
     overreaction: 'Overreaction', anchoring: 'Anchoring', herding: 'Herding',
     loss_aversion: 'Loss Aversion', availability: 'Availability', recency: 'Recency',
     confirmation: 'Confirmation', disposition_effect: 'Disposition Effect',

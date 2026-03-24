@@ -133,6 +133,14 @@ export class OutcomeTracker {
                         .update(updates)
                         .eq('id', outcome.id);
 
+                    // Update outcome_status on the parent signal
+                    if (isComplete) {
+                        await supabase
+                            .from('signals')
+                            .update({ outcome_status: 'outcome_logged' })
+                            .eq('id', outcome.signal_id);
+                    }
+
                     updatedCount++;
                 }
 
@@ -174,6 +182,56 @@ export class OutcomeTracker {
                 }
             })();
         }
+    }
+
+    /**
+     * Mark overdue outcomes — signals where outcome_due_at has passed
+     * but no outcome has been logged yet.
+     */
+    static async markOverdueOutcomes(): Promise<number> {
+        const { data, error } = await supabase
+            .from('signals')
+            .update({ outcome_status: 'outcome_overdue' })
+            .eq('outcome_status', 'pending_outcome')
+            .lt('outcome_due_at', new Date().toISOString())
+            .not('outcome_due_at', 'is', null)
+            .select('id');
+
+        if (error) {
+            console.warn('[OutcomeTracker] Failed to mark overdue outcomes:', error);
+            return 0;
+        }
+
+        const count = data?.length ?? 0;
+        if (count > 0) {
+            console.log(`[OutcomeTracker] Marked ${count} signals as outcome_overdue.`);
+        }
+        return count;
+    }
+
+    /**
+     * Get outcome compliance stats for the current user.
+     */
+    static async getComplianceStats(): Promise<{
+        pending: number;
+        overdue: number;
+        logged: number;
+        total: number;
+        compliancePct: number;
+    }> {
+        const [pendingRes, overdueRes, loggedRes] = await Promise.all([
+            supabase.from('signals').select('*', { count: 'exact', head: true }).eq('outcome_status', 'pending_outcome'),
+            supabase.from('signals').select('*', { count: 'exact', head: true }).eq('outcome_status', 'outcome_overdue'),
+            supabase.from('signals').select('*', { count: 'exact', head: true }).eq('outcome_status', 'outcome_logged'),
+        ]);
+
+        const pending = pendingRes.count ?? 0;
+        const overdue = overdueRes.count ?? 0;
+        const logged = loggedRes.count ?? 0;
+        const total = pending + overdue + logged;
+        const compliancePct = total > 0 ? Math.round((logged / total) * 100) : 100;
+
+        return { pending, overdue, logged, total, compliancePct };
     }
 
     /**

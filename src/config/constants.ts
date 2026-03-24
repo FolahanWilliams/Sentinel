@@ -227,3 +227,36 @@ export const SECTORS = [
 ] as const;
 
 export type Sector = (typeof SECTORS)[number];
+
+// ===========================
+// INVESTMENT DECISION TYPES
+// ===========================
+export const INVESTMENT_DECISION_TYPES = [
+    'capital_allocation',
+    'investment_thesis',
+    'portfolio_exit',
+    'position_sizing',
+    'm_and_a',
+] as const;
+
+export type InvestmentDecisionType = (typeof INVESTMENT_DECISION_TYPES)[number];
+
+export const INVESTMENT_DECISION_LABELS: Record<InvestmentDecisionType, string> = {
+    capital_allocation: 'Capital Allocation',
+    investment_thesis: 'Investment Thesis',
+    portfolio_exit: 'Portfolio Exit',
+    position_sizing: 'Position Sizing',
+    m_and_a: 'M&A',
+};
+
+// ===========================
+// OUTCOME TRACKING
+// ===========================
+export const OUTCOME_REVIEW_WINDOWS = [30, 60, 90, 120] as const;
+export const OUTCOME_COMPLIANCE_THRESHOLD = 80; // % required to unlock full insights
+export const OUTCOME_OVERDUE_GRACE_DAYS = 7; // days after due date before marking overdue
+
+// ===========================
+// FEATURE FLAGS
+// ===========================
+export const FEATURE_VERTICAL = (import.meta.env.VITE_FEATURE_VERTICAL as string) || 'general';

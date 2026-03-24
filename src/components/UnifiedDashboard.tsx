@@ -15,6 +15,7 @@ import { formatPrice, formatPercent } from '@/utils/formatters';
 import { calcUnrealizedPnl, getPositionPrice } from '@/utils/portfolio';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 import { SignalsSection } from '@/components/dashboard/SignalsSection';
+import { OutcomeComplianceBanner } from '@/components/dashboard/OutcomeComplianceBanner';
 
 // Lazy-load tab components — only one tab is visible at a time
 const UnifiedPortfolioView = lazy(() => import('@/components/dashboard/UnifiedPortfolioView').then(m => ({ default: m.UnifiedPortfolioView })));
@@ -221,6 +222,9 @@ export function UnifiedDashboard() {
                 <div className="mb-6">
                     <GlassMaterialize delay={0}><MarketSnapshot /></GlassMaterialize>
                 </div>
+
+                {/* Outcome Compliance Banner */}
+                <OutcomeComplianceBanner />
 
                 {/* Tab Bar */}
                 <div className="flex items-center gap-1 p-1 bg-sentinel-900/70 rounded-xl ring-1 ring-sentinel-800/50 mb-6 overflow-x-auto mobile-scroll-x" role="tablist" aria-label="Dashboard sections">

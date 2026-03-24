@@ -5,9 +5,10 @@
 import type { BiasType } from '@/config/constants';
 export type { BiasType };
 
-export type SignalType = 'long_overreaction' | 'short_overreaction' | 'sector_contagion' | 'earnings_overreaction' | 'bullish_catalyst' | 'information';
+export type SignalType = 'long_overreaction' | 'short_overreaction' | 'sector_contagion' | 'earnings_overreaction' | 'bullish_catalyst' | 'information' | 'capital_allocation' | 'investment_thesis' | 'portfolio_exit';
 export type LynchCategory = 'fast_grower' | 'stalwart' | 'turnaround' | 'asset_play' | 'cyclical' | 'slow_grower';
 export type SignalStatus = 'active' | 'triggered' | 'stopped_out' | 'target_hit' | 'manually_closed' | 'expired';
+export type OutcomeStatus = 'pending_outcome' | 'outcome_logged' | 'outcome_overdue';
 export type RiskLevel = 'low' | 'medium' | 'high' | 'extreme';
 export type DataQuality = 'full' | 'partial' | 'stale' | 'no_quote';
 export type TAAlignment = 'confirmed' | 'partial' | 'conflicting' | 'unavailable';
@@ -74,6 +75,11 @@ export interface Signal {
     data_quality: DataQuality;
     user_notes: string | null;
     is_paper: boolean;
+    outcome_status: OutcomeStatus;
+    outcome_due_at: string | null;
+    outcome_review_days: number | null;
+    monetary_value: number | null;
+    currency: string | null;
     created_at: string;
     updated_at: string;
 }
@@ -381,4 +387,8 @@ export interface SignalOutcome {
     max_gain: number | null;
     tracked_at: string;
     completed_at: string | null;
+    user_outcome_notes: string | null;
+    user_reported_result: string | null;
+    confirmed_biases: string[] | null;
+    lessons_learned: string | null;
 }
