@@ -55,7 +55,7 @@ export class BiasGenomeService {
 
         // Count bias occurrences and returns
         const biasBuckets: Record<string, { count: number; returns: number[]; withOutcome: number }> = {};
-        let totalSignals = signals.length;
+        const totalSignals = signals.length;
 
         const addBias = (bias: string, signalId: string) => {
             if (!biasBuckets[bias]) biasBuckets[bias] = { count: 0, returns: [], withOutcome: 0 };
