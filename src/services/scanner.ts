@@ -48,11 +48,46 @@ import { fetchExternalSentiment, buildScanContext } from './scannerPipeline/cont
 import { ProactiveThesisEngine } from './proactiveThesisEngine';
 import { AgentContextBus } from './agentContextBus';
 import { ABTestingFramework } from './abTestingFramework';
-import { DEFAULT_MIN_CONFIDENCE, DEFAULT_MIN_PRICE_RISE_PCT, CONFIDENCE_GATE_OVERREACTION, CONFIDENCE_GATE_CATALYST, CONFIDENCE_GATE_CONTAGION, CONFIDENCE_GATE_CRITIQUE, CONFIDENCE_FLOOR, SEVERITY_THRESHOLD } from '@/config/constants';
+import { DEFAULT_MIN_CONFIDENCE, DEFAULT_MIN_PRICE_RISE_PCT, CONFIDENCE_GATE_OVERREACTION, CONFIDENCE_GATE_CATALYST, CONFIDENCE_GATE_CONTAGION, CONFIDENCE_GATE_CRITIQUE, CONFIDENCE_FLOOR, CONFIDENCE_CEILING, MAX_CUMULATIVE_PENALTY, MAX_CUMULATIVE_BOOST, SWOT_WEAKNESS_IMBALANCE_PENALTY, SWOT_SEVERE_IMBALANCE_PENALTY, SEVERITY_THRESHOLD } from '@/config/constants';
 import type { MultiTimeframeResult } from './technicalAnalysis';
 import type { AgentOutputsJson, LynchCategory } from '@/types/signals';
 import type { Json } from '@/types/database';
 import type { Quote } from '@/types/market';
+
+/**
+ * Clamp confidence within bounds, respecting cumulative adjustment limits.
+ * Returns the clamped confidence and the updated cumulative penalty/boost.
+ */
+function applyBoundedAdjustment(
+    currentConfidence: number,
+    adjustment: number,
+    cumulativePenalty: number,
+    cumulativeBoost: number,
+): { confidence: number; cumulativePenalty: number; cumulativeBoost: number } {
+    let effectiveAdj = adjustment;
+
+    if (adjustment < 0) {
+        // Check if cumulative penalty budget is exhausted
+        const remainingPenaltyBudget = MAX_CUMULATIVE_PENALTY - cumulativePenalty;
+        if (remainingPenaltyBudget <= 0) {
+            return { confidence: currentConfidence, cumulativePenalty, cumulativeBoost };
+        }
+        // Cap this penalty to remaining budget
+        effectiveAdj = Math.max(adjustment, -remainingPenaltyBudget);
+        cumulativePenalty += Math.abs(effectiveAdj);
+    } else if (adjustment > 0) {
+        // Check if cumulative boost budget is exhausted
+        const remainingBoostBudget = MAX_CUMULATIVE_BOOST - cumulativeBoost;
+        if (remainingBoostBudget <= 0) {
+            return { confidence: currentConfidence, cumulativePenalty, cumulativeBoost };
+        }
+        effectiveAdj = Math.min(adjustment, remainingBoostBudget);
+        cumulativeBoost += effectiveAdj;
+    }
+
+    const newConfidence = Math.max(CONFIDENCE_FLOOR, Math.min(CONFIDENCE_CEILING, currentConfidence + effectiveAdj));
+    return { confidence: newConfidence, cumulativePenalty, cumulativeBoost };
+}
 
 export class ScannerService {
 
@@ -885,6 +920,11 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                     }
 
                                     if (sanity.success && sanity.data?.passes_sanity_check) {
+                                        // Cumulative adjustment tracking — caps total penalty/boost across all stages
+                                        const originalConfidenceBeforeAdjustments = analysis.data.confidence_score;
+                                        let cumulativePenalty = 0;
+                                        let cumulativeBoost = 0;
+
                                         // 7.4.5. BIAS DETECTIVE — audit primary agent's reasoning for cognitive biases
                                         let biasDetectiveOutput: import('@/types/agents').BiasDetectiveResult | null = null;
                                         try {
@@ -899,9 +939,10 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                 AgentContextBus.setBiasDetective(agentCtx, biasResult.data);
                                                 if (biasResult.data.total_penalty > 0) {
                                                     const before = analysis.data.confidence_score;
-                                                    analysis.data.confidence_score = Math.max(CONFIDENCE_FLOOR,
-                                                        analysis.data.confidence_score - biasResult.data.total_penalty
-                                                    );
+                                                    const bounded = applyBoundedAdjustment(before, -biasResult.data.total_penalty, cumulativePenalty, cumulativeBoost);
+                                                    analysis.data.confidence_score = bounded.confidence;
+                                                    cumulativePenalty = bounded.cumulativePenalty;
+                                                    cumulativeBoost = bounded.cumulativeBoost;
                                                     AgentContextBus.recordAdjustment(agentCtx, 'bias_detective', before, analysis.data.confidence_score, `dominant: ${biasResult.data.dominant_bias}`);
                                                     console.log(`[Scanner] Bias Detective penalised ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (dominant: ${biasResult.data.dominant_bias}, penalty: -${biasResult.data.total_penalty})`);
                                                 } else {
@@ -961,7 +1002,10 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             AgentContextBus.setNoisePanel(agentCtx, noiseResult);
                                             if (noiseResult.confidence_adjustment !== 0) {
                                                 const before = analysis.data.confidence_score;
-                                                analysis.data.confidence_score = noiseResult.adjusted_confidence;
+                                                const bounded = applyBoundedAdjustment(before, noiseResult.confidence_adjustment, cumulativePenalty, cumulativeBoost);
+                                                analysis.data.confidence_score = bounded.confidence;
+                                                cumulativePenalty = bounded.cumulativePenalty;
+                                                cumulativeBoost = bounded.cumulativeBoost;
                                                 AgentContextBus.recordAdjustment(agentCtx, 'noise_panel', before, analysis.data.confidence_score, noiseResult.summary);
                                                 console.log(`[Scanner] Noise-Aware Confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${noiseResult.summary})`);
                                             }
@@ -1002,7 +1046,10 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             AgentContextBus.setDecisionTwin(agentCtx, decisionTwinOutput);
                                             if (decisionTwinOutput.confidence_adjustment !== 0) {
                                                 const before = analysis.data.confidence_score;
-                                                analysis.data.confidence_score = decisionTwinOutput.adjusted_confidence;
+                                                const bounded = applyBoundedAdjustment(before, decisionTwinOutput.confidence_adjustment, cumulativePenalty, cumulativeBoost);
+                                                analysis.data.confidence_score = bounded.confidence;
+                                                cumulativePenalty = bounded.cumulativePenalty;
+                                                cumulativeBoost = bounded.cumulativeBoost;
                                                 AgentContextBus.recordAdjustment(agentCtx, 'decision_twin', before, analysis.data.confidence_score, decisionTwinOutput.summary);
                                                 console.log(`[Scanner] Decision Twin for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${decisionTwinOutput.summary})`);
                                             } else {
@@ -1022,18 +1069,20 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                         if (divergenceResult && divergenceResult.confidenceBoost !== 0) {
                                             const before = analysis.data.confidence_score;
                                             const weightedDivBoost = AutoLearningService.applyWeight('sentiment_divergence', divergenceResult.confidenceBoost, autoLearnWeights);
-                                            analysis.data.confidence_score = Math.min(100, Math.max(CONFIDENCE_FLOOR,
-                                                analysis.data.confidence_score + weightedDivBoost
-                                            ));
+                                            const bounded = applyBoundedAdjustment(before, weightedDivBoost, cumulativePenalty, cumulativeBoost);
+                                            analysis.data.confidence_score = bounded.confidence;
+                                            cumulativePenalty = bounded.cumulativePenalty;
+                                            cumulativeBoost = bounded.cumulativeBoost;
                                             console.log(`[Scanner] Divergence ${divergenceResult.divergenceType} adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${weightedDivBoost > 0 ? '+' : ''}${weightedDivBoost})`);
                                         }
 
                                         // 7.7. EARNINGS CALENDAR PENALTY — reduce confidence near earnings
                                         if (earningsGuardResult && earningsGuardResult.confidencePenalty !== 0) {
                                             const before = analysis.data.confidence_score;
-                                            analysis.data.confidence_score = Math.min(100, Math.max(CONFIDENCE_FLOOR,
-                                                analysis.data.confidence_score + earningsGuardResult.confidencePenalty
-                                            ));
+                                            const bounded = applyBoundedAdjustment(before, earningsGuardResult.confidencePenalty, cumulativePenalty, cumulativeBoost);
+                                            analysis.data.confidence_score = bounded.confidence;
+                                            cumulativePenalty = bounded.cumulativePenalty;
+                                            cumulativeBoost = bounded.cumulativeBoost;
                                             console.log(`[Scanner] Earnings guard adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${earningsGuardResult.confidencePenalty})`);
                                         }
 
@@ -1051,7 +1100,10 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
 
                                             if (fundPenalty !== 0) {
                                                 const before = analysis.data.confidence_score;
-                                                analysis.data.confidence_score = Math.max(CONFIDENCE_FLOOR, analysis.data.confidence_score + fundPenalty);
+                                                const bounded = applyBoundedAdjustment(before, fundPenalty, cumulativePenalty, cumulativeBoost);
+                                                analysis.data.confidence_score = bounded.confidence;
+                                                cumulativePenalty = bounded.cumulativePenalty;
+                                                cumulativeBoost = bounded.cumulativeBoost;
                                                 console.log(`[Scanner] Fundamentals penalty for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${fundPenalty})`);
                                             }
                                         }
@@ -1059,9 +1111,10 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                         // 7.9. MARKET REGIME PENALTY — reduce confidence in crisis/correction
                                         if (regimeResult && regimeResult.confidencePenalty !== 0) {
                                             const before = analysis.data.confidence_score;
-                                            analysis.data.confidence_score = Math.max(CONFIDENCE_FLOOR,
-                                                analysis.data.confidence_score + regimeResult.confidencePenalty
-                                            );
+                                            const bounded = applyBoundedAdjustment(before, regimeResult.confidencePenalty, cumulativePenalty, cumulativeBoost);
+                                            analysis.data.confidence_score = bounded.confidence;
+                                            cumulativePenalty = bounded.cumulativePenalty;
+                                            cumulativeBoost = bounded.cumulativeBoost;
                                             console.log(`[Scanner] Market regime (${regimeResult.regime}) adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${regimeResult.confidencePenalty})`);
                                         }
 
@@ -1075,9 +1128,10 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             }
                                             if (backtestResult.confidencePenalty !== 0) {
                                                 const before = analysis.data.confidence_score;
-                                                analysis.data.confidence_score = Math.max(CONFIDENCE_FLOOR,
-                                                    analysis.data.confidence_score + backtestResult.confidencePenalty
-                                                );
+                                                const bounded = applyBoundedAdjustment(before, backtestResult.confidencePenalty, cumulativePenalty, cumulativeBoost);
+                                                analysis.data.confidence_score = bounded.confidence;
+                                                cumulativePenalty = bounded.cumulativePenalty;
+                                                cumulativeBoost = bounded.cumulativeBoost;
                                                 console.log(`[Scanner] Backtest adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${backtestResult.confidencePenalty})`);
                                             }
                                         } catch { /* non-fatal */ }
@@ -1088,9 +1142,10 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             mtfResult = await TechnicalAnalysisService.getMultiTimeframeConfirmation(ev.ticker, 'long');
                                             if (mtfResult.confidenceAdjustment !== 0) {
                                                 const before = analysis.data.confidence_score;
-                                                analysis.data.confidence_score = Math.min(100, Math.max(CONFIDENCE_FLOOR,
-                                                    analysis.data.confidence_score + mtfResult.confidenceAdjustment
-                                                ));
+                                                const bounded = applyBoundedAdjustment(before, mtfResult.confidenceAdjustment, cumulativePenalty, cumulativeBoost);
+                                                analysis.data.confidence_score = bounded.confidence;
+                                                cumulativePenalty = bounded.cumulativePenalty;
+                                                cumulativeBoost = bounded.cumulativeBoost;
                                                 console.log(`[Scanner] Multi-timeframe (${mtfResult.alignment}) adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${mtfResult.confidenceAdjustment > 0 ? '+' : ''}${mtfResult.confidenceAdjustment})`);
                                             }
                                         } catch { /* non-fatal */ }
@@ -1108,9 +1163,10 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                     console.log(`[Scanner] MTF catalyst boost for ${ev.ticker}: +5 extra (3/3 alignment with bullish catalyst)`);
                                                 }
                                                 const before = analysis.data.confidence_score;
-                                                analysis.data.confidence_score = Math.min(100, Math.max(CONFIDENCE_FLOOR,
-                                                    analysis.data.confidence_score + mtfBonus
-                                                ));
+                                                const bounded = applyBoundedAdjustment(before, mtfBonus, cumulativePenalty, cumulativeBoost);
+                                                analysis.data.confidence_score = bounded.confidence;
+                                                cumulativePenalty = bounded.cumulativePenalty;
+                                                cumulativeBoost = bounded.cumulativeBoost;
                                                 console.log(`[Scanner] Gemini MTF (${geminiMtf.alignedCount}/${geminiMtf.totalChecked} aligned) adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${mtfBonus > 0 ? '+' : ''}${mtfBonus})`);
                                             }
                                         } catch { /* non-fatal */ }
@@ -1126,9 +1182,10 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             }
                                             if (correlationResult.confidencePenalty !== 0) {
                                                 const before = analysis.data.confidence_score;
-                                                analysis.data.confidence_score = Math.max(CONFIDENCE_FLOOR,
-                                                    analysis.data.confidence_score + correlationResult.confidencePenalty
-                                                );
+                                                const bounded = applyBoundedAdjustment(before, correlationResult.confidencePenalty, cumulativePenalty, cumulativeBoost);
+                                                analysis.data.confidence_score = bounded.confidence;
+                                                cumulativePenalty = bounded.cumulativePenalty;
+                                                cumulativeBoost = bounded.cumulativeBoost;
                                                 console.log(`[Scanner] Correlation guard adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${correlationResult.confidencePenalty})`);
                                             }
                                         } catch { /* non-fatal */ }
@@ -1139,9 +1196,10 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             priceCorr = await PriceCorrelationMatrix.check(ev.ticker);
                                             if (priceCorr.confidencePenalty !== 0) {
                                                 const before = analysis.data.confidence_score;
-                                                analysis.data.confidence_score = Math.max(CONFIDENCE_FLOOR,
-                                                    analysis.data.confidence_score + priceCorr.confidencePenalty
-                                                );
+                                                const bounded = applyBoundedAdjustment(before, priceCorr.confidencePenalty, cumulativePenalty, cumulativeBoost);
+                                                analysis.data.confidence_score = bounded.confidence;
+                                                cumulativePenalty = bounded.cumulativePenalty;
+                                                cumulativeBoost = bounded.cumulativeBoost;
                                                 console.log(`[Scanner] Price correlation penalty for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${priceCorr.confidencePenalty}, max_corr=${priceCorr.maxCorrelation.toFixed(2)})`);
                                             }
                                         } catch { /* non-fatal */ }
@@ -1158,18 +1216,20 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                         // 7.14. OPTIONS FLOW — adjust confidence based on institutional positioning
                                         if (optionsFlowResult && optionsFlowResult.confidenceAdjustment !== 0) {
                                             const before = analysis.data.confidence_score;
-                                            analysis.data.confidence_score = Math.min(100, Math.max(CONFIDENCE_FLOOR,
-                                                analysis.data.confidence_score + optionsFlowResult.confidenceAdjustment
-                                            ));
+                                            const bounded = applyBoundedAdjustment(before, optionsFlowResult.confidenceAdjustment, cumulativePenalty, cumulativeBoost);
+                                            analysis.data.confidence_score = bounded.confidence;
+                                            cumulativePenalty = bounded.cumulativePenalty;
+                                            cumulativeBoost = bounded.cumulativeBoost;
                                             console.log(`[Scanner] Options flow (${optionsFlowResult.sentiment}) adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${optionsFlowResult.confidenceAdjustment > 0 ? '+' : ''}${optionsFlowResult.confidenceAdjustment})`);
                                         }
 
                                         // 7.15. PEER RELATIVE STRENGTH — adjust based on idiosyncratic vs sector-wide move
                                         if (peerStrengthResult && peerStrengthResult.confidenceAdjustment !== 0) {
                                             const before = analysis.data.confidence_score;
-                                            analysis.data.confidence_score = Math.min(100, Math.max(CONFIDENCE_FLOOR,
-                                                analysis.data.confidence_score + peerStrengthResult.confidenceAdjustment
-                                            ));
+                                            const bounded = applyBoundedAdjustment(before, peerStrengthResult.confidenceAdjustment, cumulativePenalty, cumulativeBoost);
+                                            analysis.data.confidence_score = bounded.confidence;
+                                            cumulativePenalty = bounded.cumulativePenalty;
+                                            cumulativeBoost = bounded.cumulativeBoost;
                                             console.log(`[Scanner] Peer strength (${peerStrengthResult.isIdiosyncratic ? 'idiosyncratic' : 'sector-wide'}) adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${peerStrengthResult.confidenceAdjustment > 0 ? '+' : ''}${peerStrengthResult.confidenceAdjustment})`);
                                         }
 
@@ -1189,9 +1249,10 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             }
                                             if (conflictResult.confidencePenalty !== 0) {
                                                 const before = analysis.data.confidence_score;
-                                                analysis.data.confidence_score = Math.max(CONFIDENCE_FLOOR,
-                                                    analysis.data.confidence_score + conflictResult.confidencePenalty
-                                                );
+                                                const bounded = applyBoundedAdjustment(before, conflictResult.confidencePenalty, cumulativePenalty, cumulativeBoost);
+                                                analysis.data.confidence_score = bounded.confidence;
+                                                cumulativePenalty = bounded.cumulativePenalty;
+                                                cumulativeBoost = bounded.cumulativeBoost;
                                                 console.log(`[Scanner] Conflict detection adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${conflictResult.confidencePenalty})`);
                                             }
                                         } catch { /* non-fatal */ }
@@ -1214,9 +1275,10 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             }
                                             if (fearGreedAdjustment !== 0) {
                                                 const before = analysis.data.confidence_score;
-                                                analysis.data.confidence_score = Math.min(100, Math.max(CONFIDENCE_FLOOR,
-                                                    analysis.data.confidence_score + fearGreedAdjustment
-                                                ));
+                                                const bounded = applyBoundedAdjustment(before, fearGreedAdjustment, cumulativePenalty, cumulativeBoost);
+                                                analysis.data.confidence_score = bounded.confidence;
+                                                cumulativePenalty = bounded.cumulativePenalty;
+                                                cumulativeBoost = bounded.cumulativeBoost;
                                                 console.log(`[Scanner] Fear & Greed (${fearGreedScore} ${fearGreedRating}) adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${fearGreedAdjustment > 0 ? '+' : ''}${fearGreedAdjustment})`);
                                             }
                                         }
@@ -1227,9 +1289,10 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             retailVsNewsResult = await RetailVsNewsSentimentDetector.analyze(ev.ticker);
                                             if (retailVsNewsResult.confidenceAdjustment !== 0) {
                                                 const before = analysis.data.confidence_score;
-                                                analysis.data.confidence_score = Math.min(100, Math.max(CONFIDENCE_FLOOR,
-                                                    analysis.data.confidence_score + retailVsNewsResult.confidenceAdjustment
-                                                ));
+                                                const bounded = applyBoundedAdjustment(before, retailVsNewsResult.confidenceAdjustment, cumulativePenalty, cumulativeBoost);
+                                                analysis.data.confidence_score = bounded.confidence;
+                                                cumulativePenalty = bounded.cumulativePenalty;
+                                                cumulativeBoost = bounded.cumulativeBoost;
                                                 console.log(`[Scanner] Retail vs News (${retailVsNewsResult.gapType}) adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${retailVsNewsResult.confidenceAdjustment > 0 ? '+' : ''}${retailVsNewsResult.confidenceAdjustment})`);
                                             }
                                         } catch { /* non-fatal */ }
@@ -1251,9 +1314,10 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             );
                                             if (crossSourceResult.confidenceAdjustment !== 0) {
                                                 const before = analysis.data.confidence_score;
-                                                analysis.data.confidence_score = Math.min(100, Math.max(CONFIDENCE_FLOOR,
-                                                    analysis.data.confidence_score + crossSourceResult.confidenceAdjustment
-                                                ));
+                                                const bounded = applyBoundedAdjustment(before, crossSourceResult.confidenceAdjustment, cumulativePenalty, cumulativeBoost);
+                                                analysis.data.confidence_score = bounded.confidence;
+                                                cumulativePenalty = bounded.cumulativePenalty;
+                                                cumulativeBoost = bounded.cumulativeBoost;
                                                 console.log(`[Scanner] Cross-source (${crossSourceResult.qualityTier}, ${crossSourceResult.confirmedSources}/${crossSourceResult.totalSources}) adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${crossSourceResult.confidenceAdjustment > 0 ? '+' : ''}${crossSourceResult.confidenceAdjustment})`);
                                             }
                                         } catch { /* non-fatal */ }
@@ -1274,17 +1338,25 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                     .map((a: any) => a.source_url || a.feed_url || a.title || '')
                                                 ),
                                             ];
-                                            const { adjustedConfidence, result: divResult } = SourceDiversityScorer.applyGate(
+                                            const { result: divResult } = SourceDiversityScorer.applyGate(
                                                 signalSources,
                                                 analysis.data.confidence_score,
                                             );
                                             sourceDiversityResult = divResult;
                                             if (divResult.confidenceAdjustment !== 0) {
                                                 const before = analysis.data.confidence_score;
-                                                analysis.data.confidence_score = Math.max(0, Math.min(100, adjustedConfidence));
+                                                const bounded = applyBoundedAdjustment(before, divResult.confidenceAdjustment, cumulativePenalty, cumulativeBoost);
+                                                analysis.data.confidence_score = bounded.confidence;
+                                                cumulativePenalty = bounded.cumulativePenalty;
+                                                cumulativeBoost = bounded.cumulativeBoost;
                                                 console.log(`[Scanner] Source diversity gate for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${divResult.summary})`);
                                             }
                                         } catch { /* non-fatal */ }
+
+                                        // Log cumulative adjustment summary
+                                        if (cumulativePenalty > 0 || cumulativeBoost > 0) {
+                                            console.log(`[Scanner] Cumulative adjustments for ${ev.ticker}: penalty=${cumulativePenalty}/${MAX_CUMULATIVE_PENALTY}, boost=${cumulativeBoost}/${MAX_CUMULATIVE_BOOST} (original=${originalConfidenceBeforeAdjustments}, final=${analysis.data.confidence_score})`);
+                                        }
 
                                         // Drop signal if all adjustments brought it below threshold (adaptive)
                                         if (analysis.data.confidence_score < adaptiveMinConfidence) {
@@ -1326,7 +1398,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             }
                                         } catch { /* non-fatal */ }
 
-                                        // 7.9. SWOT ANALYSIS — narrative enrichment (non-blocking, no confidence impact)
+                                        // 7.19. SWOT ANALYSIS — narrative enrichment WITH confidence feedback
                                         let swotOutput: import('@/types/agents').SWOTResult | null = null;
                                         try {
                                             swotOutput = await SWOTAnalysisService.analyze({
@@ -1347,6 +1419,25 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                 taSnapshot: earlyTaSnapshot,
                                             });
                                             console.log(`[Scanner] SWOT generated for ${ev.ticker}: "${swotOutput.executive_summary.slice(0, 80)}..."`);
+
+                                            // SWOT confidence feedback — penalize when weaknesses significantly outnumber strengths
+                                            const strengthCount = swotOutput.strengths.length;
+                                            const weaknessCount = swotOutput.weaknesses.length;
+                                            const threatCount = swotOutput.threats.length;
+                                            if (weaknessCount > strengthCount && threatCount > 1) {
+                                                const before = analysis.data.confidence_score;
+                                                // Severe: weaknesses >= 2× strengths
+                                                const swotPenalty = weaknessCount >= strengthCount * 2
+                                                    ? -SWOT_SEVERE_IMBALANCE_PENALTY
+                                                    : -SWOT_WEAKNESS_IMBALANCE_PENALTY;
+                                                const bounded = applyBoundedAdjustment(before, swotPenalty, cumulativePenalty, cumulativeBoost);
+                                                analysis.data.confidence_score = bounded.confidence;
+                                                cumulativePenalty = bounded.cumulativePenalty;
+                                                cumulativeBoost = bounded.cumulativeBoost;
+                                                AgentContextBus.recordAdjustment(agentCtx, 'swot_feedback', before, analysis.data.confidence_score,
+                                                    `W=${weaknessCount} > S=${strengthCount}, T=${threatCount}: penalty ${swotPenalty}`);
+                                                console.log(`[Scanner] SWOT feedback for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (W=${weaknessCount} > S=${strengthCount}, T=${threatCount})`);
+                                            }
                                         } catch (swotErr) {
                                             console.warn(`[Scanner] SWOT failed for ${ev.ticker} (non-fatal):`, swotErr);
                                         }
@@ -1906,7 +1997,114 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                 continue;
                             }
 
-                            // Save proactive thesis as a signal (passed quality gates)
+                            // Quality Gate 4: Run proactive theses through core intelligence pipeline
+                            const proactiveCtx = AgentContextBus.create(thesis.ticker, `[PROACTIVE] ${thesis.catalyst}`, thesis.catalyst);
+                            let proactiveBiasOutput: import('@/types/agents').BiasDetectiveResult | null = null;
+                            let proactiveNoiseOutput: import('@/types/agents').NoiseConfidenceResult | null = null;
+                            let proactiveTwinOutput: import('@/types/agents').DecisionTwinResult | null = null;
+                            let proactiveSwotOutput: import('@/types/agents').SWOTResult | null = null;
+                            let proactiveCumulativePenalty = 0;
+                            let proactiveCumulativeBoost = 0;
+
+                            // 4a. Bias Detective — check proactive reasoning for cognitive biases
+                            try {
+                                const biasResult = await AgentService.runBiasDetective(
+                                    thesis.thesis, thesis.reasoning, thesis.confidence, 'PROACTIVE_THESIS_ENGINE'
+                                );
+                                if (biasResult.success && biasResult.data) {
+                                    proactiveBiasOutput = biasResult.data;
+                                    AgentContextBus.setBiasDetective(proactiveCtx, biasResult.data);
+                                    if (biasResult.data.total_penalty > 0) {
+                                        const before = thesis.confidence;
+                                        const bounded = applyBoundedAdjustment(before, -biasResult.data.total_penalty, proactiveCumulativePenalty, proactiveCumulativeBoost);
+                                        thesis.confidence = bounded.confidence;
+                                        proactiveCumulativePenalty = bounded.cumulativePenalty;
+                                        AgentContextBus.recordAdjustment(proactiveCtx, 'bias_detective', before, thesis.confidence, `dominant: ${biasResult.data.dominant_bias}`);
+                                        console.log(`[Scanner] Proactive Bias Detective for ${thesis.ticker}: ${before} → ${thesis.confidence}`);
+                                    }
+                                }
+                            } catch { /* non-fatal */ }
+
+                            // 4b. Noise-Aware Confidence — 3-judge panel
+                            try {
+                                const noiseCascadeCtx = AgentContextBus.buildPromptContext(proactiveCtx, 'noise_panel');
+                                proactiveNoiseOutput = await NoiseAwareConfidenceService.evaluate(
+                                    thesis.thesis, thesis.reasoning, thesis.confidence, 'PROACTIVE_THESIS_ENGINE', noiseCascadeCtx || undefined,
+                                );
+                                AgentContextBus.setNoisePanel(proactiveCtx, proactiveNoiseOutput);
+                                if (proactiveNoiseOutput.confidence_adjustment !== 0) {
+                                    const before = thesis.confidence;
+                                    const bounded = applyBoundedAdjustment(before, proactiveNoiseOutput.confidence_adjustment, proactiveCumulativePenalty, proactiveCumulativeBoost);
+                                    thesis.confidence = bounded.confidence;
+                                    proactiveCumulativePenalty = bounded.cumulativePenalty;
+                                    proactiveCumulativeBoost = bounded.cumulativeBoost;
+                                    AgentContextBus.recordAdjustment(proactiveCtx, 'noise_panel', before, thesis.confidence, proactiveNoiseOutput.summary);
+                                    console.log(`[Scanner] Proactive Noise Panel for ${thesis.ticker}: ${before} → ${thesis.confidence}`);
+                                }
+                            } catch { /* non-fatal */ }
+
+                            // 4c. Decision Twin — 3 investor personas
+                            try {
+                                proactiveTwinOutput = await DecisionTwinService.simulate({
+                                    ticker: thesis.ticker,
+                                    thesis: thesis.thesis,
+                                    reasoning: thesis.reasoning,
+                                    confidence: thesis.confidence,
+                                    targetPrice: thesis.target_price,
+                                    stopLoss: thesis.stop_loss,
+                                    currentPrice: thesis.suggested_entry_high || thesis.suggested_entry_low,
+                                    signalType: thesis.catalyst,
+                                    cascadingContext: AgentContextBus.buildPromptContext(proactiveCtx, 'decision_twin') || undefined,
+                                });
+                                AgentContextBus.setDecisionTwin(proactiveCtx, proactiveTwinOutput);
+                                if (proactiveTwinOutput.confidence_adjustment !== 0) {
+                                    const before = thesis.confidence;
+                                    const bounded = applyBoundedAdjustment(before, proactiveTwinOutput.confidence_adjustment, proactiveCumulativePenalty, proactiveCumulativeBoost);
+                                    thesis.confidence = bounded.confidence;
+                                    proactiveCumulativePenalty = bounded.cumulativePenalty;
+                                    proactiveCumulativeBoost = bounded.cumulativeBoost;
+                                    AgentContextBus.recordAdjustment(proactiveCtx, 'decision_twin', before, thesis.confidence, proactiveTwinOutput.summary);
+                                    console.log(`[Scanner] Proactive Decision Twin for ${thesis.ticker}: ${before} → ${thesis.confidence} (${proactiveTwinOutput.summary})`);
+                                }
+                                // Suppress if all 3 personas voted SKIP
+                                if (proactiveTwinOutput.skip_count === 3) {
+                                    console.warn(`[Scanner] Proactive thesis for ${thesis.ticker} suppressed: all 3 personas voted SKIP`);
+                                    continue;
+                                }
+                            } catch { /* non-fatal */ }
+
+                            // 4d. SWOT Analysis with confidence feedback
+                            try {
+                                proactiveSwotOutput = await SWOTAnalysisService.analyze({
+                                    ticker: thesis.ticker,
+                                    headline: `[PROACTIVE: ${thesis.catalyst}]`,
+                                    thesis: thesis.thesis,
+                                    reasoning: thesis.reasoning,
+                                    confidence: thesis.confidence,
+                                    signalType: thesis.catalyst,
+                                    decisionTwin: proactiveTwinOutput,
+                                });
+                                const sCount = proactiveSwotOutput.strengths.length;
+                                const wCount = proactiveSwotOutput.weaknesses.length;
+                                const tCount = proactiveSwotOutput.threats.length;
+                                if (wCount > sCount && tCount > 1) {
+                                    const before = thesis.confidence;
+                                    const swotPenalty = wCount >= sCount * 2 ? -SWOT_SEVERE_IMBALANCE_PENALTY : -SWOT_WEAKNESS_IMBALANCE_PENALTY;
+                                    const bounded = applyBoundedAdjustment(before, swotPenalty, proactiveCumulativePenalty, proactiveCumulativeBoost);
+                                    thesis.confidence = bounded.confidence;
+                                    proactiveCumulativePenalty = bounded.cumulativePenalty;
+                                    AgentContextBus.recordAdjustment(proactiveCtx, 'swot_feedback', before, thesis.confidence, `W=${wCount} > S=${sCount}`);
+                                    console.log(`[Scanner] Proactive SWOT feedback for ${thesis.ticker}: ${before} → ${thesis.confidence}`);
+                                }
+                            } catch { /* non-fatal */ }
+
+                            // Re-check confidence after pipeline enrichment
+                            if (thesis.confidence < adaptiveMinConfidence) {
+                                console.warn(`[Scanner] Proactive thesis for ${thesis.ticker} dropped after pipeline enrichment (${thesis.confidence} < ${adaptiveMinConfidence})`);
+                                continue;
+                            }
+
+                            // Save proactive thesis as a fully enriched signal
                             await supabase.from('signals').insert({
                                 ticker: thesis.ticker,
                                 signal_type: thesis.direction === 'short' ? 'short_overreaction' : 'long_overreaction',
@@ -1940,9 +2138,14 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                     conflict_resolution: proactiveConflictResult?.resolutions?.filter(r => r.action !== 'none').length
                                         ? proactiveConflictResult.resolutions.filter(r => r.action !== 'none')
                                         : null,
+                                    bias_detective: proactiveBiasOutput,
+                                    noise_confidence: proactiveNoiseOutput,
+                                    decision_twin: proactiveTwinOutput,
+                                    swot: proactiveSwotOutput,
+                                    context_bus: AgentContextBus.serialize(proactiveCtx),
                                 } as any,
-                                data_quality: 'partial',
-                                is_paper: true,
+                                data_quality: 'full',
+                                is_paper: false,
                             });
                             signalsGenerated++;
                             console.log(`[Scanner] Proactive signal saved: ${thesis.ticker} (${thesis.catalyst}, ${thesis.urgency}, conf=${thesis.confidence})`);
