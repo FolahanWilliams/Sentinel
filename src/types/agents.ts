@@ -125,6 +125,7 @@ export interface SWOTResult {
 export interface PersonaVerdict {
     persona: 'value_investor' | 'momentum_trader' | 'risk_manager';
     verdict: 'take' | 'caution' | 'skip';
+    reasoning?: string;       // full chain-of-thought from the model (expandable in UI)
     rationale: string;        // 1-2 sentence reasoning for the verdict
     key_concern: string;      // top risk or dealbreaker
     confidence_score: number; // persona's independent confidence (0-100)

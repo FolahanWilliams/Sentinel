@@ -2,8 +2,13 @@
  * AgentReasoningSurface — Prominently surfaces key agent reasoning instead of
  * burying it in collapsed JSON blobs. Shows thesis, counter-thesis, biases,
  * critical flaws, and a confidence waterfall at a glance.
+ *
+ * Phase 2 P1 UI Features:
+ *   3. Interactive Confidence Waterfall — each step is clickable; opens an inline
+ *      detail panel showing the full agent output for that contribution.
  */
 
+import { useState } from 'react';
 import {
     Brain,
     Shield,
@@ -19,6 +24,9 @@ import {
     ArrowRight,
     Microscope,
     Waves,
+    ChevronDown,
+    ChevronUp,
+    X,
 } from 'lucide-react';
 import { formatPercent } from '@/utils/formatters';
 import { DecisionTwinPanel } from './DecisionTwinPanel';
@@ -34,12 +42,11 @@ interface AgentReasoningSurfaceProps {
             overreaction?: any;
             red_team?: any;
             self_critique?: {
-                // CritiqueResult uses camelCase (from service), older records snake_case
                 criticalFlaws?: string[];
                 critical_flaws?: string[];
                 adjustedConfidence?: number;
                 adjusted_confidence?: number;
-                confidence_adjustment?: number; // legacy alias
+                confidence_adjustment?: number;
             } | null;
             sentiment_divergence?: { type: string; confidence_boost: number } | null;
             earnings_guard?: { penalty: number; days_until: number | null } | null;
@@ -49,9 +56,16 @@ interface AgentReasoningSurfaceProps {
             correlation_guard?: { penalty: number } | null;
             options_flow?: { confidence_adjustment: number; sentiment: string } | null;
             peer_strength?: { confidence_adjustment: number; is_idiosyncratic: boolean } | null;
-            // Phase 2 agents
-            bias_detective?: { total_penalty: number; dominant_bias: string } | null;
-            noise_confidence?: { confidence_adjustment: number } | null;
+            bias_detective?: { total_penalty: number; dominant_bias: string; findings?: any[]; bias_free?: boolean } | null;
+            noise_confidence?: {
+                confidence_adjustment: number;
+                scores?: [number, number, number];
+                mean?: number;
+                std_dev?: number;
+                convergent?: boolean;
+                divergent?: boolean;
+                summary?: string;
+            } | null;
             decision_twin?: DecisionTwinResult | null;
             swot?: SWOTResult | null;
         };
@@ -62,25 +76,84 @@ interface WaterfallStep {
     label: string;
     value: number;
     icon: React.ReactNode;
+    detail: React.ReactNode; // always present — null-safe below
 }
 
+// ── Step detail panels ────────────────────────────────────────────────────────
+
+function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
+    return (
+        <div className="flex items-start justify-between gap-3 py-1 border-b border-sentinel-800/40 last:border-0">
+            <span className="text-[11px] text-sentinel-500 flex-shrink-0">{label}</span>
+            <span className="text-[11px] text-sentinel-200 text-right">{value}</span>
+        </div>
+    );
+}
+
+function StepDetailPanel({ step, onClose }: { step: WaterfallStep; onClose: () => void }) {
+    return (
+        <div className={`mt-2 rounded-xl border p-4 space-y-3 ${
+            step.value > 0
+                ? 'border-emerald-500/25 bg-emerald-950/20'
+                : step.value < 0
+                    ? 'border-red-500/25 bg-red-950/20'
+                    : 'border-sentinel-700/40 bg-sentinel-800/30'
+        }`}>
+            {/* Header */}
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <span className="text-sentinel-400">{step.icon}</span>
+                    <span className="text-xs font-semibold text-sentinel-200">{step.label}</span>
+                    <span className={`text-xs font-mono font-bold ${
+                        step.value > 0 ? 'text-emerald-400' : step.value < 0 ? 'text-red-400' : 'text-sentinel-500'
+                    }`}>
+                        {step.value > 0 ? '+' : ''}{step.value}
+                    </span>
+                </div>
+                <button
+                    onClick={onClose}
+                    className="text-sentinel-600 hover:text-sentinel-400 transition-colors p-0.5 rounded"
+                    aria-label="Close detail"
+                >
+                    <X className="w-3.5 h-3.5" />
+                </button>
+            </div>
+
+            {/* Agent-specific content */}
+            <div className="space-y-0.5">
+                {step.detail}
+            </div>
+        </div>
+    );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
 export function AgentReasoningSurface({ signal }: AgentReasoningSurfaceProps) {
+    // useState must be called before any conditional returns (Rules of Hooks)
+    const [openStep, setOpenStep] = useState<string | null>(null);
+
     const { agent_outputs } = signal;
+    // Guard: older DB signals may have agent_outputs: null
+    if (!agent_outputs) return null;
+
     const overreaction = agent_outputs.overreaction;
     const redTeam = agent_outputs.red_team;
     const selfCritique = agent_outputs.self_critique;
 
-    // Extract structured data
-    // Note: self_critique is stored as CritiqueResult (camelCase keys from the service).
-    // Support both camelCase (live run) and snake_case (older DB records).
     const thesis = overreaction?.thesis || signal.thesis;
     const counterThesis = redTeam?.counter_thesis || signal.counter_argument;
     const identifiedBiases: string[] = overreaction?.identified_biases ?? [];
     const criticalFlaws: string[] =
         selfCritique?.criticalFlaws ?? selfCritique?.critical_flaws ?? [];
 
-    // Build confidence waterfall steps
     const waterfallSteps = buildWaterfallSteps(signal);
+
+    function toggleStep(label: string) {
+        setOpenStep(prev => (prev === label ? null : label));
+    }
+
+    const activeStep = waterfallSteps.find(s => s.label === openStep) ?? null;
 
     return (
         <div className="bg-sentinel-900/50 rounded-xl border border-sentinel-800/50 p-5 backdrop-blur-sm space-y-5">
@@ -90,28 +163,21 @@ export function AgentReasoningSurface({ signal }: AgentReasoningSurfaceProps) {
                 Agent Reasoning Surface
             </h3>
 
-            {/* Thesis & Counter-Thesis Cards */}
+            {/* Thesis & Counter-Thesis */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {/* Thesis */}
                 <div className="rounded-lg border border-blue-500/30 bg-blue-950/20 p-4">
                     <div className="flex items-center gap-2 mb-2">
                         <TrendingUp className="w-4 h-4 text-blue-400" />
-                        <span className="text-xs font-semibold text-blue-400 uppercase tracking-wider">
-                            Thesis
-                        </span>
+                        <span className="text-xs font-semibold text-blue-400 uppercase tracking-wider">Thesis</span>
                     </div>
                     <p className="text-sm text-sentinel-200 leading-relaxed">
                         {thesis || 'No thesis available.'}
                     </p>
                 </div>
-
-                {/* Counter-Thesis */}
                 <div className="rounded-lg border border-orange-500/30 bg-orange-950/20 p-4">
                     <div className="flex items-center gap-2 mb-2">
                         <Shield className="w-4 h-4 text-orange-400" />
-                        <span className="text-xs font-semibold text-orange-400 uppercase tracking-wider">
-                            Counter-Thesis
-                        </span>
+                        <span className="text-xs font-semibold text-orange-400 uppercase tracking-wider">Counter-Thesis</span>
                     </div>
                     <p className="text-sm text-sentinel-200 leading-relaxed">
                         {counterThesis || 'No counter-thesis available.'}
@@ -122,7 +188,6 @@ export function AgentReasoningSurface({ signal }: AgentReasoningSurfaceProps) {
             {/* Biases & Critical Flaws */}
             {(identifiedBiases.length > 0 || criticalFlaws.length > 0) && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {/* Identified Biases */}
                     {identifiedBiases.length > 0 && (
                         <div className="space-y-2">
                             <div className="flex items-center gap-2">
@@ -133,18 +198,13 @@ export function AgentReasoningSurface({ signal }: AgentReasoningSurfaceProps) {
                             </div>
                             <div className="flex flex-wrap gap-1.5">
                                 {identifiedBiases.map((bias, i) => (
-                                    <span
-                                        key={i}
-                                        className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-amber-500/15 text-amber-300 border border-amber-500/25"
-                                    >
+                                    <span key={i} className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-amber-500/15 text-amber-300 border border-amber-500/25">
                                         {bias}
                                     </span>
                                 ))}
                             </div>
                         </div>
                     )}
-
-                    {/* Critical Flaws */}
                     {criticalFlaws.length > 0 && (
                         <div className="space-y-2">
                             <div className="flex items-center gap-2">
@@ -155,10 +215,7 @@ export function AgentReasoningSurface({ signal }: AgentReasoningSurfaceProps) {
                             </div>
                             <div className="space-y-1.5">
                                 {criticalFlaws.map((flaw, i) => (
-                                    <div
-                                        key={i}
-                                        className="flex items-start gap-2 text-xs text-red-300 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2"
-                                    >
+                                    <div key={i} className="flex items-start gap-2 text-xs text-red-300 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
                                         <AlertTriangle className="w-3 h-3 text-red-400 mt-0.5 flex-shrink-0" />
                                         <span className="leading-relaxed">{flaw}</span>
                                     </div>
@@ -169,7 +226,7 @@ export function AgentReasoningSurface({ signal }: AgentReasoningSurfaceProps) {
                 </div>
             )}
 
-            {/* Decision Twin Simulation */}
+            {/* Decision Twin */}
             {agent_outputs.decision_twin && (
                 <div className="space-y-2">
                     <div className="flex items-center gap-2">
@@ -195,9 +252,9 @@ export function AgentReasoningSurface({ signal }: AgentReasoningSurfaceProps) {
                 </div>
             )}
 
-            {/* Confidence Waterfall */}
+            {/* ── Feature 3: Interactive Confidence Waterfall ── */}
             {waterfallSteps.length > 0 && (
-                <div className="space-y-3">
+                <div className="space-y-2">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                             <Activity className="w-3.5 h-3.5 text-sentinel-400" />
@@ -210,182 +267,365 @@ export function AgentReasoningSurface({ signal }: AgentReasoningSurfaceProps) {
                         </span>
                     </div>
 
+                    {/* Scrollable step row — each pill is clickable */}
                     <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-                        {waterfallSteps.map((step, i) => (
-                            <div key={step.label} className="flex items-center gap-1.5 flex-shrink-0">
-                                {i > 0 && (
-                                    <ArrowRight className="w-3 h-3 text-sentinel-600 flex-shrink-0" />
-                                )}
-                                <div
-                                    className={`flex flex-col items-center gap-1 rounded-lg border px-3 py-2 min-w-[80px] ${
-                                        step.value > 0
-                                            ? 'border-emerald-500/30 bg-emerald-950/20'
-                                            : step.value < 0
-                                              ? 'border-red-500/30 bg-red-950/20'
-                                              : 'border-sentinel-700/50 bg-sentinel-800/30'
-                                    }`}
-                                >
-                                    <div className="text-sentinel-500">{step.icon}</div>
-                                    <span className="text-[10px] text-sentinel-400 font-medium text-center leading-tight">
-                                        {step.label}
-                                    </span>
-                                    <span
-                                        className={`text-xs font-mono font-semibold ${
-                                            step.value > 0
-                                                ? 'text-emerald-400'
-                                                : step.value < 0
-                                                  ? 'text-red-400'
-                                                  : 'text-sentinel-500'
+                        {waterfallSteps.map((step, i) => {
+                            const isOpen = openStep === step.label;
+                            return (
+                                <div key={step.label} className="flex items-center gap-1.5 flex-shrink-0">
+                                    {i > 0 && (
+                                        <ArrowRight className="w-3 h-3 text-sentinel-600 flex-shrink-0" />
+                                    )}
+                                    <button
+                                        onClick={() => toggleStep(step.label)}
+                                        title={`${isOpen ? 'Hide' : 'View'} ${step.label} details`}
+                                        className={`flex flex-col items-center gap-1 rounded-lg border px-3 py-2 min-w-[80px] transition-all cursor-pointer focus:outline-none focus-visible:ring-1 focus-visible:ring-sentinel-500 ${
+                                            isOpen
+                                                ? step.value > 0
+                                                    ? 'border-emerald-400/60 bg-emerald-900/40 ring-1 ring-emerald-500/30'
+                                                    : step.value < 0
+                                                        ? 'border-red-400/60 bg-red-900/40 ring-1 ring-red-500/30'
+                                                        : 'border-sentinel-600 bg-sentinel-700/40 ring-1 ring-sentinel-500/30'
+                                                : step.value > 0
+                                                    ? 'border-emerald-500/30 bg-emerald-950/20 hover:border-emerald-400/50 hover:bg-emerald-900/30'
+                                                    : step.value < 0
+                                                        ? 'border-red-500/30 bg-red-950/20 hover:border-red-400/50 hover:bg-red-900/30'
+                                                        : 'border-sentinel-700/50 bg-sentinel-800/30 hover:border-sentinel-600 hover:bg-sentinel-700/30'
                                         }`}
                                     >
-                                        {step.value > 0 ? '+' : ''}
-                                        {step.value}
-                                    </span>
+                                        <div className="text-sentinel-500">{step.icon}</div>
+                                        <span className="text-[10px] text-sentinel-400 font-medium text-center leading-tight">
+                                            {step.label}
+                                        </span>
+                                        <span className={`text-xs font-mono font-semibold ${
+                                            step.value > 0 ? 'text-emerald-400' : step.value < 0 ? 'text-red-400' : 'text-sentinel-500'
+                                        }`}>
+                                            {step.value > 0 ? '+' : ''}{step.value}
+                                        </span>
+                                        {/* open/closed indicator */}
+                                        <div className="text-sentinel-600">
+                                            {isOpen
+                                                ? <ChevronUp className="w-2.5 h-2.5" />
+                                                : <ChevronDown className="w-2.5 h-2.5" />
+                                            }
+                                        </div>
+                                    </button>
                                 </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
+
+                    {/* Detail panel — shown below the scroll row for the active step */}
+                    {activeStep && (
+                        <StepDetailPanel
+                            step={activeStep}
+                            onClose={() => setOpenStep(null)}
+                        />
+                    )}
                 </div>
             )}
         </div>
     );
 }
 
-/**
- * Builds the ordered list of confidence waterfall adjustments from agent outputs.
- */
+// ── Waterfall step builder (with rich detail content) ─────────────────────────
+
 function buildWaterfallSteps(
     signal: AgentReasoningSurfaceProps['signal']
 ): WaterfallStep[] {
     const { agent_outputs } = signal;
     const steps: WaterfallStep[] = [];
 
-    // Base confidence from overreaction agent
+    // ── Base confidence from overreaction agent ──
     const baseConfidence = agent_outputs.overreaction?.confidence_score;
     if (baseConfidence != null) {
         steps.push({
             label: 'Base',
             value: baseConfidence,
             icon: <Brain className="w-3.5 h-3.5" />,
+            detail: (
+                <>
+                    <DetailRow label="Base confidence" value={`${baseConfidence}%`} />
+                    {agent_outputs.overreaction?.bias_type && (
+                        <DetailRow label="Bias type" value={agent_outputs.overreaction.bias_type} />
+                    )}
+                    {agent_outputs.overreaction?.moat_rating != null && (
+                        <DetailRow label="Moat rating" value={`${agent_outputs.overreaction.moat_rating}/10`} />
+                    )}
+                    {agent_outputs.overreaction?.conviction_score != null && (
+                        <DetailRow label="Conviction" value={`${agent_outputs.overreaction.conviction_score}/100`} />
+                    )}
+                </>
+            ),
         });
     }
 
-    // TA / Multi-timeframe alignment
+    // ── TA / Multi-timeframe alignment ──
     if (agent_outputs.multi_timeframe) {
+        const mt = agent_outputs.multi_timeframe;
         steps.push({
             label: 'TA Align',
-            value: agent_outputs.multi_timeframe.adjustment,
+            value: mt.adjustment,
             icon: <BarChart3 className="w-3.5 h-3.5" />,
+            detail: (
+                <>
+                    <DetailRow label="Alignment" value={mt.alignment} />
+                    <DetailRow label="Adjustment" value={`${mt.adjustment > 0 ? '+' : ''}${mt.adjustment}`} />
+                </>
+            ),
         });
     }
 
-    // Self-critique — stored as CritiqueResult with camelCase keys.
-    // We show the delta (adjusted - original) so the waterfall reflects the change.
+    // ── Self-critique ──
     const sc = agent_outputs.self_critique;
     const critiqueBase = agent_outputs.overreaction?.confidence_score ?? signal.confidence_score;
-    // adjustedConfidence is the final score; delta = adjusted - base
     const critiqueAdjusted: number | undefined = sc?.adjustedConfidence ?? sc?.adjusted_confidence;
     if (critiqueAdjusted != null && critiqueBase != null) {
         const critiqueAdj = Math.round(critiqueAdjusted - critiqueBase);
         if (critiqueAdj !== 0) {
+            const flaws: string[] = sc?.criticalFlaws ?? sc?.critical_flaws ?? [];
             steps.push({
                 label: 'Critique',
                 value: critiqueAdj,
                 icon: <Eye className="w-3.5 h-3.5" />,
+                detail: (
+                    <>
+                        <DetailRow label="Pre-critique" value={`${critiqueBase}%`} />
+                        <DetailRow label="Post-critique" value={`${critiqueAdjusted}%`} />
+                        <DetailRow label="Delta" value={`${critiqueAdj > 0 ? '+' : ''}${critiqueAdj}`} />
+                        {flaws.length > 0 && (
+                            <div className="pt-1">
+                                <p className="text-[10px] text-sentinel-500 uppercase tracking-wider mb-1">Critical flaws</p>
+                                {flaws.map((f, i) => (
+                                    <p key={i} className="text-[11px] text-red-300 leading-relaxed mb-0.5">• {f}</p>
+                                ))}
+                            </div>
+                        )}
+                    </>
+                ),
             });
         }
     }
 
-    // Bias Detective
-    const biasDetective = agent_outputs.bias_detective;
-    if (biasDetective?.total_penalty) {
+    // ── Bias Detective ──
+    const bd = agent_outputs.bias_detective;
+    if (bd?.total_penalty) {
         steps.push({
             label: 'Bias Det.',
-            value: -biasDetective.total_penalty,
+            value: -bd.total_penalty,
             icon: <Microscope className="w-3.5 h-3.5" />,
+            detail: (
+                <>
+                    <DetailRow label="Dominant bias" value={bd.dominant_bias} />
+                    <DetailRow label="Total penalty" value={`−${bd.total_penalty}`} />
+                    <DetailRow label="Bias-free" value={bd.bias_free ? 'Yes' : 'No'} />
+                    {bd.findings && bd.findings.length > 0 && (
+                        <div className="pt-1">
+                            <p className="text-[10px] text-sentinel-500 uppercase tracking-wider mb-1">
+                                Findings ({bd.findings.length})
+                            </p>
+                            {bd.findings.slice(0, 4).map((f: any, i: number) => (
+                                <div key={i} className="mb-1.5">
+                                    <div className="flex items-center gap-1.5 mb-0.5">
+                                        <span className={`text-[10px] font-semibold ${
+                                            f.severity === 3 ? 'text-red-400' : f.severity === 2 ? 'text-amber-400' : 'text-yellow-500'
+                                        }`}>
+                                            {f.bias_name}
+                                        </span>
+                                        <span className="text-[9px] text-sentinel-600">
+                                            Sev {f.severity} · −{f.penalty}
+                                        </span>
+                                    </div>
+                                    <p className="text-[10px] text-sentinel-400 leading-relaxed">{f.evidence}</p>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </>
+            ),
         });
     }
 
-    // Noise-Aware Confidence
-    const noiseAdj = agent_outputs.noise_confidence?.confidence_adjustment;
+    // ── Noise-Aware Confidence (3-judge panel) ──
+    const nc = agent_outputs.noise_confidence;
+    const noiseAdj = nc?.confidence_adjustment;
     if (noiseAdj != null && noiseAdj !== 0) {
         steps.push({
             label: 'Noise',
             value: noiseAdj,
             icon: <Waves className="w-3.5 h-3.5" />,
+            detail: (
+                <>
+                    {nc?.scores && (
+                        <DetailRow
+                            label="Judge scores"
+                            value={`${nc.scores[0]} / ${nc.scores[1]} / ${nc.scores[2]}`}
+                        />
+                    )}
+                    {nc?.mean != null && <DetailRow label="Mean" value={`${nc.mean}%`} />}
+                    {nc?.std_dev != null && <DetailRow label="Std dev (σ)" value={nc.std_dev.toFixed(1)} />}
+                    <DetailRow
+                        label="Convergence"
+                        value={nc?.convergent ? '✓ Convergent' : nc?.divergent ? '⚠ Divergent' : 'Moderate'}
+                    />
+                    <DetailRow label="Adjustment" value={`${noiseAdj > 0 ? '+' : ''}${noiseAdj}`} />
+                    {nc?.summary && (
+                        <p className="text-[11px] text-sentinel-400 leading-relaxed pt-1 border-t border-sentinel-800/40">
+                            {nc.summary}
+                        </p>
+                    )}
+                </>
+            ),
         });
     }
 
-    // Decision Twin
+    // ── Decision Twin ──
     const twinAdj = agent_outputs.decision_twin?.confidence_adjustment;
     if (twinAdj != null && twinAdj !== 0) {
+        const dt = agent_outputs.decision_twin!;
         steps.push({
             label: 'Twins',
             value: twinAdj,
             icon: <Users className="w-3.5 h-3.5" />,
+            detail: (
+                <>
+                    <DetailRow label="Value" value={dt.value.verdict.toUpperCase()} />
+                    <DetailRow label="Momentum" value={dt.momentum.verdict.toUpperCase()} />
+                    <DetailRow label="Risk" value={dt.risk.verdict.toUpperCase()} />
+                    <DetailRow label="Flagged" value={dt.flagged ? 'Yes' : 'No'} />
+                    <DetailRow label="Adjustment" value={`${twinAdj > 0 ? '+' : ''}${twinAdj}`} />
+                    <p className="text-[11px] text-sentinel-400 leading-relaxed pt-1 border-t border-sentinel-800/40">
+                        {dt.summary}
+                    </p>
+                </>
+            ),
         });
     }
 
-    // Sentiment divergence
+    // ── Sentiment divergence ──
     if (agent_outputs.sentiment_divergence) {
+        const sd = agent_outputs.sentiment_divergence;
         steps.push({
             label: 'Sentiment',
-            value: agent_outputs.sentiment_divergence.confidence_boost,
+            value: sd.confidence_boost,
             icon: <TrendingUp className="w-3.5 h-3.5" />,
+            detail: (
+                <>
+                    <DetailRow label="Divergence type" value={sd.type} />
+                    <DetailRow label="Boost" value={`+${sd.confidence_boost}`} />
+                </>
+            ),
         });
     }
 
-    // Earnings guard
+    // ── Earnings guard ──
     if (agent_outputs.earnings_guard) {
+        const eg = agent_outputs.earnings_guard;
         steps.push({
             label: 'Earnings',
-            value: -agent_outputs.earnings_guard.penalty,
+            value: -eg.penalty,
             icon: <TrendingDown className="w-3.5 h-3.5" />,
+            detail: (
+                <>
+                    <DetailRow label="Penalty" value={`−${eg.penalty}`} />
+                    <DetailRow
+                        label="Days to earnings"
+                        value={eg.days_until != null ? `${eg.days_until}d` : 'Unknown'}
+                    />
+                </>
+            ),
         });
     }
 
-    // Market regime
+    // ── Market regime ──
     if (agent_outputs.market_regime) {
+        const mr = agent_outputs.market_regime;
         steps.push({
             label: 'Regime',
-            value: -agent_outputs.market_regime.penalty,
+            value: -mr.penalty,
             icon: <Activity className="w-3.5 h-3.5" />,
+            detail: (
+                <>
+                    <DetailRow label="Regime" value={mr.regime} />
+                    <DetailRow label="Penalty" value={`−${mr.penalty}`} />
+                </>
+            ),
         });
     }
 
-    // Backtest
+    // ── Backtest ──
     if (agent_outputs.backtest) {
+        const bt = agent_outputs.backtest;
         steps.push({
             label: 'Backtest',
-            value: -agent_outputs.backtest.penalty,
+            value: -bt.penalty,
             icon: <GitBranch className="w-3.5 h-3.5" />,
+            detail: (
+                <>
+                    <DetailRow label="Penalty" value={`−${bt.penalty}`} />
+                    <DetailRow
+                        label="Signal win rate"
+                        value={bt.signal_type_win_rate != null
+                            ? `${(bt.signal_type_win_rate * 100).toFixed(0)}%`
+                            : 'N/A'
+                        }
+                    />
+                </>
+            ),
         });
     }
 
-    // Correlation guard
+    // ── Correlation guard ──
     if (agent_outputs.correlation_guard) {
+        const cg = agent_outputs.correlation_guard;
         steps.push({
             label: 'Correlation',
-            value: -agent_outputs.correlation_guard.penalty,
+            value: -cg.penalty,
             icon: <Zap className="w-3.5 h-3.5" />,
+            detail: (
+                <DetailRow label="Penalty" value={`−${cg.penalty}`} />
+            ),
         });
     }
 
-    // Options flow
+    // ── Options flow ──
     if (agent_outputs.options_flow) {
+        const of_ = agent_outputs.options_flow;
         steps.push({
             label: 'Options',
-            value: agent_outputs.options_flow.confidence_adjustment,
+            value: of_.confidence_adjustment,
             icon: <Activity className="w-3.5 h-3.5" />,
+            detail: (
+                <>
+                    <DetailRow label="Sentiment" value={of_.sentiment} />
+                    <DetailRow
+                        label="Adjustment"
+                        value={`${of_.confidence_adjustment > 0 ? '+' : ''}${of_.confidence_adjustment}`}
+                    />
+                </>
+            ),
         });
     }
 
-    // Peer strength
+    // ── Peer strength ──
     if (agent_outputs.peer_strength) {
+        const ps = agent_outputs.peer_strength;
         steps.push({
             label: 'Peers',
-            value: agent_outputs.peer_strength.confidence_adjustment,
+            value: ps.confidence_adjustment,
             icon: <Users className="w-3.5 h-3.5" />,
+            detail: (
+                <>
+                    <DetailRow
+                        label="Idiosyncratic"
+                        value={ps.is_idiosyncratic ? 'Yes' : 'No'}
+                    />
+                    <DetailRow
+                        label="Adjustment"
+                        value={`${ps.confidence_adjustment > 0 ? '+' : ''}${ps.confidence_adjustment}`}
+                    />
+                </>
+            ),
         });
     }
 
