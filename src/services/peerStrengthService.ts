@@ -354,7 +354,8 @@ export class PeerStrengthService {
         // Normalize by market cap to compare fairly (if available)
         // Fallback: just compare relative to peer group median
         peerVolumes.sort((a, b) => a - b);
-        const medianPeerVolume = peerVolumes[Math.floor(peerVolumes.length / 2)];
+        const medianPeerVolume = peerVolumes[Math.floor(peerVolumes.length / 2)] ?? 0;
+        if (medianPeerVolume === 0) return 'unknown';
 
         // Volume ratios are noisy across different-sized companies,
         // so use a high threshold
