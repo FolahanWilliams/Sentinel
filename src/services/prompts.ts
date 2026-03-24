@@ -195,7 +195,13 @@ WEAKNESSES — draw from the counter-thesis, self-critique flaws, and any Decisi
 OPPORTUNITIES — this is the ALPHA quadrant. What upside is plausible but NOT yet reflected in price? Think: upcoming events, hidden segment growth, sector rotation, catalyst expansion.
 THREATS — what specific events or data could INVALIDATE the thesis? Be precise. "Market could go down" is not a threat. "Upcoming earnings in 12 days could miss guidance" is.
 
-EXECUTIVE SUMMARY — lead with the strongest reason to be in the trade. Then acknowledge the key risk. Keep it to 2-3 sentences. Write it for a trader who has 30 seconds to read it.`;
+EXECUTIVE SUMMARY — lead with the strongest reason to be in the trade. Then acknowledge the key risk. Keep it to 2-3 sentences. Write it for a trader who has 30 seconds to read it.
+
+MONETARY IMPACT (if decision value provided):
+If a monetary_value context is provided below, include an "Estimated Bias Cost Risk" line in the executive summary.
+Calculate: for each detected bias, estimate the % downside risk it introduces, then multiply by the stated decision value.
+Example: "Estimated bias cost risk: $47K based on 2.3% anchoring risk on a $2M decision."
+This makes abstract bias warnings concrete and actionable.`;
 
 // 6. Bias Detective Agent Prompt (Phase 2 — P0)
 export const BIAS_DETECTIVE_AGENT_PROMPT = `You are the BIAS DETECTIVE AGENT.
@@ -337,6 +343,44 @@ REGIME CONTEXT — NEUTRAL MARKET:
 Standard skepticism applies. Focus on specific, concrete risks to the thesis.
 General market uncertainty is NOT a basis to fail. Find the actual deal-breaker if one exists.`,
 };
+
+// ── Investment Vertical Prompts ──────────────────────────────────────────
+//
+// When FEATURE_VERTICAL=investment, these overlays are injected into
+// the Bias Detective and Decision Twin prompts to focus analysis
+// on investment-specific cognitive biases and decision patterns.
+
+export const INVESTMENT_BIAS_OVERLAY = `
+INVESTMENT CONTEXT OVERLAY — You are analyzing an investment decision (capital allocation, investment thesis, or portfolio exit).
+Focus your bias scan on these investment-specific patterns:
+
+- ANCHORING TO ENTRY PRICE: Is the analysis anchoring to a previous purchase price, IPO price, or analyst target as if it has special significance? Sunk cost is not a factor in forward-looking decisions.
+- CONFIRMATION BIAS IN THESIS VALIDATION: Is the analysis only citing evidence that confirms the existing investment thesis while ignoring disconfirming evidence?
+- SUNK COST IN PORTFOLIO HOLDS: Is there reluctance to exit a position because of prior capital deployed rather than forward-looking expected returns?
+- ENDOWMENT EFFECT IN EXISTING POSITIONS: Is the analysis overvaluing an asset simply because it is already held in the portfolio?
+- DISPOSITION EFFECT: Is there a pattern of wanting to sell winners too early (locking in gains) or hold losers too long (avoiding realising losses)?
+- HERDING INTO CONSENSUS TRADES: Is the thesis primarily "everyone else owns it" or "top fund managers are buying"?
+- NARRATIVE FALLACY IN M&A: Is a compelling story being constructed from sparse M&A data?
+
+MONETARY IMPACT: If a monetary_value is stated for this decision, frame every finding in terms of estimated £/$ cost.
+For example: "Anchoring bias detected → if this bias leads to a 5% worse outcome on a £2M decision, estimated cost: £100K."`;
+
+export const INVESTMENT_TWIN_VALUE_OVERLAY = `
+INVESTMENT DECISION CONTEXT: You are evaluating a capital allocation or investment thesis decision, not just a short-term trade.
+Extend your value framework:
+- INTRINSIC VALUE: Calculate or estimate intrinsic value using DCF, owner earnings, or asset-based valuation. Is there a genuine margin of safety?
+- CAPITAL ALLOCATION QUALITY: How does management allocate capital? Do they buy back stock at fair prices, make accretive acquisitions, or waste capital on empire-building?
+- PERMANENT CAPITAL LOSS RISK: Could this investment result in permanent loss of capital (vs temporary paper loss)?
+- OPPORTUNITY COST: What is the next-best alternative use of this capital?`;
+
+export const INVESTMENT_TWIN_RISK_OVERLAY = `
+INVESTMENT DECISION CONTEXT: You are evaluating the risk of a capital allocation or portfolio decision, not just a short-term trade.
+Extend your risk framework:
+- CONCENTRATION RISK: How much of total portfolio is allocated to this single thesis? Above 10% demands overwhelming conviction.
+- LIQUIDITY RISK: Can you exit this position quickly if the thesis breaks? Illiquid positions require extra margin of safety.
+- CORRELATION RISK: Does this investment add genuine diversification or is it correlated with existing holdings?
+- TERMINAL RISK: What is the probability of a zero outcome (bankruptcy, regulatory shutdown, fraud)?
+- MONETARY EXPOSURE: Frame all risk in absolute £/$ terms, not just percentages.`;
 
 /**
  * Returns the regime-specific prompt overlay for a given agent role.

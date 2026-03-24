@@ -16,7 +16,8 @@ export type NotificationTrigger =
     | 'exposure_breach'
     | 'scanner_high_confidence'
     | 'drawdown_alert'
-    | 'sector_drift';
+    | 'sector_drift'
+    | 'outcome_reminder';
 
 interface BrowserNotificationOptions {
     title: string;
@@ -39,6 +40,7 @@ export interface NotificationPreferences {
     scanner_high_confidence: boolean;
     drawdown_alert: boolean;
     sector_drift: boolean;
+    outcome_reminder: boolean;
     sound: boolean;
 }
 
@@ -52,6 +54,7 @@ const DEFAULT_PREFERENCES: NotificationPreferences = {
     scanner_high_confidence: true,
     drawdown_alert: true,
     sector_drift: true,
+    outcome_reminder: true,
     sound: true,
 };
 
@@ -279,6 +282,20 @@ export class BrowserNotificationService {
             trigger: 'sector_drift',
             url: '/risk',
             tag: `sector-drift-${sector}`,
+        });
+    }
+
+    static async notifyOutcomeReminder(overdueCount: number, pendingCount: number) {
+        const total = overdueCount + pendingCount;
+        if (total === 0) return;
+        return this.send({
+            title: `${total} Decision${total !== 1 ? 's' : ''} Awaiting Outcome`,
+            body: overdueCount > 0
+                ? `${overdueCount} overdue, ${pendingCount} pending. Log outcomes to improve your accuracy tracking.`
+                : `${pendingCount} decision${pendingCount !== 1 ? 's' : ''} pending outcome review. Keep your compliance above 80%.`,
+            trigger: 'outcome_reminder',
+            url: '/accuracy',
+            tag: 'outcome-reminder',
         });
     }
 }

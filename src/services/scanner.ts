@@ -1602,7 +1602,10 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             status: 'active',
                                             secondary_biases: [],
                                             sources: [],
-                                            is_paper: false
+                                            is_paper: false,
+                                            outcome_status: 'pending_outcome',
+                                            outcome_due_at: new Date(Date.now() + (analysis.data.timeframe_days || 30) * 2 * 24 * 60 * 60 * 1000).toISOString(),
+                                            outcome_review_days: (analysis.data.timeframe_days || 30) * 2
                                         }).select().single();
 
                                         if (signalInsertErr) {
@@ -1788,7 +1791,10 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                                 data_quality: 'partial',
                                                                 secondary_biases: ['herding'],
                                                                 sources: [],
-                                                                is_paper: false
+                                                                is_paper: false,
+                                                                outcome_status: 'pending_outcome',
+                                                                outcome_due_at: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(),
+                                                                outcome_review_days: 60
                                                             }).select().single();
 
                                                             if (contagionInsertErr) {
@@ -2284,7 +2290,10 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                             status: 'active',
                             data_quality: singleTaSnapshot ? 'full' : 'partial',
                             sources: [],
-                            is_paper: isPaper
+                            is_paper: isPaper,
+                            outcome_status: 'pending_outcome',
+                            outcome_due_at: new Date(Date.now() + (analysis.data.timeframe_days || 30) * 2 * 24 * 60 * 60 * 1000).toISOString(),
+                            outcome_review_days: (analysis.data.timeframe_days || 30) * 2
                         } as any).select().single();
 
                         if (discSignalErr) {

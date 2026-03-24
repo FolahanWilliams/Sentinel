@@ -10,6 +10,8 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
 import { clearUserIdCache } from '@/utils/getUserId';
 import { AuthGate } from '@/components/auth/AuthGate';
+import { Landing } from '@/pages/Landing';
+import { FEATURE_VERTICAL } from '@/config/constants';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { ChatProvider } from '@/contexts/ChatContext';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
@@ -121,9 +123,9 @@ export default function App() {
         );
     }
 
-    // Not authenticated — show Google Sign-In
+    // Not authenticated — show landing page (investment vertical) or auth gate
     if (!session) {
-        return <AuthGate />;
+        return FEATURE_VERTICAL === 'investment' ? <Landing /> : <AuthGate />;
     }
 
     return (
