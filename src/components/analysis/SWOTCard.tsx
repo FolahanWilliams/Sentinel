@@ -187,7 +187,7 @@ function AlphaSpotlightQuadrant({ items }: { items: SWOTItem[] }) {
             ) : (
                 <div className="space-y-2.5">
                     {/* First item → spotlight callout */}
-                    <AlphaSpotlightItem item={spotlight} />
+                    {spotlight && <AlphaSpotlightItem item={spotlight} />}
 
                     {/* Remaining items → standard bullets */}
                     {rest.length > 0 && (
