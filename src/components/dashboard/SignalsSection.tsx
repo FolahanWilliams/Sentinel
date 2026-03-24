@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import {
     ConfluenceBadge, ConvictionBadge, LynchBadge, MoatBadge, RoiBadge,
+    ProactiveBadge, ConfidenceTrailBadge, ConflictResolutionBadge,
 } from '@/components/shared/SignalBadges';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePortfolio } from '@/hooks/usePortfolio';
@@ -62,6 +63,7 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
     const [confluenceFilter, setConfluenceFilter] = useState(false);
     const [highConvictionOnly, setHighConvictionOnly] = useState(false);
     const [lynchFilter, setLynchFilter] = useState<LynchFilter>('all');
+    const [proactiveOnly, setProactiveOnly] = useState(false);
     const [sortBy, setSortBy] = useState<SortField>('created_at');
 
     // Fetch signals from Supabase
@@ -163,6 +165,11 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
             result = result.filter(s => s.lynch_category === lynchFilter);
         }
 
+        // Proactive only filter
+        if (proactiveOnly) {
+            result = result.filter(s => s.agent_outputs?.proactive_thesis != null);
+        }
+
         // Sort
         result.sort((a, b) => {
             switch (sortBy) {
@@ -180,7 +187,7 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
         });
 
         return result;
-    }, [signals, minConfidence, highImpactOnly, highRoiOnly, directionFilter, confluenceFilter, highConvictionOnly, lynchFilter, sortBy]);
+    }, [signals, minConfidence, highImpactOnly, highRoiOnly, directionFilter, confluenceFilter, highConvictionOnly, lynchFilter, proactiveOnly, sortBy]);
 
     const activeFilterCount = [
         minConfidence > 0,
@@ -190,6 +197,7 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
         confluenceFilter,
         highConvictionOnly,
         lynchFilter !== 'all',
+        proactiveOnly,
         sortBy !== 'created_at',
     ].filter(Boolean).length;
 
@@ -463,6 +471,16 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                     <span className="text-xs text-sentinel-400">Confluence Only</span>
                                 </label>
 
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={proactiveOnly}
+                                        onChange={(e) => setProactiveOnly(e.target.checked)}
+                                        className="rounded bg-sentinel-800 border-sentinel-700 text-amber-500 focus:ring-amber-500/30"
+                                    />
+                                    <span className="text-xs text-sentinel-400">Proactive Only</span>
+                                </label>
+
                                 {activeFilterCount > 0 && (
                                     <button
                                         onClick={() => {
@@ -472,6 +490,7 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                             setHighConvictionOnly(false);
                                             setDirectionFilter('all');
                                             setConfluenceFilter(false);
+                                            setProactiveOnly(false);
                                             setLynchFilter('all');
                                             setSortBy('created_at');
                                         }}
@@ -591,13 +610,16 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                             {signal.thesis}
                                         </p>
 
-                                        {/* Badges row: confluence + projected ROI */}
+                                        {/* Badges row: confluence + projected ROI + proactive + trail */}
                                         <div className="mt-3 flex items-center gap-2 flex-wrap">
+                                            <ProactiveBadge thesis={signal.agent_outputs?.proactive_thesis} />
                                             <ConfluenceBadge level={signal.confluence_level} />
                                             <ConvictionBadge score={signal.conviction_score} reason={signal.why_high_conviction} />
                                             <LynchBadge category={signal.lynch_category} />
                                             <MoatBadge rating={signal.moat_rating} />
                                             <RoiBadge roi={signal.projected_roi} />
+                                            <ConfidenceTrailBadge trail={signal.agent_outputs?.context_bus} />
+                                            <ConflictResolutionBadge resolutions={signal.agent_outputs?.conflict_resolution} />
                                             {signal.projected_win_rate != null && (
                                                 <span className="px-2 py-0.5 text-[10px] font-bold font-mono rounded ring-1 bg-sentinel-800/50 text-sentinel-400 ring-sentinel-700/30">
                                                     {signal.projected_win_rate}% WR
@@ -678,6 +700,73 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                                     exit={{ opacity: 0, height: 0 }}
                                                     className="mt-4 pt-4 border-t border-sentinel-800/50 space-y-3"
                                                 >
+                                                    {/* Proactive Thesis Engine detail (if this is a proactive signal) */}
+                                                    {signal.agent_outputs?.proactive_thesis && (
+                                                        <div className="p-3 rounded-lg bg-amber-500/5 border border-amber-500/20">
+                                                            <div className="flex items-center gap-2 mb-2">
+                                                                <Radar className="w-4 h-4 text-amber-400" />
+                                                                <span className="text-[10px] text-amber-400 uppercase tracking-wider font-bold">Proactive Thesis</span>
+                                                                <span className={`px-1.5 py-0.5 text-[9px] font-bold rounded ring-1 ${
+                                                                    signal.agent_outputs.proactive_thesis.urgency === 'immediate'
+                                                                        ? 'bg-red-500/15 text-red-400 ring-red-500/30'
+                                                                        : signal.agent_outputs.proactive_thesis.urgency === 'watchlist'
+                                                                            ? 'bg-amber-500/15 text-amber-400 ring-amber-500/30'
+                                                                            : 'bg-blue-500/10 text-blue-400 ring-blue-500/20'
+                                                                }`}>
+                                                                    {signal.agent_outputs.proactive_thesis.urgency.toUpperCase()}
+                                                                </span>
+                                                            </div>
+                                                            <div className="flex items-center gap-3 mb-2 text-[10px] font-mono text-sentinel-400">
+                                                                <span>Catalyst: <span className="text-sentinel-200">{signal.agent_outputs.proactive_thesis.catalyst.replace(/_/g, ' ')}</span></span>
+                                                                <span>Direction: <span className={signal.agent_outputs.proactive_thesis.direction === 'long' ? 'text-emerald-400' : 'text-red-400'}>
+                                                                    {signal.agent_outputs.proactive_thesis.direction.toUpperCase()}
+                                                                </span></span>
+                                                            </div>
+                                                            <p className="text-xs text-sentinel-400 leading-relaxed">{signal.agent_outputs.proactive_thesis.reasoning}</p>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Confidence Trail — pipeline audit (if context bus data exists) */}
+                                                    {signal.agent_outputs?.context_bus?.confidence_trail && signal.agent_outputs.context_bus.confidence_trail.length > 0 && (
+                                                        <div className="p-3 rounded-lg bg-sentinel-950/30 border border-sentinel-800/30">
+                                                            <span className="text-[10px] text-sentinel-500 uppercase tracking-wider font-bold flex items-center gap-1.5 mb-2">
+                                                                <Activity className="w-3 h-3" /> Confidence Pipeline
+                                                            </span>
+                                                            <div className="space-y-1">
+                                                                {signal.agent_outputs.context_bus.confidence_trail.map((step, i) => (
+                                                                    <div key={i} className="flex items-center gap-2 text-[10px] font-mono">
+                                                                        <span className="text-sentinel-500 w-24 truncate">{step.stage}</span>
+                                                                        <span className="text-sentinel-400">{step.before}</span>
+                                                                        <span className="text-sentinel-600">&rarr;</span>
+                                                                        <span className="text-sentinel-200">{step.after}</span>
+                                                                        <span className={`font-bold ${step.adjustment > 0 ? 'text-emerald-400' : step.adjustment < 0 ? 'text-red-400' : 'text-sentinel-500'}`}>
+                                                                            ({step.adjustment > 0 ? '+' : ''}{step.adjustment})
+                                                                        </span>
+                                                                        <span className="text-sentinel-600 truncate flex-1">{step.reason}</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                            <div className="mt-2 pt-2 border-t border-sentinel-800/30 text-[10px] font-mono text-sentinel-500">
+                                                                Pipeline: {signal.agent_outputs.context_bus.stages_completed.join(' → ')}
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Conflict Resolutions (if any) */}
+                                                    {signal.agent_outputs?.conflict_resolution && signal.agent_outputs.conflict_resolution.length > 0 && (
+                                                        <div className="p-3 rounded-lg bg-amber-500/5 border border-amber-500/20">
+                                                            <span className="text-[10px] text-amber-400 uppercase tracking-wider font-bold mb-2 block">Conflicts Auto-Resolved</span>
+                                                            {signal.agent_outputs.conflict_resolution.map((r, i) => (
+                                                                <div key={i} className="text-[10px] text-sentinel-400 font-mono flex items-center gap-2">
+                                                                    <CheckCircle2 className="w-3 h-3 text-amber-400 flex-shrink-0" />
+                                                                    <span className="text-sentinel-200">{r.existingTicker}</span>
+                                                                    <span className="text-sentinel-600">—</span>
+                                                                    <span>{r.action.replace(/_/g, ' ')}: {r.reason}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+
                                                     {/* Counter argument */}
                                                     {signal.counter_argument && (
                                                         <div>

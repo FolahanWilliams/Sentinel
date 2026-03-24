@@ -294,7 +294,10 @@ export class SignalDecayEngine {
         const expectedDays = expectedTimeframeDays || DEFAULT_SIGNAL_TIMEFRAME_DAYS;
         // Use cached half-lives if available (populated by processActiveSignals), otherwise defaults
         const halfLives = cachedHalfLives ?? DEFAULT_HALF_LIVES;
-        const decayFactor = this.computeDecayFactor(daysActive, signalType ?? 'long_overreaction', halfLives);
+        // Regime-aware decay for display (uses cached regime from last processActiveSignals run)
+        const decayFactor = this.computeDecayFactor(daysActive, signalType ?? 'long_overreaction', halfLives, {
+            regime: cachedRegime ?? undefined,
+        });
         const decayedConfidence = Math.round(originalConfidence * decayFactor);
         const isStale = daysActive > expectedDays * 1.2;
 

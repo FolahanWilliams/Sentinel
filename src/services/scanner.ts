@@ -792,7 +792,12 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                 }
 
                                 // Diagnostic logging — show WHY signals are accepted/rejected
-                                const gate = catalystAgentUsed ? CONFIDENCE_GATE_CATALYST : CONFIDENCE_GATE_OVERREACTION;
+                                // A/B test can override confidence gates
+                                const gate = ABTestingFramework.getParam(
+                                    abAssignments,
+                                    catalystAgentUsed ? 'confidence_gate_catalyst' : 'confidence_gate_overreaction',
+                                    catalystAgentUsed ? CONFIDENCE_GATE_CATALYST : CONFIDENCE_GATE_OVERREACTION
+                                );
                                 if (analysis.success) {
                                     console.log(`[Scanner] ${catalystAgentUsed ? 'Catalyst' : 'Overreaction'} result for ${ev.ticker}: pass=${analysis.data?.is_overreaction}, confidence=${analysis.data?.confidence_score}, thesis="${(analysis.data?.thesis || '').slice(0, 80)}..."`);
                                 } else {
@@ -839,9 +844,11 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                         console.warn(`[Scanner] TA fetch failed for ${ev.ticker}, proceeding without TA:`, taErr);
                                     }
 
-                                    // 7. SANITY CHECK (Red Team) — with cascading context from originating agent
-                                    // The Red Team receives the full structured output of the prior agent so it can
-                                    // mount a targeted challenge against specific weak points (not just the thesis string).
+                                    // Record TA adjustment in context bus
+                                    agentCtx.taSnapshot = earlyTaSnapshot;
+                                    agentCtx.taAlignment = taAlignment;
+
+                                    // 7. SANITY CHECK (Red Team) — with cascading context from ALL upstream agents
                                     const priorContext: PriorAgentContext = {
                                         agentName: catalystAgentUsed ? 'BULLISH_CATALYST_AGENT' : 'OVERREACTION_AGENT',
                                         confidence: analysis.data.confidence_score,
@@ -852,9 +859,11 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                         moatRating: analysis.data.moat_rating,
                                         financialImpact: analysis.data.financial_impact_assessment,
                                     };
+                                    // Inject cascading context from bias detective (if it ran before red team)
+                                    const redTeamCascadeCtx = AgentContextBus.buildPromptContext(agentCtx, 'red_team');
                                     const sanity = await AgentService.runSanityCheck(
                                         ev.ticker,
-                                        analysis.data.thesis,
+                                        analysis.data.thesis + redTeamCascadeCtx,
                                         analysis.data.target_price,
                                         analysis.data.stop_loss,
                                         catalystAgentUsed ? 'BULLISH_CATALYST_AGENT' : 'OVERREACTION_AGENT',
@@ -869,6 +878,10 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                         console.log(`[Scanner] Sanity check for ${ev.ticker}: passes=${sanity.data?.passes_sanity_check}, risk=${sanity.data?.risk_score}`);
                                     } else {
                                         console.warn(`[Scanner] Sanity check FAILED for ${ev.ticker}: ${sanity.error}`);
+                                    }
+
+                                    if (sanity.success && sanity.data) {
+                                        AgentContextBus.setRedTeam(agentCtx, sanity.data);
                                     }
 
                                     if (sanity.success && sanity.data?.passes_sanity_check) {
@@ -899,21 +912,30 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             console.warn(`[Scanner] Bias Detective failed for ${ev.ticker} (non-fatal):`, biasErr);
                                         }
 
-                                        // 7.5. SELF-CRITIQUE — second-pass confidence adjustment
+                                        // 7.5. SELF-CRITIQUE — second-pass confidence adjustment (with cascading context)
                                         let critiqueOutput = null;
                                         try {
+                                            const selfCritiqueCascadeCtx = AgentContextBus.buildPromptContext(agentCtx, 'self_critique');
                                             const critique = await SelfCritiqueAgent.critique(
                                                 ev.ticker,
-                                                analysis.data.thesis,
+                                                analysis.data.thesis + selfCritiqueCascadeCtx,
                                                 analysis.data.reasoning || analysis.data.thesis,
                                                 analysis.data.confidence_score,
                                                 sanity.data.counter_thesis,
                                                 signalType
                                             );
                                             critiqueOutput = critique;
+                                            // Store in context bus
+                                            agentCtx.selfCritique = {
+                                                criticalFlaws: critique.criticalFlaws || [],
+                                                minorFlaws: critique.minorFlaws || [],
+                                                adjustedConfidence: critique.adjustedConfidence,
+                                            };
                                             if (critique.hasFlaws && critique.adjustedConfidence < analysis.data.confidence_score) {
+                                                const before = analysis.data.confidence_score;
                                                 console.log(`[Scanner] Self-critique adjusted confidence for ${ev.ticker}: ${analysis.data.confidence_score} → ${critique.adjustedConfidence} (${critique.criticalFlaws.length} critical, ${critique.minorFlaws.length} minor flaws)`);
                                                 analysis.data.confidence_score = critique.adjustedConfidence;
+                                                AgentContextBus.recordAdjustment(agentCtx, 'self_critique', before, critique.adjustedConfidence, `${critique.criticalFlaws.length} critical flaws`);
                                             }
                                             // Drop signal if critique brings confidence below threshold
                                             if (critique.adjustedConfidence < CONFIDENCE_GATE_CRITIQUE) {
@@ -973,9 +995,11 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                 regime: regimeResult?.regime,
                                             });
 
+                                            AgentContextBus.setDecisionTwin(agentCtx, decisionTwinOutput);
                                             if (decisionTwinOutput.confidence_adjustment !== 0) {
                                                 const before = analysis.data.confidence_score;
                                                 analysis.data.confidence_score = decisionTwinOutput.adjusted_confidence;
+                                                AgentContextBus.recordAdjustment(agentCtx, 'decision_twin', before, analysis.data.confidence_score, decisionTwinOutput.summary);
                                                 console.log(`[Scanner] Decision Twin for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${decisionTwinOutput.summary})`);
                                             } else {
                                                 console.log(`[Scanner] Decision Twin for ${ev.ticker}: no adjustment. ${decisionTwinOutput.summary}`);
