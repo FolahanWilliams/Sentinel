@@ -274,6 +274,9 @@ export class ABTestingFramework {
             const experiments = await this.getActiveExperiments();
             if (experiments.length === 0) return { promoted, inconclusive };
 
+            // Snapshot the full list so cache invalidation mid-loop doesn't wipe data
+            const allExperimentsSnapshot = [...(experimentsCache ?? [])];
+
             for (const exp of experiments) {
                 try {
                     const results = await this.analyzeExperiment(exp.id);
@@ -296,8 +299,8 @@ export class ABTestingFramework {
                         console.log(`[ABTesting] Auto-promoted "${exp.name}": ${results.winner} wins (p=${results.pValue})`);
                     } else {
                         // Sufficient data but no winner — conclude as inconclusive
-                        const allExperiments = experimentsCache ?? [];
-                        const updated = allExperiments.map(e => {
+                        // Use snapshot to avoid reading cache that promoteWinner may have nulled
+                        const updated = allExperimentsSnapshot.map(e => {
                             if (e.id !== exp.id) return e;
                             return { ...e, status: 'concluded' as const, results };
                         });

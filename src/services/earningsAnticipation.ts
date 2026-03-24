@@ -17,6 +17,13 @@ import { GeminiService } from './gemini';
 import { TechnicalAnalysisService } from './technicalAnalysis';
 import { EarningsGuard, type EarningsGuardResult } from './earningsGuard';
 import { GEMINI_MODEL, CONFIDENCE_FLOOR } from '@/config/constants';
+import {
+    EARNINGS_ANTICIPATION_MIN_DAYS,
+    EARNINGS_ANTICIPATION_MAX_DAYS,
+    EARNINGS_ANTICIPATION_RSI_OVERSOLD,
+    EARNINGS_ANTICIPATION_MIN_CONFIDENCE,
+    EARNINGS_ANTICIPATION_MAX_CANDIDATES,
+} from '@/config/agentThresholds';
 import type { TASnapshot } from '@/types/signals';
 
 // ── Types ───────────────────────────────────────────────────────────────────────
@@ -50,16 +57,6 @@ export interface EarningsAnticipationScanResult {
     candidatesFound: number;
     duration_ms: number;
 }
-
-// ── Thresholds ──────────────────────────────────────────────────────────────────
-
-/** Only consider tickers with earnings 2-5 business days away */
-const MIN_DAYS_BEFORE_EARNINGS = 2;
-const MAX_DAYS_BEFORE_EARNINGS = 7;
-/** RSI threshold for oversold-into-earnings setup */
-const RSI_OVERSOLD_EARNINGS = 35;
-/** Minimum confidence for generated signals */
-const MIN_EARNINGS_ANTICIPATION_CONFIDENCE = 60;
 
 // ── Prompt ──────────────────────────────────────────────────────────────────────
 
@@ -129,7 +126,7 @@ export class EarningsAnticipationAgent {
             if (check.status !== 'fulfilled' || !check.value.result.hasUpcomingEarnings) continue;
             const { ticker, result } = check.value;
             const days = result.daysUntilEarnings;
-            if (days !== null && days >= MIN_DAYS_BEFORE_EARNINGS && days <= MAX_DAYS_BEFORE_EARNINGS) {
+            if (days !== null && days >= EARNINGS_ANTICIPATION_MIN_DAYS && days <= EARNINGS_ANTICIPATION_MAX_DAYS) {
                 const sectorInfo = tickers.find(t => t.ticker === ticker);
                 if (sectorInfo) {
                     candidates.push({ ticker, sector: sectorInfo.sector, earnings: result });
@@ -142,10 +139,10 @@ export class EarningsAnticipationAgent {
             return { signals: [], tickersScanned: tickers.length, candidatesFound: 0, duration_ms: Date.now() - startTime };
         }
 
-        console.log(`[EarningsAnticipation] Found ${candidates.length} tickers with earnings in ${MIN_DAYS_BEFORE_EARNINGS}-${MAX_DAYS_BEFORE_EARNINGS} days`);
+        console.log(`[EarningsAnticipation] Found ${candidates.length} tickers with earnings in ${EARNINGS_ANTICIPATION_MIN_DAYS}-${EARNINGS_ANTICIPATION_MAX_DAYS} days`);
 
         // 3. For each candidate, get TA snapshot and generate thesis
-        for (const candidate of candidates.slice(0, 5)) { // Cap at 5 to control API cost
+        for (const candidate of candidates.slice(0, EARNINGS_ANTICIPATION_MAX_CANDIDATES)) {
             try {
                 const ta = await TechnicalAnalysisService.getSnapshot(candidate.ticker);
                 if (!ta) continue;
@@ -155,7 +152,7 @@ export class EarningsAnticipationAgent {
                 if (!setupType) continue;
 
                 const signal = await this.generateSignal(candidate, ta, setupType);
-                if (signal && signal.confidence >= MIN_EARNINGS_ANTICIPATION_CONFIDENCE) {
+                if (signal && signal.confidence >= EARNINGS_ANTICIPATION_MIN_CONFIDENCE) {
                     signals.push(signal);
                 }
             } catch (err) {
@@ -174,7 +171,7 @@ export class EarningsAnticipationAgent {
      */
     private static classifyEarningsSetup(ta: TASnapshot): EarningsSetupType | null {
         // Oversold into earnings — strong candidate
-        if (ta.rsi14 !== null && ta.rsi14 <= RSI_OVERSOLD_EARNINGS) {
+        if (ta.rsi14 !== null && ta.rsi14 <= EARNINGS_ANTICIPATION_RSI_OVERSOLD) {
             return 'oversold_into_earnings';
         }
 

@@ -1417,14 +1417,9 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             }
                                         } catch { /* non-fatal */ }
 
-                                        // Log cumulative adjustment summary
-                                        if (cumulativePenalty > 0 || cumulativeBoost > 0) {
-                                            console.log(`[Scanner] Cumulative adjustments for ${ev.ticker}: penalty=${cumulativePenalty}/${MAX_CUMULATIVE_PENALTY}, boost=${cumulativeBoost}/${MAX_CUMULATIVE_BOOST} (original=${originalConfidenceBeforeAdjustments}, final=${analysis.data.confidence_score})`);
-                                        }
-
-                                        // Drop signal if all adjustments brought it below threshold (adaptive)
+                                        // Pre-SWOT drop check: bail early if already below threshold
                                         if (analysis.data.confidence_score < adaptiveMinConfidence) {
-                                            console.warn(`[Scanner] Signal for ${ev.ticker} dropped — confidence ${analysis.data.confidence_score} below ${adaptiveMinConfidence} after all adjustments`);
+                                            console.warn(`[Scanner] Signal for ${ev.ticker} dropped — confidence ${analysis.data.confidence_score} below ${adaptiveMinConfidence} after adjustments`);
                                             continue;
                                         }
 
@@ -1504,6 +1499,17 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             }
                                         } catch (swotErr) {
                                             console.warn(`[Scanner] SWOT failed for ${ev.ticker} (non-fatal):`, swotErr);
+                                        }
+
+                                        // Log cumulative adjustment summary (after all stages including SWOT)
+                                        if (cumulativePenalty > 0 || cumulativeBoost > 0) {
+                                            console.log(`[Scanner] Cumulative adjustments for ${ev.ticker}: penalty=${cumulativePenalty}/${MAX_CUMULATIVE_PENALTY}, boost=${cumulativeBoost}/${MAX_CUMULATIVE_BOOST} (original=${originalConfidenceBeforeAdjustments}, final=${analysis.data.confidence_score})`);
+                                        }
+
+                                        // Final drop check — after ALL adjustments including SWOT feedback
+                                        if (analysis.data.confidence_score < adaptiveMinConfidence) {
+                                            console.warn(`[Scanner] Signal for ${ev.ticker} dropped — confidence ${analysis.data.confidence_score} below ${adaptiveMinConfidence} after all adjustments (including SWOT)`);
+                                            continue;
                                         }
 
                                         // 8. WINNER! WE HAVE A SIGNAL.
@@ -2084,6 +2090,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                 );
                                 if (biasResult.success && biasResult.data) {
                                     proactiveBiasOutput = biasResult.data;
+                                    enrichWithMitigations(proactiveBiasOutput.findings);
                                     AgentContextBus.setBiasDetective(proactiveCtx, biasResult.data);
                                     if (biasResult.data.total_penalty > 0) {
                                         const before = thesis.confidence;
@@ -2243,7 +2250,8 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                             await this.ensureWatchlistEntry(eaSig.ticker);
 
                             // Skip if fresh signal already exists for this ticker
-                            const hasFresh = await SignalDecayEngine.hasFreshSignal(eaSig.ticker, 'long_overreaction');
+                            const eaSignalType = eaSig.direction === 'short' ? 'short_overreaction' : 'long_overreaction';
+                            const hasFresh = await SignalDecayEngine.hasFreshSignal(eaSig.ticker, eaSignalType);
                             if (hasFresh) continue;
 
                             // Conflict check
