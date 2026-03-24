@@ -25,6 +25,7 @@ export interface CalibrationCurve {
 }
 
 const APP_SETTINGS_KEY = 'confidence_calibration';
+const APP_SETTINGS_KEY_BY_TYPE = 'confidence_calibration_by_type';
 
 export class ConfidenceCalibrator {
     // In-memory cache — avoids repeated DB hits during a single scan cycle
@@ -32,16 +33,20 @@ export class ConfidenceCalibrator {
     private static cacheTimestamp = 0;
     private static readonly CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
     private static pendingFetch: Promise<CalibrationCurve> | null = null;
+    // Per-signal-type calibration cache
+    private static cachedCurvesByType: Record<string, CalibrationCurve> = {};
+    private static cacheByTypeTimestamp = 0;
 
     /**
      * Build calibration curve from historical signal outcomes.
      * Groups by confidence buckets and computes actual win rates.
+     * Now also builds per-signal-type curves.
      */
     static async buildCalibrationCurve(): Promise<CalibrationCurve> {
-        // Fetch completed outcomes joined with signals for confidence score
+        // Fetch completed outcomes joined with signals for confidence score + signal_type
         const { data: outcomes, error } = await supabase
             .from('signal_outcomes')
-            .select('outcome, signals!inner(confidence_score)')
+            .select('outcome, signals!inner(confidence_score, signal_type)')
             .neq('outcome', 'pending');
 
         if (error || !outcomes || outcomes.length === 0) {
@@ -54,21 +59,38 @@ export class ConfidenceCalibrator {
             bucketMap[`${i * 10}-${(i + 1) * 10}`] = { wins: 0, total: 0 };
         }
 
+        // Per-signal-type bucket maps
+        const typeBucketMaps: Record<string, Record<string, { wins: number; total: number }>> = {};
+
         let totalWins = 0;
 
         for (const row of outcomes) {
             const confidence = (row as any).signals?.confidence_score ?? 0;
+            const signalType = (row as any).signals?.signal_type ?? 'unknown';
             const isWin = row.outcome === 'win';
 
             const bucketIdx = Math.min(9, Math.floor(confidence / 10));
             const key = `${bucketIdx * 10}-${(bucketIdx + 1) * 10}`;
 
+            // Overall curve
             if (bucketMap[key]) {
                 bucketMap[key].total++;
                 if (isWin) {
                     bucketMap[key].wins++;
                     totalWins++;
                 }
+            }
+
+            // Per-type curve
+            if (!typeBucketMaps[signalType]) {
+                typeBucketMaps[signalType] = {};
+                for (let i = 0; i < 10; i++) {
+                    typeBucketMaps[signalType][`${i * 10}-${(i + 1) * 10}`] = { wins: 0, total: 0 };
+                }
+            }
+            if (typeBucketMaps[signalType][key]) {
+                typeBucketMaps[signalType][key].total++;
+                if (isWin) typeBucketMaps[signalType][key].wins++;
             }
         }
 
@@ -88,12 +110,44 @@ export class ConfidenceCalibrator {
             overallWinRate: outcomes.length > 0 ? Math.round((totalWins / outcomes.length) * 100 * 10) / 10 : 0,
         };
 
-        // Persist to app_settings
-        await supabase.from('app_settings').upsert({
-            key: APP_SETTINGS_KEY,
-            value: curve as any,
-            updated_at: new Date().toISOString(),
-        }, { onConflict: 'key,user_id' });
+        // Build per-type curves
+        const curvesByType: Record<string, CalibrationCurve> = {};
+        for (const [signalType, bMap] of Object.entries(typeBucketMaps)) {
+            const typeBuckets: CalibrationBucket[] = Object.entries(bMap)
+                .filter(([, v]) => v.total > 0)
+                .map(([range, v]) => ({
+                    range,
+                    predicted: parseInt(range.split('-')[0] ?? '0') + 5,
+                    actualWinRate: Math.round((v.wins / v.total) * 100 * 10) / 10,
+                    sampleSize: v.total,
+                }));
+            const typeTotal = Object.values(bMap).reduce((s, v) => s + v.total, 0);
+            const typeWins = Object.values(bMap).reduce((s, v) => s + v.wins, 0);
+            curvesByType[signalType] = {
+                buckets: typeBuckets,
+                lastUpdated: new Date().toISOString(),
+                totalOutcomes: typeTotal,
+                overallWinRate: typeTotal > 0 ? Math.round((typeWins / typeTotal) * 100 * 10) / 10 : 0,
+            };
+        }
+
+        // Persist both curves
+        await Promise.allSettled([
+            supabase.from('app_settings').upsert({
+                key: APP_SETTINGS_KEY,
+                value: curve as any,
+                updated_at: new Date().toISOString(),
+            }, { onConflict: 'key,user_id' }),
+            supabase.from('app_settings').upsert({
+                key: APP_SETTINGS_KEY_BY_TYPE,
+                value: curvesByType as any,
+                updated_at: new Date().toISOString(),
+            }, { onConflict: 'key,user_id' }),
+        ]);
+
+        // Update in-memory caches
+        this.cachedCurvesByType = curvesByType;
+        this.cacheByTypeTimestamp = Date.now();
 
         return curve;
     }
@@ -157,6 +211,40 @@ export class ConfidenceCalibrator {
 
         // If this specific bucket has too few samples, use overall win rate
         return curve.overallWinRate;
+    }
+
+    /**
+     * Get calibrated win rate for a specific signal type.
+     * Falls back to the overall curve if the signal type has insufficient data.
+     */
+    static async getCalibratedWinRateByType(
+        aiConfidence: number,
+        signalType: string,
+    ): Promise<number> {
+        // Refresh per-type cache if stale
+        if (Object.keys(this.cachedCurvesByType).length === 0 ||
+            (Date.now() - this.cacheByTypeTimestamp) > this.CACHE_TTL_MS) {
+            try {
+                const { data } = await supabase
+                    .from('app_settings')
+                    .select('value')
+                    .eq('key', APP_SETTINGS_KEY_BY_TYPE)
+                    .maybeSingle();
+                if (data?.value) {
+                    this.cachedCurvesByType = data.value as unknown as Record<string, CalibrationCurve>;
+                    this.cacheByTypeTimestamp = Date.now();
+                }
+            } catch { /* fall through to overall curve */ }
+        }
+
+        const typeCurve = this.cachedCurvesByType[signalType];
+        if (typeCurve && typeCurve.totalOutcomes >= 10) {
+            return this.getCalibratedWinRate(aiConfidence, typeCurve);
+        }
+
+        // Fall back to overall curve
+        const overallCurve = await this.getCachedCurve();
+        return this.getCalibratedWinRate(aiConfidence, overallCurve);
     }
 
     /**

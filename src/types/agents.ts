@@ -94,6 +94,7 @@ export interface BiasDetectiveFinding {
     severity: 1 | 2 | 3;        // 1=mild, 2=moderate, 3=severe
     evidence: string;            // specific sentence(s) from the thesis that expose this bias
     penalty: number;             // confidence penalty applied for this finding
+    mitigation?: string;         // suggested counter-check to mitigate this bias
 }
 
 /** Output from the Bias Detective agent (Phase 2 — P0) */

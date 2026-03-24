@@ -19,11 +19,30 @@ export const DEFAULT_MIN_PRICE_DROP_PCT = -2.5; // Lowered from -5.0 to catch mo
 export const DEFAULT_MIN_PRICE_RISE_PCT = 2.5; // Min % gain for bullish catalyst detection
 export const DEFAULT_MIN_VOLUME_MULTIPLIER = 2.0;
 export const CONFIDENCE_FLOOR = 30; // Absolute minimum after all adjustments
+export const CONFIDENCE_CEILING = 100; // Absolute maximum
+/** Maximum cumulative penalty that can be applied across all pipeline stages */
+export const MAX_CUMULATIVE_PENALTY = 50;
+/** Maximum cumulative boost that can be applied across all pipeline stages */
+export const MAX_CUMULATIVE_BOOST = 25;
+/** SWOT weakness imbalance penalty — applied when weaknesses outnumber strengths */
+export const SWOT_WEAKNESS_IMBALANCE_PENALTY = 5;
+/** SWOT severe imbalance penalty — weaknesses > 2× strengths */
+export const SWOT_SEVERE_IMBALANCE_PENALTY = 10;
 export const CONFIDENCE_GATE_OVERREACTION = 65; // Lowered from 75 — red team + critique still filter
 export const CONFIDENCE_GATE_CATALYST = 65; // Initial gate for bullish catalyst signal
 export const CONFIDENCE_GATE_CONTAGION = 70; // Initial gate for contagion signal
 export const CONFIDENCE_GATE_CRITIQUE = 50; // Floor after self-critique pass
 export const CONFIDENCE_EXPIRY_THRESHOLD = 40; // Below this, signal is expired by decay
+
+// ===========================
+// SECTOR ROTATION OVERLAY
+// ===========================
+/** Boost for signals in the favored sector during risk_on/rotation regimes */
+export const ROTATION_FAVORED_SECTOR_BOOST = 8;
+/** Penalty for signals in disfavored sectors during risk_off regimes */
+export const ROTATION_DISFAVORED_SECTOR_PENALTY = 8;
+/** Mild headwind penalty for growth longs during risk_off */
+export const ROTATION_HEADWIND_PENALTY = 5;
 export const SEVERITY_THRESHOLD = 3; // Lowered from 4 to let more events into deep analysis
 export const DEFAULT_SIGNAL_TIMEFRAME_DAYS = 10; // Default expected holding period
 

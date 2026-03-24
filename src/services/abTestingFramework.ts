@@ -261,6 +261,70 @@ export class ABTestingFramework {
         return experiment;
     }
 
+    /**
+     * Auto-check all active experiments and promote winners that have reached
+     * statistical significance with sufficient sample size.
+     * Called automatically at the end of each scan cycle.
+     */
+    static async autoPromoteWinners(): Promise<{ promoted: string[]; inconclusive: string[] }> {
+        const promoted: string[] = [];
+        const inconclusive: string[] = [];
+
+        try {
+            const experiments = await this.getActiveExperiments();
+            if (experiments.length === 0) return { promoted, inconclusive };
+
+            // Snapshot the full list so cache invalidation mid-loop doesn't wipe data
+            const allExperimentsSnapshot = [...(experimentsCache ?? [])];
+
+            for (const exp of experiments) {
+                try {
+                    const results = await this.analyzeExperiment(exp.id);
+                    if (!results) {
+                        inconclusive.push(exp.id);
+                        continue;
+                    }
+
+                    // Check if both variants have enough data
+                    if (results.controlOutcomes < exp.minSampleSize || results.variantOutcomes < exp.minSampleSize) {
+                        inconclusive.push(exp.id);
+                        console.log(`[ABTesting] "${exp.name}" needs more data: control=${results.controlOutcomes}/${exp.minSampleSize}, variant=${results.variantOutcomes}/${exp.minSampleSize}`);
+                        continue;
+                    }
+
+                    if (results.winner !== 'inconclusive') {
+                        // Auto-promote: conclude the experiment and log the winner
+                        await this.promoteWinner(exp.id);
+                        promoted.push(exp.id);
+                        console.log(`[ABTesting] Auto-promoted "${exp.name}": ${results.winner} wins (p=${results.pValue})`);
+                    } else {
+                        // Sufficient data but no winner — conclude as inconclusive
+                        // Use snapshot to avoid reading cache that promoteWinner may have nulled
+                        const updated = allExperimentsSnapshot.map(e => {
+                            if (e.id !== exp.id) return e;
+                            return { ...e, status: 'concluded' as const, results };
+                        });
+                        await supabase.from('app_settings').upsert({
+                            key: 'ab_experiments',
+                            value: updated as any,
+                            updated_at: new Date().toISOString(),
+                        }, { onConflict: 'key,user_id' });
+                        experimentsCache = null;
+                        inconclusive.push(exp.id);
+                        console.log(`[ABTesting] "${exp.name}" concluded as inconclusive (p=${results.pValue})`);
+                    }
+                } catch (err) {
+                    console.warn(`[ABTesting] Failed to analyze experiment ${exp.id}:`, err);
+                    inconclusive.push(exp.id);
+                }
+            }
+        } catch (err) {
+            console.warn('[ABTesting] Auto-promotion failed:', err);
+        }
+
+        return { promoted, inconclusive };
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────────────
 
     /**

@@ -47,6 +47,11 @@ const JUDGE_SYSTEM_PROMPT = `You are an independent trading thesis evaluator.
 You will be given a trading thesis and reasoning. Your ONLY job is to assign an independent confidence score (0-100) representing how likely this thesis is to be correct.
 Do NOT be influenced by the confidence score previously assigned. Evaluate the evidence yourself.
 Be honest. If the reasoning is thin, score low. If it is compelling, score high.
+
+If CASCADING AGENT CONTEXT is provided, factor in upstream findings:
+- Bias Detective warnings suggest the thesis may be anchored or biased — weight accordingly.
+- Red Team counter-thesis highlights risks — if the counter-thesis is strong, lower your score.
+- Self-Critique flaws are structural weaknesses already identified — do not ignore them.
 Return JSON only.`;
 
 const TEMPERATURES: [number, number, number] = [0.3, 0.5, 0.7];
