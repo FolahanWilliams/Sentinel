@@ -117,7 +117,7 @@ export class ABTestingFramework {
     static getParam(assignments: ABAssignment[], key: string, defaultValue: number): number {
         for (const a of assignments) {
             if (key in a.params) {
-                return a.params[key];
+                return a.params[key] ?? defaultValue;
             }
         }
         return defaultValue;
@@ -246,7 +246,7 @@ export class ABTestingFramework {
             minSampleSize,
         };
 
-        const existing = await this.getActiveExperiments();
+        await this.getActiveExperiments();
         const allExperiments = experimentsCache ?? [];
         allExperiments.push(experiment);
 

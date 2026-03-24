@@ -20,7 +20,6 @@ import type {
     NoiseConfidenceResult,
     DecisionTwinResult,
     BullishCatalystResult,
-    SWOTResult,
 } from '@/types/agents';
 import type { TASnapshot } from '@/types/signals';
 

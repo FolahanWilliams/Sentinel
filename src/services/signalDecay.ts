@@ -43,6 +43,9 @@ const DEFAULT_HALF_LIVES: Record<SignalType, number> = {
     bullish_catalyst: 14,
     short_overreaction: 5,
     information: 10,
+    capital_allocation: 21,
+    investment_thesis: 30,
+    portfolio_exit: 7,
 };
 
 // ── Regime-based half-life multipliers ──────────────────────────────────────

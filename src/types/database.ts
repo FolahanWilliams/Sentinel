@@ -623,6 +623,10 @@ export type Database = {
           ticker: string
           tracked_at: string
           user_id: string | null
+          user_reported_result: string | null
+          user_outcome_notes: string | null
+          confirmed_biases: string[] | null
+          lessons_learned: string | null
         }
         Insert: {
           completed_at?: string | null
@@ -645,6 +649,10 @@ export type Database = {
           ticker: string
           tracked_at?: string
           user_id?: string | null
+          user_reported_result?: string | null
+          user_outcome_notes?: string | null
+          confirmed_biases?: string[] | null
+          lessons_learned?: string | null
         }
         Update: {
           completed_at?: string | null
@@ -667,6 +675,10 @@ export type Database = {
           ticker?: string
           tracked_at?: string
           user_id?: string | null
+          user_reported_result?: string | null
+          user_outcome_notes?: string | null
+          confirmed_biases?: string[] | null
+          lessons_learned?: string | null
         }
         Relationships: [
           {
@@ -754,6 +766,9 @@ export type Database = {
           user_notes: string | null
           user_id: string | null
           why_high_conviction: string | null
+          outcome_status: string | null
+          outcome_due_at: string | null
+          outcome_review_days: number | null
         }
         Insert: {
           agent_outputs?: Json | null
@@ -798,6 +813,9 @@ export type Database = {
           user_notes?: string | null
           user_id?: string | null
           why_high_conviction?: string | null
+          outcome_status?: string | null
+          outcome_due_at?: string | null
+          outcome_review_days?: number | null
         }
         Update: {
           agent_outputs?: Json | null
@@ -842,6 +860,9 @@ export type Database = {
           user_notes?: string | null
           user_id?: string | null
           why_high_conviction?: string | null
+          outcome_status?: string | null
+          outcome_due_at?: string | null
+          outcome_review_days?: number | null
         }
         Relationships: [
           {

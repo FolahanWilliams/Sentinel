@@ -791,6 +791,9 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                     console.warn(`[Scanner] ${catalystAgentUsed ? 'Catalyst' : 'Overreaction'} response failed validation for ${ev.ticker}:`, validation.warnings);
                                 }
 
+                                // A/B Test assignment for this ticker
+                                const abAssignments = await ABTestingFramework.assignVariants(ev.ticker);
+
                                 // Diagnostic logging — show WHY signals are accepted/rejected
                                 // A/B test can override confidence gates
                                 const gate = ABTestingFramework.getParam(
@@ -810,9 +813,6 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                     const agentCtx = AgentContextBus.create(ev.ticker, ev.headline, signalType);
                                     AgentContextBus.setPrimaryAgent(agentCtx, analysis.data, catalystAgentUsed ? 'BULLISH_CATALYST_AGENT' : 'OVERREACTION_AGENT');
                                     agentCtx.regime = regimeResult?.regime;
-
-                                    // A/B Test assignment for this signal
-                                    const abAssignments = await ABTestingFramework.assignVariants(ev.ticker);
 
                                     // 6.5. TA CONFIRMATION LAYER — use pre-fetched TA snapshot
                                     let taSnapshot = earlyTaSnapshot;
@@ -1585,7 +1585,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                 // Agent Context Bus — cascading intelligence audit trail
                                                 context_bus: AgentContextBus.serialize(agentCtx),
                                                 // A/B experiment assignment (if any)
-                                                ab_experiment: abAssignments.length > 0 ? {
+                                                ab_experiment: abAssignments.length > 0 && abAssignments[0] ? {
                                                     experiment_id: abAssignments[0].experimentId,
                                                     variant: abAssignments[0].variant,
                                                     params: abAssignments[0].params,
