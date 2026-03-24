@@ -139,7 +139,7 @@ export class OutcomeNarrativeAgent {
             for (const outcome of meaningful.slice(0, NARRATIVE_MAX_SIGNALS_PER_CYCLE)) {
                 try {
                     const signal = (outcome as any).signals;
-                    const narrative = await this.generateNarrative(outcome as SignalOutcome, signal);
+                    const narrative = await this.generateNarrative(outcome as unknown as SignalOutcome, signal);
                     if (narrative) {
                         narratives.push(narrative);
                         // Persist narrative into signal's agent_outputs

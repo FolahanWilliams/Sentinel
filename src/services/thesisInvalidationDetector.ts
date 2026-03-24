@@ -110,7 +110,7 @@ export class ThesisInvalidationDetector {
 
             for (const signal of eligibleSignals) {
                 try {
-                    const check = await this.checkSingleSignal(signal as Signal, quotes[signal.ticker]);
+                    const check = await this.checkSingleSignal(signal as unknown as Signal, quotes[signal.ticker]);
                     checks.push(check);
                     lastCheckBySignal.set(signal.id, Date.now());
 
@@ -179,7 +179,7 @@ export class ThesisInvalidationDetector {
         // 2. TECHNICAL SUPPORT BROKEN — key moving averages breached
         if (quote) {
             try {
-                const ta = await TechnicalAnalysisService.analyze(signal.ticker);
+                const ta = await TechnicalAnalysisService.getSnapshot(signal.ticker);
                 if (ta) {
                     const isLong = !signal.signal_type.startsWith('short');
                     if (isLong) {
@@ -268,10 +268,10 @@ export class ThesisInvalidationDetector {
         const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
         const { data: recentArticles } = await supabase
             .from('sentinel_articles')
-            .select('title, summary, published_at')
-            .eq('ticker', signal.ticker)
-            .gte('published_at', twoDaysAgo)
-            .order('published_at', { ascending: false })
+            .select('title, summary, pub_date')
+            .contains('affected_tickers', [signal.ticker])
+            .gte('pub_date', twoDaysAgo)
+            .order('pub_date', { ascending: false })
             .limit(5);
 
         if (!recentArticles || recentArticles.length === 0) {
@@ -279,7 +279,7 @@ export class ThesisInvalidationDetector {
         }
 
         const newsContext = recentArticles
-            .map(a => `- ${a.title}${a.summary ? ': ' + a.summary : ''} (${a.published_at})`)
+            .map((a: any) => `- ${a.title}${a.summary ? ': ' + a.summary : ''} (${a.pub_date})`)
             .join('\n');
 
         const prompt = `ORIGINAL SIGNAL THESIS for ${signal.ticker} (created ${signal.created_at}):
