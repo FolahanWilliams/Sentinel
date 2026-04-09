@@ -97,7 +97,7 @@ export function useAppSettings() {
 
         // Optional: subscribe to remote setting changes
         const subscription = supabase
-            .channel('app_settings_changes')
+            .channel(`app_settings_changes_${Math.random().toString(36).slice(2)}`)
             .on(
                 'postgres_changes',
                 {

@@ -106,7 +106,7 @@ export function usePortfolio(): PortfolioData {
     useEffect(() => {
         fetchAll();
 
-        const ch = supabase.channel('portfolio_live')
+        const ch = supabase.channel(`portfolio_live_${Math.random().toString(36).slice(2)}`)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'positions' }, () => fetchAll())
             .on('postgres_changes', { event: '*', schema: 'public', table: 'portfolio_config' }, () => fetchAll())
             .subscribe();

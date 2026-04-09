@@ -64,18 +64,22 @@ export class AgentService {
      * Analyzes an event to determine if a price drop is an irrational overreaction.
      * Uses temperature 0.4 for creative hypothesis generation.
      */
-    static async evaluateOverreaction(
-        ticker: string,
-        eventHeadline: string,
-        eventDesc: string,
-        currentPrice: number,
-        priceDropPct: number,
-        performanceContext?: string,
-        marketContext?: MarketContext,
-        taContext?: string,
-        historicalContext?: string,
-        regime?: MarketRegimeType
-    ): Promise<AgentResult<OverreactionResult>> {
+    static async evaluateOverreaction(input: {
+        ticker: string;
+        eventHeadline: string;
+        eventDesc: string;
+        currentPrice: number;
+        priceDropPct: number;
+        performanceContext?: string;
+        marketContext?: MarketContext;
+        taContext?: string;
+        historicalContext?: string;
+        regime?: MarketRegimeType;
+    }): Promise<AgentResult<OverreactionResult>> {
+        const {
+            ticker, eventHeadline, eventDesc, currentPrice, priceDropPct,
+            performanceContext, marketContext, taContext, historicalContext, regime
+        } = input;
         const perfBlock = performanceContext
             ? `\n\n${performanceContext}\n\nUse the performance data above to calibrate your confidence. If this bias type or sector historically underperforms, lower your confidence. If it outperforms, you may raise it slightly.`
             : '';
@@ -121,14 +125,18 @@ export class AgentService {
      * Evaluates if a satellite ticker is dropping unfairly due to an epicenter ticker's news.
      * Uses temperature 0.4 for creative analysis of exposure.
      */
-    static async evaluateContagion(
-        epicenterTicker: string,
-        satelliteTicker: string,
-        epicenterNews: string,
-        satelliteDropPct: number,
-        performanceContext?: string,
-        marketContext?: MarketContext
-    ): Promise<AgentResult<ContagionResult>> {
+    static async evaluateContagion(input: {
+        epicenterTicker: string;
+        satelliteTicker: string;
+        epicenterNews: string;
+        satelliteDropPct: number;
+        performanceContext?: string;
+        marketContext?: MarketContext;
+    }): Promise<AgentResult<ContagionResult>> {
+        const {
+            epicenterTicker, satelliteTicker, epicenterNews, satelliteDropPct,
+            performanceContext, marketContext
+        } = input;
         const perfBlock = performanceContext
             ? `\n\n${performanceContext}\n\nUse the performance data above to calibrate your confidence. If sector contagion signals historically underperform, be more skeptical. If they outperform, you may be slightly more confident.`
             : '';
@@ -168,17 +176,21 @@ export class AgentService {
      * Parses earnings misses against forward guidance.
      * Uses temperature 0.3 for moderate creativity in guidance analysis.
      */
-    static async evaluateEarnings(
-        ticker: string,
-        epsEstimate: number,
-        epsActual: number,
-        revenueEstimate: number,
-        revenueActual: number,
-        guidanceDetails: string,
-        priceDropPct: number,
-        performanceContext?: string,
-        marketContext?: MarketContext
-    ): Promise<AgentResult<any>> {
+    static async evaluateEarnings(input: {
+        ticker: string;
+        epsEstimate: number;
+        epsActual: number;
+        revenueEstimate: number;
+        revenueActual: number;
+        guidanceDetails: string;
+        priceDropPct: number;
+        performanceContext?: string;
+        marketContext?: MarketContext;
+    }): Promise<AgentResult<any>> {
+        const {
+            ticker, epsEstimate, epsActual, revenueEstimate, revenueActual,
+            guidanceDetails, priceDropPct, performanceContext, marketContext
+        } = input;
         const perfBlock = performanceContext
             ? `\n\n${performanceContext}\n\nUse the performance data above to calibrate your confidence. If earnings overreaction signals historically underperform in this sector, lower your confidence. If they outperform, you may raise it slightly.`
             : '';
@@ -224,17 +236,21 @@ export class AgentService {
      * biases, and conviction score — so it can mount a more targeted challenge against
      * specific weak points rather than a generic attack.
      */
-    static async runSanityCheck(
-        ticker: string,
-        originalThesis: string,
-        targetPrice: number,
-        stopLoss: number,
-        agentType: string,
-        performanceContext?: string,
-        taContext?: string,
-        priorAgentContext?: PriorAgentContext,
-        regime?: MarketRegimeType
-    ): Promise<AgentResult<SanityCheckResult>> {
+    static async runSanityCheck(input: {
+        ticker: string;
+        originalThesis: string;
+        targetPrice: number;
+        stopLoss: number;
+        agentType: string;
+        performanceContext?: string;
+        taContext?: string;
+        priorAgentContext?: PriorAgentContext;
+        regime?: MarketRegimeType;
+    }): Promise<AgentResult<SanityCheckResult>> {
+        const {
+            ticker, originalThesis, targetPrice, stopLoss, agentType,
+            performanceContext, taContext, priorAgentContext, regime
+        } = input;
         const perfBlock = performanceContext
             ? `\n\n${performanceContext}\n\nAs the Red Team, use this performance history to identify systemic weaknesses. If the originating agent type or sector has a poor track record, be EXTRA skeptical and demand stronger evidence.`
             : '';
@@ -286,18 +302,22 @@ export class AgentService {
      * Analyzes positive news events to determine if the market has under-reacted.
      * Uses temperature 0.4 for creative hypothesis generation.
      */
-    static async evaluateBullishCatalyst(
-        ticker: string,
-        eventHeadline: string,
-        eventDesc: string,
-        currentPrice: number,
-        priceChangePct: number,
-        performanceContext?: string,
-        marketContext?: MarketContext,
-        taContext?: string,
-        historicalContext?: string,
-        regime?: MarketRegimeType
-    ): Promise<AgentResult<BullishCatalystResult>> {
+    static async evaluateBullishCatalyst(input: {
+        ticker: string;
+        eventHeadline: string;
+        eventDesc: string;
+        currentPrice: number;
+        priceChangePct: number;
+        performanceContext?: string;
+        marketContext?: MarketContext;
+        taContext?: string;
+        historicalContext?: string;
+        regime?: MarketRegimeType;
+    }): Promise<AgentResult<BullishCatalystResult>> {
+        const {
+            ticker, eventHeadline, eventDesc, currentPrice, priceChangePct,
+            performanceContext, marketContext, taContext, historicalContext, regime
+        } = input;
         const perfBlock = performanceContext
             ? `\n\n${performanceContext}\n\nUse the performance data above to calibrate your confidence.`
             : '';

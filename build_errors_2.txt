@@ -1,0 +1,6 @@
+
+> sentinel@1.0.0 build /Users/folahan/Sentinel
+> tsc -b && vite build
+
+src/services/sourcePerformanceTracker.ts(31,37): error TS6133: 'ticker' is declared but its value is never read.
+ ELIFECYCLE  Command failed with exit code 2.

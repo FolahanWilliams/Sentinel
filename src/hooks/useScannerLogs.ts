@@ -36,7 +36,7 @@ export function useScannerLogs(limit = 20) {
 
         // Subscribe to real-time additions/updates
         const subscription = supabase
-            .channel('scan_logs_changes')
+            .channel(`scan_logs_changes_${Math.random().toString(36).slice(2)}`)
             .on(
                 'postgres_changes',
                 {

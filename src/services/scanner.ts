@@ -253,7 +253,7 @@ export class ScannerService {
                     events_detected: 0,
                     signals_generated: 0,
                     estimated_cost_usd: 0,
-                    scan_phase: currentScanPhase
+                    // scan_phase: currentScanPhase // Removed to support older schemas
                 } as any)
                 .select('id')
                 .single();
@@ -850,18 +850,18 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
 
                                 if (isPositiveEvent && priceDrop >= DEFAULT_MIN_PRICE_RISE_PCT * -1) {
                                     // Positive catalyst path — check if market under-reacted
-                                    const catalystResult = await AgentService.evaluateBullishCatalyst(
-                                        ev.ticker,
-                                        ev.headline,
-                                        eventContext,
-                                        quote.price,
-                                        priceDrop,
-                                        perfContext,
-                                        marketContext,
-                                        enrichedTaContext,
-                                        historicalCtx,
-                                        regimeResult?.regime
-                                    );
+                                    const catalystResult = await AgentService.evaluateBullishCatalyst({
+                                        ticker: ev.ticker,
+                                        eventHeadline: ev.headline,
+                                        eventDesc: eventContext,
+                                        currentPrice: quote.price,
+                                        priceChangePct: priceDrop,
+                                        performanceContext: perfContext,
+                                        marketContext: marketContext,
+                                        taContext: enrichedTaContext,
+                                        historicalContext: historicalCtx,
+                                        regime: regimeResult?.regime
+                                    });
 
                                     // Normalize catalyst result to overreaction shape for unified downstream processing
                                     if (catalystResult.success && catalystResult.data?.is_underreaction) {
@@ -879,26 +879,34 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                     } else {
                                         // Catalyst agent didn't fire — fall back to overreaction analysis
                                         console.log(`[Scanner] Bullish catalyst: no underreaction for ${ev.ticker}, falling back to overreaction agent`);
-                                        analysis = await AgentService.evaluateOverreaction(
-                                            ev.ticker, ev.headline, eventContext, quote.price, priceDrop,
-                                            perfContext, marketContext, enrichedTaContext, historicalCtx,
-                                            regimeResult?.regime
-                                        );
+                                        const overreactionInput = {
+                                            ticker: ev.ticker,
+                                            eventHeadline: ev.headline,
+                                            eventDesc: eventContext,
+                                            currentPrice: quote.price,
+                                            priceDropPct: priceDrop,
+                                            performanceContext: perfContext,
+                                            marketContext: marketContext,
+                                            taContext: enrichedTaContext,
+                                            historicalContext: historicalCtx,
+                                            regime: regimeResult?.regime
+                                        };
+                                        analysis = await AgentService.evaluateOverreaction(overreactionInput);
                                     }
                                 } else {
                                     // Negative event path — standard overreaction analysis
-                                    analysis = await AgentService.evaluateOverreaction(
-                                        ev.ticker,
-                                        ev.headline,
-                                        eventContext,
-                                        quote.price,
-                                        priceDrop,
-                                        perfContext,
-                                        marketContext,
-                                        enrichedTaContext,
-                                        historicalCtx,
-                                        regimeResult?.regime
-                                    );
+                                    analysis = await AgentService.evaluateOverreaction({
+                                        ticker: ev.ticker,
+                                        eventHeadline: ev.headline,
+                                        eventDesc: eventContext,
+                                        currentPrice: quote.price,
+                                        priceDropPct: priceDrop,
+                                        performanceContext: perfContext,
+                                        marketContext: marketContext,
+                                        taContext: enrichedTaContext,
+                                        historicalContext: historicalCtx,
+                                        regime: regimeResult?.regime
+                                    });
                                 }
 
                                 // Validate agent response before acting on it
@@ -976,18 +984,17 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                         financialImpact: analysis.data.financial_impact_assessment,
                                     };
                                     // Inject cascading context from bias detective (if it ran before red team)
-                                    const redTeamCascadeCtx = AgentContextBus.buildPromptContext(agentCtx, 'red_team');
-                                    const sanity = await AgentService.runSanityCheck(
-                                        ev.ticker,
-                                        analysis.data.thesis + redTeamCascadeCtx,
-                                        analysis.data.target_price,
-                                        analysis.data.stop_loss,
-                                        catalystAgentUsed ? 'BULLISH_CATALYST_AGENT' : 'OVERREACTION_AGENT',
-                                        perfContext,
-                                        earlyTaContext,
-                                        priorContext,
-                                        regimeResult?.regime
-                                    );
+                                    const sanity = await AgentService.runSanityCheck({
+                                        ticker: ev.ticker,
+                                        originalThesis: analysis.data.thesis,
+                                        targetPrice: analysis.data.target_price,
+                                        stopLoss: analysis.data.stop_loss,
+                                        agentType: signalType,
+                                        performanceContext: perfContext,
+                                        taContext: enrichedTaContext,
+                                        priorAgentContext: priorContext,
+                                        regime: regimeResult?.regime
+                                    });
 
                                     // Log sanity check result
                                     if (sanity.success) {
@@ -1988,7 +1995,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             secondary_biases: [],
                                             sources: [],
                                             is_paper: false,
-                                            outcome_status: 'pending_outcome',
+                                            // outcome_status: 'pending_outcome', // Removed to support older schemas
                                             outcome_due_at: new Date(Date.now() + (analysis.data.timeframe_days || 30) * 2 * 24 * 60 * 60 * 1000).toISOString(),
                                             outcome_review_days: (analysis.data.timeframe_days || 30) * 2
                                         }).select().single();
@@ -2094,24 +2101,24 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                     // Only evaluate if satellite is actually dropping
                                                     if (satDrop >= -1) continue;
 
-                                                    const contagion = await AgentService.evaluateContagion(
-                                                        ev.ticker,
-                                                        sat.ticker,
-                                                        ev.headline,
-                                                        satDrop,
-                                                        perfContext
-                                                    );
+                                                    const contagion = await AgentService.evaluateContagion({
+                                                        epicenterTicker: ev.ticker,
+                                                        satelliteTicker: sat.ticker,
+                                                        epicenterNews: ev.headline,
+                                                        satelliteDropPct: satDrop,
+                                                        performanceContext: perfContext
+                                                    });
 
                                                     if (contagion.success && contagion.data?.is_contagion && contagion.data.confidence_score > CONFIDENCE_GATE_CONTAGION) {
                                                         // Sanity check the contagion trade
-                                                        const contagionSanity = await AgentService.runSanityCheck(
-                                                            sat.ticker,
-                                                            contagion.data.thesis,
-                                                            contagion.data.target_price,
-                                                            contagion.data.stop_loss,
-                                                            'CONTAGION_AGENT',
-                                                            perfContext
-                                                        );
+                                                        const contagionSanity = await AgentService.runSanityCheck({
+                                                            ticker: sat.ticker,
+                                                            originalThesis: contagion.data.thesis,
+                                                            targetPrice: contagion.data.target_price,
+                                                            stopLoss: contagion.data.stop_loss,
+                                                            agentType: 'CONTAGION_AGENT',
+                                                            performanceContext: perfContext
+                                                        });
 
                                                         if (contagionSanity.success && contagionSanity.data?.passes_sanity_check) {
                                                             // Margin-of-safety check for contagion
@@ -2177,9 +2184,9 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                                 secondary_biases: ['herding'],
                                                                 sources: [],
                                                                 is_paper: false,
-                                                                outcome_status: 'pending_outcome',
-                                                                outcome_due_at: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(),
-                                                                outcome_review_days: 60
+                                                                // outcome_status: 'pending_outcome', // Removed to support older schemas
+                                                                outcome_due_at: new Date(Date.now() + (contagion.data.timeframe_days || 60) * 24 * 60 * 60 * 1000).toISOString(),
+                                                                outcome_review_days: (contagion.data.timeframe_days || 60)
                                                             }).select().single();
 
                                                             if (contagionInsertErr) {
@@ -2298,13 +2305,13 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
 
                             // Quality Gate 2: Sanity Check (Red Team) — attack the proactive thesis
                             try {
-                                const sanityResult = await AgentService.runSanityCheck(
-                                    thesis.ticker,
-                                    thesis.thesis,
-                                    thesis.target_price,
-                                    thesis.stop_loss,
-                                    'PROACTIVE_THESIS_ENGINE',
-                                );
+                                const sanityResult = await AgentService.runSanityCheck({
+                                    ticker: thesis.ticker,
+                                    originalThesis: thesis.thesis,
+                                    targetPrice: thesis.target_price,
+                                    stopLoss: thesis.stop_loss,
+                                    agentType: 'PROACTIVE_THESIS_ENGINE'
+                                });
                                 if (sanityResult.success && sanityResult.data) {
                                     if (!sanityResult.data.passes_sanity_check) {
                                         console.warn(`[Scanner] Proactive thesis for ${thesis.ticker} FAILED sanity check: ${sanityResult.data.fatal_flaws?.join(', ')}`);
@@ -2683,25 +2690,25 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
             }
 
             // 5. Run Overreaction Analysis
-            const analysis = await AgentService.evaluateOverreaction(
+            const analysis = await AgentService.evaluateOverreaction({
                 ticker,
-                mockHeadline,
-                mockDesc,
+                eventHeadline: mockHeadline,
+                eventDesc: mockDesc,
                 currentPrice,
                 priceDropPct
-            );
+            });
 
             let signalsGenerated = 0;
 
             if (analysis.success && analysis.data?.is_overreaction && analysis.data.confidence_score > DEFAULT_MIN_CONFIDENCE) {
                 // 6. Run Sanity Check
-                const sanity = await AgentService.runSanityCheck(
+                const sanity = await AgentService.runSanityCheck({
                     ticker,
-                    analysis.data.thesis,
-                    analysis.data.target_price,
-                    analysis.data.stop_loss,
-                    'OVERREACTION_AGENT'
-                );
+                    originalThesis: analysis.data.thesis,
+                    targetPrice: analysis.data.target_price,
+                    stopLoss: analysis.data.stop_loss,
+                    agentType: 'OVERREACTION_AGENT'
+                });
 
                 if (sanity.success && sanity.data?.passes_sanity_check) {
                     // 7. TA snapshot + self-critique + calibration (matching full scan pipeline)
@@ -2889,7 +2896,6 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                             data_quality: singleTaSnapshot ? 'full' : 'partial',
                             sources: [],
                             is_paper: isPaper,
-                            outcome_status: 'pending_outcome',
                             outcome_due_at: new Date(Date.now() + (analysis.data.timeframe_days || 30) * 2 * 24 * 60 * 60 * 1000).toISOString(),
                             outcome_review_days: (analysis.data.timeframe_days || 30) * 2
                         } as any).select().single();

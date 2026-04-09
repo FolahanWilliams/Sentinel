@@ -96,7 +96,7 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
         fetchSignals();
 
         // Realtime subscription for new signals
-        const channel = supabase.channel('unified_signals')
+        const channel = supabase.channel(`unified_signals_${Math.random().toString(36).slice(2)}`)
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'signals' }, (payload) => {
                 const newSignal = payload.new as Signal;
                 if (newSignal.status === 'active') {

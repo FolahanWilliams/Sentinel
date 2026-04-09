@@ -74,7 +74,7 @@ export function usePotentialSignals() {
         fetchSignals();
 
         // Listen for new signals in real-time
-        const channel = supabase.channel('potential_signals')
+        const channel = supabase.channel(`potential_signals_${Math.random().toString(36).slice(2)}`)
             .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'signals' }, () => {
                 fetchSignals(); // Refetch on new signal
             })

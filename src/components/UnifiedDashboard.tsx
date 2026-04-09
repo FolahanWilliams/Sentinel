@@ -89,7 +89,7 @@ export function UnifiedDashboard() {
 
     // Realtime subscriptions for live dashboard updates
     useEffect(() => {
-        const channel = supabase.channel('dashboard_realtime')
+        const channel = supabase.channel(`dashboard_realtime_${Math.random().toString(36).slice(2)}`)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'signals' }, () => {
                 fetchActiveCount();
             })

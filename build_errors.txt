@@ -1,0 +1,87 @@
+
+> sentinel@1.0.0 build /Users/folahan/Sentinel
+> tsc -b && vite build
+
+src/components/analysis/AnalystChat.tsx(963,33): error TS2345: Argument of type 'Record<string, any>' is not assignable to parameter of type 'RejectExcessProperties<{ close_reason?: string | null | undefined; closed_at?: string | null | undefined; currency?: string | undefined; entry_price?: number | null | undefined; exit_price?: number | null | undefined; ... 12 more ...; user_id?: string | ... 1 more ... | undefined; }, Record<...>>'.
+  Type 'Record<string, any>' is not assignable to type '{ [x: string]: never; }'.
+    'string' index signatures are incompatible.
+      Type 'any' is not assignable to type 'never'.
+src/services/outcomeTracker.ts(133,33): error TS2345: Argument of type 'Record<string, unknown>' is not assignable to parameter of type 'RejectExcessProperties<{ completed_at?: string | null | undefined; entry_price?: number | undefined; hit_stop_loss?: boolean | undefined; hit_target?: boolean | undefined; id?: string | undefined; max_drawdown?: number | ... 1 more ... | undefined; ... 17 more ...; lessons_learned?: string | ... 1 more ... | undefin...'.
+  Type 'Record<string, unknown>' is not assignable to type '{ [x: string]: never; }'.
+    'string' index signatures are incompatible.
+      Type 'unknown' is not assignable to type 'never'.
+src/services/postMortemService.ts(126,21): error TS2345: Argument of type 'Record<string, unknown>' is not assignable to parameter of type 'RejectExcessProperties<{ close_reason?: string | null | undefined; closed_at?: string | null | undefined; currency?: string | undefined; entry_price?: number | null | undefined; exit_price?: number | null | undefined; ... 12 more ...; user_id?: string | ... 1 more ... | undefined; }, Record<...>>'.
+  Type 'Record<string, unknown>' is not assignable to type '{ [x: string]: never; }'.
+    'string' index signatures are incompatible.
+      Type 'unknown' is not assignable to type 'never'.
+src/services/scanner.ts(1788,45): error TS2769: No overload matches this call.
+  Overload 2 of 2, '(values: RejectExcessProperties<{ agent_outputs?: Json | undefined; bias_explanation?: string | null | undefined; bias_type: string; calibrated_confidence?: number | null | undefined; confidence_score: number; ... 39 more ...; outcome_review_days?: number | ... 1 more ... | undefined; }, { ...; }>[], options?: { ...; } | undefined): PostgrestFilterBuilder<...>', gave the following error.
+    Object literal may only specify known properties, and 'ticker' does not exist in type 'RejectExcessProperties<{ agent_outputs?: Json | undefined; bias_explanation?: string | null | undefined; bias_type: string; calibrated_confidence?: number | null | undefined; confidence_score: number; ... 39 more ...; outcome_review_days?: number | ... 1 more ... | undefined; }, { ...; }>[]'.
+src/services/signalReEvaluator.ts(163,51): error TS2345: Argument of type 'SignalUpdate' is not assignable to parameter of type 'RejectExcessProperties<{ agent_outputs?: Json | undefined; bias_explanation?: string | null | undefined; bias_type?: string | undefined; calibrated_confidence?: number | null | undefined; confidence_score?: number | undefined; ... 39 more ...; outcome_review_days?: number | ... 1 more ... | undefined; }, SignalUpdate>'.
+  Type 'SignalUpdate' is not assignable to type '{ [x: string]: never; }'.
+    'string' index signatures are incompatible.
+      Type 'unknown' is not assignable to type 'never'.
+src/services/signalReEvaluator.ts(182,51): error TS2345: Argument of type 'SignalUpdate' is not assignable to parameter of type 'RejectExcessProperties<{ agent_outputs?: Json | undefined; bias_explanation?: string | null | undefined; bias_type?: string | undefined; calibrated_confidence?: number | null | undefined; confidence_score?: number | undefined; ... 39 more ...; outcome_review_days?: number | ... 1 more ... | undefined; }, SignalUpdate>'.
+  Type 'SignalUpdate' is not assignable to type '{ [x: string]: never; }'.
+    'string' index signatures are incompatible.
+      Type 'unknown' is not assignable to type 'never'.
+src/services/signalReEvaluator.ts(289,51): error TS2345: Argument of type 'SignalUpdate' is not assignable to parameter of type 'RejectExcessProperties<{ agent_outputs?: Json | undefined; bias_explanation?: string | null | undefined; bias_type?: string | undefined; calibrated_confidence?: number | null | undefined; confidence_score?: number | undefined; ... 39 more ...; outcome_review_days?: number | ... 1 more ... | undefined; }, SignalUpdate>'.
+  Type 'SignalUpdate' is not assignable to type '{ [x: string]: never; }'.
+    'string' index signatures are incompatible.
+      Type 'unknown' is not assignable to type 'never'.
+src/services/signalReEvaluator.ts(300,51): error TS2345: Argument of type 'SignalUpdate' is not assignable to parameter of type 'RejectExcessProperties<{ agent_outputs?: Json | undefined; bias_explanation?: string | null | undefined; bias_type?: string | undefined; calibrated_confidence?: number | null | undefined; confidence_score?: number | undefined; ... 39 more ...; outcome_review_days?: number | ... 1 more ... | undefined; }, SignalUpdate>'.
+  Type 'SignalUpdate' is not assignable to type '{ [x: string]: never; }'.
+    'string' index signatures are incompatible.
+      Type 'unknown' is not assignable to type 'never'.
+src/services/signalReEvaluator.ts(310,51): error TS2345: Argument of type 'SignalUpdate' is not assignable to parameter of type 'RejectExcessProperties<{ agent_outputs?: Json | undefined; bias_explanation?: string | null | undefined; bias_type?: string | undefined; calibrated_confidence?: number | null | undefined; confidence_score?: number | undefined; ... 39 more ...; outcome_review_days?: number | ... 1 more ... | undefined; }, SignalUpdate>'.
+  Type 'SignalUpdate' is not assignable to type '{ [x: string]: never; }'.
+    'string' index signatures are incompatible.
+      Type 'unknown' is not assignable to type 'never'.
+src/services/signalReEvaluator.ts(318,51): error TS2345: Argument of type 'SignalUpdate' is not assignable to parameter of type 'RejectExcessProperties<{ agent_outputs?: Json | undefined; bias_explanation?: string | null | undefined; bias_type?: string | undefined; calibrated_confidence?: number | null | undefined; confidence_score?: number | undefined; ... 39 more ...; outcome_review_days?: number | ... 1 more ... | undefined; }, SignalUpdate>'.
+  Type 'SignalUpdate' is not assignable to type '{ [x: string]: never; }'.
+    'string' index signatures are incompatible.
+      Type 'unknown' is not assignable to type 'never'.
+src/services/sourcePerformanceTracker.ts(31,37): error TS6133: 'ticker' is declared but its value is never read.
+src/services/sourcePerformanceTracker.ts(37,23): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(relation: "signals" | "watchlist" | "agent_reflections" | "api_usage" | "app_settings" | "chat_conversations" | "journal_entries" | "market_events" | "portfolio_config" | "positions" | ... 6 more ... | "signal_ratings"): PostgrestQueryBuilder<...>', gave the following error.
+    Argument of type '"source_performance"' is not assignable to parameter of type '"signals" | "watchlist" | "agent_reflections" | "api_usage" | "app_settings" | "chat_conversations" | "journal_entries" | "market_events" | "portfolio_config" | "positions" | ... 6 more ... | "signal_ratings"'.
+  Overload 2 of 2, '(relation: never): PostgrestQueryBuilder<{ PostgrestVersion: "14.1"; }, { Tables: { agent_reflections: { Row: { bias_type: string; created_at: string; id: string; is_active: boolean; rule: string; sample_size: number; ... 4 more ...; win_rate: number; }; Insert: { ...; }; Update: { ...; }; Relationships: []; }; ... 15 more ...; watchlist: { ...; }; }; Views: {}; Functions: {}; Enums: {}; CompositeTypes: {}; }, never, never, never>', gave the following error.
+    Argument of type '"source_performance"' is not assignable to parameter of type 'never'.
+src/services/sourcePerformanceTracker.ts(39,21): error TS2345: Argument of type '"domain"' is not assignable to parameter of type '"id"'.
+src/services/sourcePerformanceTracker.ts(43,40): error TS2339: Property 'total_signals' does not exist on type '{ created_at: string; duration_ms: number; error_message: string | null; estimated_cost_usd: number; events_detected: number; id: string; scan_type: string; signals_generated: number; status: string; tickers_scanned: number; user_id: string | null; } | ... 15 more ... | { ...; }'.
+  Property 'total_signals' does not exist on type '{ created_at: string; duration_ms: number; error_message: string | null; estimated_cost_usd: number; events_detected: number; id: string; scan_type: string; signals_generated: number; status: string; tickers_scanned: number; user_id: string | null; }'.
+src/services/sourcePerformanceTracker.ts(44,39): error TS2339: Property 'winning_signals' does not exist on type '{ created_at: string; duration_ms: number; error_message: string | null; estimated_cost_usd: number; events_detected: number; id: string; scan_type: string; signals_generated: number; status: string; tickers_scanned: number; user_id: string | null; } | ... 15 more ... | { ...; }'.
+  Property 'winning_signals' does not exist on type '{ created_at: string; duration_ms: number; error_message: string | null; estimated_cost_usd: number; events_detected: number; id: string; scan_type: string; signals_generated: number; status: string; tickers_scanned: number; user_id: string | null; }'.
+src/services/sourcePerformanceTracker.ts(47,27): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(relation: "signals" | "watchlist" | "agent_reflections" | "api_usage" | "app_settings" | "chat_conversations" | "journal_entries" | "market_events" | "portfolio_config" | "positions" | ... 6 more ... | "signal_ratings"): PostgrestQueryBuilder<...>', gave the following error.
+    Argument of type '"source_performance"' is not assignable to parameter of type '"signals" | "watchlist" | "agent_reflections" | "api_usage" | "app_settings" | "chat_conversations" | "journal_entries" | "market_events" | "portfolio_config" | "positions" | ... 6 more ... | "signal_ratings"'.
+  Overload 2 of 2, '(relation: never): PostgrestQueryBuilder<{ PostgrestVersion: "14.1"; }, { Tables: { agent_reflections: { Row: { bias_type: string; created_at: string; id: string; is_active: boolean; rule: string; sample_size: number; ... 4 more ...; win_rate: number; }; Insert: { ...; }; Update: { ...; }; Relationships: []; }; ... 15 more ...; watchlist: { ...; }; }; Views: {}; Functions: {}; Enums: {}; CompositeTypes: {}; }, never, never, never>', gave the following error.
+    Argument of type '"source_performance"' is not assignable to parameter of type 'never'.
+src/services/sourcePerformanceTracker.ts(49,25): error TS2322: Type 'any' is not assignable to type 'never'.
+src/services/sourcePerformanceTracker.ts(50,25): error TS2322: Type 'any' is not assignable to type 'never'.
+src/services/sourcePerformanceTracker.ts(51,25): error TS2322: Type 'number' is not assignable to type 'never'.
+src/services/sourcePerformanceTracker.ts(52,25): error TS2322: Type 'string' is not assignable to type 'never'.
+src/services/sourcePerformanceTracker.ts(54,25): error TS2345: Argument of type '"domain"' is not assignable to parameter of type '"id"'.
+src/services/sourcePerformanceTracker.ts(57,27): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(relation: "signals" | "watchlist" | "agent_reflections" | "api_usage" | "app_settings" | "chat_conversations" | "journal_entries" | "market_events" | "portfolio_config" | "positions" | ... 6 more ... | "signal_ratings"): PostgrestQueryBuilder<...>', gave the following error.
+    Argument of type '"source_performance"' is not assignable to parameter of type '"signals" | "watchlist" | "agent_reflections" | "api_usage" | "app_settings" | "chat_conversations" | "journal_entries" | "market_events" | "portfolio_config" | "positions" | ... 6 more ... | "signal_ratings"'.
+  Overload 2 of 2, '(relation: never): PostgrestQueryBuilder<{ PostgrestVersion: "14.1"; }, { Tables: { agent_reflections: { Row: { bias_type: string; created_at: string; id: string; is_active: boolean; rule: string; sample_size: number; ... 4 more ...; win_rate: number; }; Insert: { ...; }; Update: { ...; }; Relationships: []; }; ... 15 more ...; watchlist: { ...; }; }; Views: {}; Functions: {}; Enums: {}; CompositeTypes: {}; }, never, never, never>', gave the following error.
+    Argument of type '"source_performance"' is not assignable to parameter of type 'never'.
+src/services/sourcePerformanceTracker.ts(59,25): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(values: RejectExcessProperties<{ bias_type: string; created_at?: string | undefined; id?: string | undefined; is_active?: boolean | undefined; rule: string; sample_size?: number | undefined; sector?: string | undefined; severity?: string | undefined; updated_at?: string | undefined; user_id?: string | ... 1 more ... | undefined; win_rate: number; } | ... 15 more ... | { ...; }, { ...; } | ... 15 more ... | { ...; }>, options?: { ...; } | undefined): PostgrestFilterBuilder<...>', gave the following error.
+    Object literal may only specify known properties, and 'domain' does not exist in type 'RejectExcessProperties<{ bias_type: string; created_at?: string | undefined; id?: string | undefined; is_active?: boolean | undefined; rule: string; sample_size?: number | undefined; sector?: string | undefined; severity?: string | undefined; updated_at?: string | undefined; user_id?: string | ... 1 more ... | undef...'.
+  Overload 2 of 2, '(values: RejectExcessProperties<{ bias_type: string; created_at?: string | undefined; id?: string | undefined; is_active?: boolean | undefined; rule: string; sample_size?: number | undefined; sector?: string | undefined; severity?: string | undefined; updated_at?: string | undefined; user_id?: string | ... 1 more ... | undefined; win_rate: number; } | ... 15 more ... | { ...; }, { ...; } | ... 15 more ... | { ...; }>[], options?: { ...; } | undefined): PostgrestFilterBuilder<...>', gave the following error.
+    Object literal may only specify known properties, and 'domain' does not exist in type 'RejectExcessProperties<{ bias_type: string; created_at?: string | undefined; id?: string | undefined; is_active?: boolean | undefined; rule: string; sample_size?: number | undefined; sector?: string | undefined; severity?: string | undefined; updated_at?: string | undefined; user_id?: string | ... 1 more ... | undef...'.
+src/services/sourcePerformanceTracker.ts(79,23): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(relation: "signals" | "watchlist" | "agent_reflections" | "api_usage" | "app_settings" | "chat_conversations" | "journal_entries" | "market_events" | "portfolio_config" | "positions" | ... 6 more ... | "signal_ratings"): PostgrestQueryBuilder<...>', gave the following error.
+    Argument of type '"source_performance"' is not assignable to parameter of type '"signals" | "watchlist" | "agent_reflections" | "api_usage" | "app_settings" | "chat_conversations" | "journal_entries" | "market_events" | "portfolio_config" | "positions" | ... 6 more ... | "signal_ratings"'.
+  Overload 2 of 2, '(relation: never): PostgrestQueryBuilder<{ PostgrestVersion: "14.1"; }, { Tables: { agent_reflections: { Row: { bias_type: string; created_at: string; id: string; is_active: boolean; rule: string; sample_size: number; ... 4 more ...; win_rate: number; }; Insert: { ...; }; Update: { ...; }; Relationships: []; }; ... 15 more ...; watchlist: { ...; }; }; Views: {}; Functions: {}; Enums: {}; CompositeTypes: {}; }, never, never, never>', gave the following error.
+    Argument of type '"source_performance"' is not assignable to parameter of type 'never'.
+src/services/sourcePerformanceTracker.ts(81,21): error TS2345: Argument of type '"domain"' is not assignable to parameter of type '"id"'.
+src/services/sourcePerformanceTracker.ts(84,31): error TS2339: Property 'total_signals' does not exist on type 'SelectQueryError<"column 'win_rate' does not exist on 'signals'."> | SelectQueryError<"column 'win_rate' does not exist on 'watchlist'."> | ... 14 more ... | SelectQueryError<...>'.
+  Property 'total_signals' does not exist on type 'SelectQueryError<"column 'win_rate' does not exist on 'signals'.">'.
+src/services/sourcePerformanceTracker.ts(88,22): error TS2339: Property 'win_rate' does not exist on type 'SelectQueryError<"column 'win_rate' does not exist on 'signals'."> | SelectQueryError<"column 'win_rate' does not exist on 'watchlist'."> | ... 14 more ... | SelectQueryError<...>'.
+  Property 'win_rate' does not exist on type 'SelectQueryError<"column 'win_rate' does not exist on 'signals'.">'.
+src/services/sourcePerformanceTracker.ts(91,22): error TS2339: Property 'win_rate' does not exist on type 'SelectQueryError<"column 'win_rate' does not exist on 'signals'."> | SelectQueryError<"column 'win_rate' does not exist on 'watchlist'."> | ... 14 more ... | SelectQueryError<...>'.
+  Property 'win_rate' does not exist on type 'SelectQueryError<"column 'win_rate' does not exist on 'signals'.">'.
+ ELIFECYCLE  Command failed with exit code 2.

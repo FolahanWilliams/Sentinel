@@ -72,7 +72,11 @@ export function OnboardingOverlay() {
 
     useEffect(() => {
         const completed = localStorage.getItem(STORAGE_KEY);
-        if (!completed) {
+        const isHeadless = localStorage.getItem('sentinel_headless') === 'true' || 
+                          window.location.search.includes('test=true') ||
+                          window.location.search.includes('headless=true');
+
+        if (!completed && !isHeadless) {
             const timer = setTimeout(() => setIsVisible(true), 1500);
             return () => clearTimeout(timer);
         }

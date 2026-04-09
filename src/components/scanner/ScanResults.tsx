@@ -59,7 +59,7 @@ export const ScanResults: React.FC = () => {
         fetchRecent();
 
         const channel = supabase
-            .channel('scan_results_signals')
+            .channel(`scan_results_signals_${Math.random().toString(36).slice(2)}`)
             .on(
                 'postgres_changes',
                 { event: 'INSERT', schema: 'public', table: 'signals' },
