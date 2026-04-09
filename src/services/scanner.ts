@@ -52,7 +52,12 @@ import { ABTestingFramework } from './abTestingFramework';
 import { enrichWithMitigations } from './biasMitigation';
 import { ThesisInvalidationDetector } from './thesisInvalidationDetector';
 import { OutcomeNarrativeAgent } from './outcomeNarrativeAgent';
-import { DEFAULT_MIN_CONFIDENCE, DEFAULT_MIN_PRICE_RISE_PCT, CONFIDENCE_GATE_OVERREACTION, CONFIDENCE_GATE_CATALYST, CONFIDENCE_GATE_CONTAGION, CONFIDENCE_GATE_CRITIQUE, CONFIDENCE_FLOOR, CONFIDENCE_CEILING, MAX_CUMULATIVE_PENALTY, MAX_CUMULATIVE_BOOST, SWOT_WEAKNESS_IMBALANCE_PENALTY, SWOT_SEVERE_IMBALANCE_PENALTY, ROTATION_FAVORED_SECTOR_BOOST, ROTATION_DISFAVORED_SECTOR_PENALTY, ROTATION_HEADWIND_PENALTY, SEVERITY_THRESHOLD } from '@/config/constants';
+import { PreMortemAgent } from './preMortemAgent';
+import { ToxicCombinationDetector, type ToxicContextFlags } from './toxicCombinationDetector';
+import { RPDPatternMatcher } from './rpdPatternMatcher';
+import { BeneficialPatternDetector, type BeneficialContext } from './beneficialPatternDetector';
+import { DecisionQualityIndex, type DQIInputs } from './decisionQualityIndex';
+import { DEFAULT_MIN_CONFIDENCE, DEFAULT_MIN_PRICE_RISE_PCT, CONFIDENCE_GATE_OVERREACTION, CONFIDENCE_GATE_CATALYST, CONFIDENCE_GATE_CONTAGION, CONFIDENCE_GATE_CRITIQUE, CONFIDENCE_FLOOR, CONFIDENCE_CEILING, MAX_CUMULATIVE_PENALTY, MAX_CUMULATIVE_BOOST, SWOT_WEAKNESS_IMBALANCE_PENALTY, SWOT_SEVERE_IMBALANCE_PENALTY, ROTATION_FAVORED_SECTOR_BOOST, ROTATION_DISFAVORED_SECTOR_PENALTY, ROTATION_HEADWIND_PENALTY, SEVERITY_THRESHOLD, DQI_MINIMUM_THRESHOLD } from '@/config/constants';
 import {
     FEAR_GREED_EXTREME_FEAR_THRESHOLD, FEAR_GREED_FEAR_THRESHOLD,
     FEAR_GREED_EXTREME_GREED_THRESHOLD, FEAR_GREED_GREED_THRESHOLD,
@@ -653,6 +658,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                     fundResult,
                                     optionsResult,
                                     peerResult,
+                                    rpdResult,
                                 ] = await Promise.allSettled([
                                     // 6a. TA snapshot
                                     TechnicalAnalysisService.getSnapshot(ev.ticker),
@@ -670,7 +676,18 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                     OptionsFlowService.analyze(ev.ticker),
                                     // 6h. Peer strength
                                     PeerStrengthService.analyze(ev.ticker, priceDrop),
+                                    // 6i. RPD Pattern Matcher (Decision Intel — Klein framework)
+                                    RPDPatternMatcher.match(ev.ticker, signalType, (analysis?.data as any)?.bias_type || 'recency_bias', tickersToScan.find(t => t.ticker === ev.ticker)?.sector || 'Unknown', regimeResult?.regime, 65),
                                 ]);
+
+                                // Unpack RPD (6i)
+                                let rpdMatchResult: import('@/types/agents').RPDMatchResult | null = null;
+                                if (rpdResult.status === 'fulfilled') {
+                                    rpdMatchResult = rpdResult.value;
+                                    if (rpdMatchResult.sufficient_data) {
+                                        console.log(`[Scanner] RPD pattern for ${ev.ticker}: ${rpdMatchResult.pattern_summary}`);
+                                    }
+                                }
 
                                 // Unpack TA (6a)
                                 const earlyTaSnapshot = taResult.status === 'fulfilled' ? taResult.value : null;
@@ -970,6 +987,34 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             console.warn(`[Scanner] Bias Detective failed for ${ev.ticker} (non-fatal):`, biasErr);
                                         }
 
+                                        // 7.4.6. TOXIC COMBINATION DETECTOR (Decision Intel) — compound bias risk
+                                        let toxicComboOutput: import('@/types/agents').ToxicCombinationResult | null = null;
+                                        try {
+                                            if (biasDetectiveOutput && biasDetectiveOutput.findings.length > 0) {
+                                                const toxicCtx: ToxicContextFlags = {
+                                                    taAlignment: taAlignment,
+                                                    sourceCount: sourceDiversityResult?.sourceCount ?? undefined,
+                                                    debtToEquity: fundamentalsData?.debt_to_equity ?? null,
+                                                    profitMargin: fundamentalsData?.profit_margin ?? null,
+                                                    regime: regimeResult?.regime,
+                                                    volumeRatio: earlyTaSnapshot?.volumeRatio ?? null,
+                                                };
+                                                toxicComboOutput = ToxicCombinationDetector.detect(biasDetectiveOutput.findings, toxicCtx);
+                                                AgentContextBus.setToxicCombination(agentCtx, toxicComboOutput);
+                                                if (toxicComboOutput.is_toxic) {
+                                                    const before = analysis.data.confidence_score;
+                                                    const bounded = applyBoundedAdjustment(before, toxicComboOutput.confidence_penalty, cumulativePenalty, cumulativeBoost);
+                                                    analysis.data.confidence_score = bounded.confidence;
+                                                    cumulativePenalty = bounded.cumulativePenalty;
+                                                    cumulativeBoost = bounded.cumulativeBoost;
+                                                    AgentContextBus.recordAdjustment(agentCtx, 'toxic_combination', before, analysis.data.confidence_score, `${toxicComboOutput.highest_risk_pattern}`);
+                                                    console.log(`[Scanner] Toxic Combo for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${toxicComboOutput.highest_risk_pattern}, risk=${toxicComboOutput.compound_risk_score})`);
+                                                }
+                                            }
+                                        } catch (toxicErr) {
+                                            console.warn(`[Scanner] Toxic Combination Detector failed for ${ev.ticker} (non-fatal):`, toxicErr);
+                                        }
+
                                         // 7.5. SELF-CRITIQUE — second-pass confidence adjustment (with cascading context)
                                         let critiqueOutput = null;
                                         try {
@@ -1006,6 +1051,34 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             }
                                         } catch (critiqueErr) {
                                             console.warn(`[Scanner] Self-critique failed for ${ev.ticker} (non-fatal):`, critiqueErr);
+                                        }
+
+                                        // 7.5.2. PRE-MORTEM AGENT (Decision Intel — Klein technique)
+                                        let preMortemOutput: import('@/types/agents').PreMortemResult | null = null;
+                                        try {
+                                            const preMortemCascadeCtx = AgentContextBus.buildPromptContext(agentCtx, 'pre_mortem');
+                                            preMortemOutput = await PreMortemAgent.analyze(
+                                                ev.ticker,
+                                                analysis.data.thesis,
+                                                analysis.data.reasoning || analysis.data.thesis,
+                                                analysis.data.confidence_score,
+                                                signalType,
+                                                preMortemCascadeCtx || undefined,
+                                            );
+                                            AgentContextBus.setPreMortem(agentCtx, preMortemOutput);
+                                            if (preMortemOutput.confidence_penalty !== 0) {
+                                                const before = analysis.data.confidence_score;
+                                                const bounded = applyBoundedAdjustment(before, preMortemOutput.confidence_penalty, cumulativePenalty, cumulativeBoost);
+                                                analysis.data.confidence_score = bounded.confidence;
+                                                cumulativePenalty = bounded.cumulativePenalty;
+                                                cumulativeBoost = bounded.cumulativeBoost;
+                                                AgentContextBus.recordAdjustment(agentCtx, 'pre_mortem', before, analysis.data.confidence_score, `resilience=${preMortemOutput.resilience_rating}, avg_fail=${preMortemOutput.avg_failure_probability}%`);
+                                                console.log(`[Scanner] Pre-Mortem for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (resilience=${preMortemOutput.resilience_rating}, top risk="${preMortemOutput.highest_risk_scenario.slice(0, 80)}")`);
+                                            } else {
+                                                console.log(`[Scanner] Pre-Mortem for ${ev.ticker}: resilient — no penalty (avg failure prob ${preMortemOutput.avg_failure_probability}%)`);
+                                            }
+                                        } catch (preMortemErr) {
+                                            console.warn(`[Scanner] Pre-Mortem failed for ${ev.ticker} (non-fatal):`, preMortemErr);
                                         }
 
                                         // 7.5.5. NOISE-AWARE CONFIDENCE — 3-judge panel to measure LLM certainty
@@ -1205,6 +1278,17 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                 console.log(`[Scanner] Backtest adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${backtestResult.confidencePenalty})`);
                                             }
                                         } catch { /* non-fatal */ }
+
+                                        // 7.10b. RPD PATTERN CONFIDENCE ADJUSTMENT (Decision Intel — Klein framework)
+                                        if (rpdMatchResult && rpdMatchResult.confidence_adjustment !== 0) {
+                                            const before = analysis.data.confidence_score;
+                                            const bounded = applyBoundedAdjustment(before, rpdMatchResult.confidence_adjustment, cumulativePenalty, cumulativeBoost);
+                                            analysis.data.confidence_score = bounded.confidence;
+                                            cumulativePenalty = bounded.cumulativePenalty;
+                                            cumulativeBoost = bounded.cumulativeBoost;
+                                            AgentContextBus.recordAdjustment(agentCtx, 'rpd_pattern', before, analysis.data.confidence_score, rpdMatchResult.pattern_summary);
+                                            console.log(`[Scanner] RPD Pattern for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${rpdMatchResult.pattern_summary})`);
+                                        }
 
                                         // 7.11. MULTI-TIMEFRAME CONFIRMATION — check weekly trend alignment
                                         let mtfResult: MultiTimeframeResult | null = null;
@@ -1419,6 +1503,37 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             }
                                         } catch { /* non-fatal */ }
 
+                                        // 7.16f. BENEFICIAL PATTERN DETECTOR (Decision Intel) — counterbalance over-penalization
+                                        let beneficialResult: import('@/types/agents').BeneficialPatternResult | null = null;
+                                        try {
+                                            const beneficialCtx: BeneficialContext = {
+                                                fearGreedScore: fearGreedScore ?? undefined,
+                                                moatRating: analysis.data.moat_rating ?? null,
+                                                noiseStdDev: noiseConfidenceOutput?.std_dev ?? null,
+                                                mtfAlignedCount: undefined,
+                                                volumeRatio: earlyTaSnapshot?.volumeRatio ?? null,
+                                                optionsFlowSentiment: optionsFlowResult?.sentiment ?? null,
+                                                peerIsIdiosyncratic: peerStrengthResult?.isIdiosyncratic ?? undefined,
+                                                priceCorrelationMax: priceCorr?.maxCorrelation ?? undefined,
+                                                convictionScore: analysis.data.conviction_score ?? null,
+                                                rpdHistoricalWinRate: rpdMatchResult?.historical_win_rate ?? null,
+                                                rpdSufficientData: rpdMatchResult?.sufficient_data ?? false,
+                                                biasFree: biasDetectiveOutput ? biasDetectiveOutput.findings.length === 0 : false,
+                                            };
+                                            beneficialResult = BeneficialPatternDetector.detect(beneficialCtx);
+                                            if (beneficialResult.total_boost > 0) {
+                                                const before = analysis.data.confidence_score;
+                                                const bounded = applyBoundedAdjustment(before, beneficialResult.total_boost, cumulativePenalty, cumulativeBoost);
+                                                analysis.data.confidence_score = bounded.confidence;
+                                                cumulativePenalty = bounded.cumulativePenalty;
+                                                cumulativeBoost = bounded.cumulativeBoost;
+                                                AgentContextBus.recordAdjustment(agentCtx, 'beneficial_patterns', before, analysis.data.confidence_score, beneficialResult.summary);
+                                                console.log(`[Scanner] Beneficial patterns for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${beneficialResult.summary})`);
+                                            }
+                                        } catch (bpErr) {
+                                            console.warn(`[Scanner] Beneficial Pattern Detector failed for ${ev.ticker} (non-fatal):`, bpErr);
+                                        }
+
                                         // Pre-SWOT drop check: bail early if already below threshold
                                         if (analysis.data.confidence_score < adaptiveMinConfidence) {
                                             console.warn(`[Scanner] Signal for ${ev.ticker} dropped — confidence ${analysis.data.confidence_score} below ${adaptiveMinConfidence} after adjustments`);
@@ -1512,6 +1627,37 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                         if (analysis.data.confidence_score < adaptiveMinConfidence) {
                                             console.warn(`[Scanner] Signal for ${ev.ticker} dropped — confidence ${analysis.data.confidence_score} below ${adaptiveMinConfidence} after all adjustments (including SWOT)`);
                                             continue;
+                                        }
+
+                                        // 7.20. DECISION QUALITY INDEX (Decision Intel) — composite quality score
+                                        let dqiResult: import('@/types/agents').DQIResult | null = null;
+                                        try {
+                                            const dqiInputs: DQIInputs = {
+                                                biasTotalPenalty: biasDetectiveOutput?.total_penalty ?? 0,
+                                                biasFree: biasDetectiveOutput ? biasDetectiveOutput.findings.length === 0 : true,
+                                                noiseStdDev: noiseConfidenceOutput?.std_dev ?? null,
+                                                preMortemAvgProbability: preMortemOutput?.avg_failure_probability ?? null,
+                                                twinTakeCount: decisionTwinOutput
+                                                    ? [decisionTwinOutput.value.verdict, decisionTwinOutput.momentum.verdict, decisionTwinOutput.risk.verdict]
+                                                        .filter(v => v === 'take').length
+                                                    : undefined,
+                                                criticalFlawCount: critiqueOutput?.criticalFlaws?.length ?? undefined,
+                                                minorFlawCount: critiqueOutput?.minorFlaws?.length ?? undefined,
+                                                crossSourceQualityScore: crossSourceResult?.qualityScore ?? null,
+                                                rpdHistoricalWinRate: rpdMatchResult?.historical_win_rate ?? null,
+                                                rpdSufficientData: rpdMatchResult?.sufficient_data ?? false,
+                                                toxicCompoundRiskScore: toxicComboOutput?.compound_risk_score ?? undefined,
+                                            };
+                                            dqiResult = DecisionQualityIndex.compute(dqiInputs);
+                                            console.log(`[Scanner] DQI for ${ev.ticker}: ${dqiResult.score}/100 (${dqiResult.quality_tier}) — bias=${dqiResult.components.bias_audit}, noise=${dqiResult.components.noise_convergence}, pre_mortem=${dqiResult.components.pre_mortem_resilience}, twin=${dqiResult.components.twin_consensus}`);
+
+                                            // DQI gate — suppress signals below minimum quality threshold
+                                            if (!DecisionQualityIndex.passesGate(dqiResult)) {
+                                                console.warn(`[Scanner] DQI gate REJECTED ${ev.ticker}: score ${dqiResult.score} < ${DQI_MINIMUM_THRESHOLD} (tier: ${dqiResult.quality_tier})`);
+                                                continue;
+                                            }
+                                        } catch (dqiErr) {
+                                            console.warn(`[Scanner] DQI computation failed for ${ev.ticker} (non-fatal):`, dqiErr);
                                         }
 
                                         // 8. WINNER! WE HAVE A SIGNAL.
@@ -1749,6 +1895,27 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                 noise_confidence: noiseConfidenceOutput,
                                                 decision_twin: decisionTwinOutput,
                                                 swot: swotOutput,
+                                                // Decision Intel features
+                                                pre_mortem: preMortemOutput,
+                                                toxic_combination: toxicComboOutput,
+                                                rpd_pattern: rpdMatchResult ? {
+                                                    matches: rpdMatchResult.matches.length,
+                                                    historical_win_rate: rpdMatchResult.historical_win_rate,
+                                                    avg_return: rpdMatchResult.avg_return,
+                                                    confidence_adjustment: rpdMatchResult.confidence_adjustment,
+                                                    pattern_summary: rpdMatchResult.pattern_summary,
+                                                    sufficient_data: rpdMatchResult.sufficient_data,
+                                                } : null,
+                                                beneficial_patterns: beneficialResult && beneficialResult.patterns_detected.length > 0 ? {
+                                                    patterns: beneficialResult.patterns_detected.map(p => p.name),
+                                                    total_boost: beneficialResult.total_boost,
+                                                    summary: beneficialResult.summary,
+                                                } : null,
+                                                dqi: dqiResult ? {
+                                                    score: dqiResult.score,
+                                                    quality_tier: dqiResult.quality_tier,
+                                                    components: dqiResult.components,
+                                                } : null,
                                                 // Agent Context Bus — cascading intelligence audit trail
                                                 context_bus: AgentContextBus.serialize(agentCtx),
                                                 // A/B experiment assignment (if any)
@@ -1758,6 +1925,8 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                     params: abAssignments[0].params,
                                                 } : null,
                                             } as unknown as Json,
+                                            dqi_score: dqiResult?.score ?? null,
+                                            dqi_components: dqiResult?.components ? (dqiResult.components as unknown as Json) : null,
                                             margin_of_safety_pct: marginOfSafetyPct,
                                             conviction_score: typeof analysis.data.conviction_score === 'number'
                                                 ? Math.max(0, Math.min(100, Math.round(analysis.data.conviction_score))) : null,
@@ -2027,6 +2196,13 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
             try {
                 void AutoLearningService.checkAndTrigger().catch(e =>
                     console.warn('[Scanner] Auto-learning check failed (non-fatal):', e)
+                );
+                // Decision Intel: pairwise bias interaction + stratified causal analysis
+                void AutoLearningService.detectPairwiseInteractions().catch(e =>
+                    console.warn('[Scanner] Pairwise interaction detection failed (non-fatal):', e)
+                );
+                void AutoLearningService.runStratifiedAnalysis().catch(e =>
+                    console.warn('[Scanner] Stratified analysis failed (non-fatal):', e)
                 );
             } catch { /* non-fatal */ }
 

@@ -221,3 +221,106 @@ export interface ScanLogEntry {
     error_message: string | null;
     created_at: string;
 }
+
+// ── Pre-Mortem Agent Types (Decision Intel Port) ────────────────────────────
+
+/** Single failure scenario from the Pre-Mortem Agent */
+export interface PreMortemScenario {
+    description: string;
+    probability: number;            // 0-100
+    severity: 'mild' | 'moderate' | 'severe';
+    early_warning_sign: string;
+}
+
+/** Output from the Pre-Mortem Agent */
+export interface PreMortemResult {
+    scenarios: PreMortemScenario[];
+    avg_failure_probability: number;
+    highest_risk_scenario: string;
+    confidence_penalty: number;
+    resilience_rating: 'fragile' | 'moderate' | 'resilient';
+}
+
+// ── Toxic Combination Detector Types (Decision Intel Port) ──────────────────
+
+/** A detected toxic bias combination pattern */
+export interface ToxicPattern {
+    name: string;
+    biases: string[];
+    base_risk: number;
+    amplified_risk: number;
+    amplifier_reason: string | null;
+}
+
+/** Output from the Toxic Combination Detector */
+export interface ToxicCombinationResult {
+    patterns_detected: ToxicPattern[];
+    compound_risk_score: number;
+    confidence_penalty: number;
+    highest_risk_pattern: string | null;
+    is_toxic: boolean;
+}
+
+// ── RPD Pattern Matcher Types (Klein Framework) ─────────────────────────────
+
+/** A single historical pattern match from RPD */
+export interface RPDMatch {
+    signal_id: string;
+    ticker: string;
+    signal_type: string;
+    bias_type: string;
+    confidence: number;
+    outcome: string;
+    return_pct: number | null;
+    similarity_score: number;
+    created_at: string;
+}
+
+/** Output from the RPD Pattern Matcher */
+export interface RPDMatchResult {
+    matches: RPDMatch[];
+    historical_win_rate: number | null;
+    avg_return: number | null;
+    confidence_adjustment: number;
+    pattern_summary: string;
+    sufficient_data: boolean;
+}
+
+// ── Beneficial Pattern Detector Types ───────────────────────────────────────
+
+/** A detected beneficial compound pattern */
+export interface BeneficialPattern {
+    name: string;
+    conditions_met: string[];
+    boost: number;
+}
+
+/** Output from the Beneficial Pattern Detector */
+export interface BeneficialPatternResult {
+    patterns_detected: BeneficialPattern[];
+    total_boost: number;    // capped at BENEFICIAL_PATTERN_MAX_BOOST
+    summary: string;
+}
+
+// ── Decision Quality Index (DQI) Types ──────────────────────────────────────
+
+/** Component breakdown of the DQI score */
+export interface DQIComponents {
+    bias_audit: number;
+    noise_convergence: number;
+    pre_mortem_resilience: number;
+    twin_consensus: number;
+    self_critique_quality: number;
+    cross_source_quality: number;
+    rpd_pattern_match: number;
+    toxic_combination: number;
+}
+
+export type DQITier = 'elite' | 'high' | 'moderate' | 'low' | 'rejected';
+
+/** Output from the Decision Quality Index calculator */
+export interface DQIResult {
+    score: number;              // 0-100 composite
+    components: DQIComponents;
+    quality_tier: DQITier;
+}

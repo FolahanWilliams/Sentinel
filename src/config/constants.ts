@@ -218,6 +218,58 @@ export const NOISE_JUDGE_DIVERGENCE_PENALTY = 10;
 export const NOISE_JUDGE_CONVERGENCE_BOOST = 3;
 
 // ===========================
+// PRE-MORTEM AGENT (Decision Intel Port)
+// ===========================
+/** Penalty when avg failure probability > HIGH threshold AND 2+ severe scenarios */
+export const PRE_MORTEM_HIGH_RISK_PENALTY = -8;
+/** Penalty when avg failure probability > MODERATE threshold AND 1+ severe scenario */
+export const PRE_MORTEM_MODERATE_RISK_PENALTY = -5;
+/** Average failure probability threshold for high-risk classification */
+export const PRE_MORTEM_HIGH_RISK_THRESHOLD = 50;
+/** Average failure probability threshold for moderate-risk classification */
+export const PRE_MORTEM_MODERATE_RISK_THRESHOLD = 40;
+
+// ===========================
+// TOXIC COMBINATION DETECTOR (Decision Intel Port)
+// ===========================
+/** Penalty when compound risk > SEVERE threshold (80+) */
+export const TOXIC_COMBO_SEVERE_PENALTY = -10;
+/** Penalty when compound risk 70-80 */
+export const TOXIC_COMBO_HIGH_PENALTY = -7;
+/** Penalty when compound risk 60-70 */
+export const TOXIC_COMBO_MODERATE_PENALTY = -4;
+export const TOXIC_COMBO_SEVERE_THRESHOLD = 80;
+export const TOXIC_COMBO_HIGH_THRESHOLD = 70;
+export const TOXIC_COMBO_MODERATE_THRESHOLD = 60;
+
+// ===========================
+// RPD PATTERN MATCHER (Klein Framework)
+// ===========================
+/** Minimum number of historical matches needed for RPD to produce a signal */
+export const RPD_MIN_MATCHES = 5;
+/** Below this win rate → penalty */
+export const RPD_LOW_WIN_RATE_THRESHOLD = 35;
+/** Above this win rate → boost */
+export const RPD_HIGH_WIN_RATE_THRESHOLD = 65;
+export const RPD_LOW_WIN_RATE_PENALTY = -6;
+export const RPD_HIGH_WIN_RATE_BOOST = 3;
+
+// ===========================
+// BENEFICIAL PATTERN DETECTOR
+// ===========================
+/** Max total boost from detected beneficial compound patterns */
+export const BENEFICIAL_PATTERN_MAX_BOOST = 5;
+
+// ===========================
+// DECISION QUALITY INDEX (DQI)
+// ===========================
+/** Signals below this DQI score are suppressed */
+export const DQI_MINIMUM_THRESHOLD = 40;
+export const DQI_ELITE_THRESHOLD = 80;
+export const DQI_HIGH_THRESHOLD = 65;
+export const DQI_MODERATE_THRESHOLD = 50;
+
+// ===========================
 // CATEGORY COLOR MAP
 // ===========================
 export const CATEGORY_COLORS: Record<string, string> = {

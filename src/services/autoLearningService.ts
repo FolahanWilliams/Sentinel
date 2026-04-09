@@ -370,4 +370,209 @@ Generate weight adjustments for each pipeline step. Focus on steps with enough d
             generatedAt: new Date().toISOString(),
         };
     }
+
+    // ── Causal Learning Upgrade (Decision Intel Port) ───────────────────────
+
+    /**
+     * Detect pairwise bias interactions — which 2-bias combinations
+     * correlate with disproportionate failure rates.
+     *
+     * Uses stratified analysis by signal_type to avoid Simpson's paradox.
+     * Ported from Decision Intel's causal-learning.ts concept.
+     */
+    static async detectPairwiseInteractions(): Promise<void> {
+        try {
+            const { data: outcomes } = await supabase
+                .from('signal_outcomes')
+                .select('outcome, signals!inner(signal_type, bias_type, secondary_biases, agent_outputs)')
+                .neq('outcome', 'pending')
+                .limit(200);
+
+            if (!outcomes || outcomes.length < 20) {
+                console.log('[AutoLearning] Pairwise: insufficient data for interaction detection');
+                return;
+            }
+
+            // Extract all bias names from each signal
+            const signalBiases: Array<{ biases: string[]; isWin: boolean; signalType: string }> = [];
+
+            for (const o of outcomes) {
+                const sig = (o as any).signals;
+                if (!sig) continue;
+
+                const biases: string[] = [];
+                // Primary bias
+                if (sig.bias_type) biases.push(sig.bias_type);
+                // Secondary biases
+                if (Array.isArray(sig.secondary_biases)) {
+                    biases.push(...sig.secondary_biases);
+                }
+                // Bias detective findings
+                const findings = sig.agent_outputs?.bias_detective?.findings;
+                if (Array.isArray(findings)) {
+                    for (const f of findings) {
+                        if (f.bias_name && f.severity >= 2 && !biases.includes(f.bias_name)) {
+                            biases.push(f.bias_name);
+                        }
+                    }
+                }
+
+                signalBiases.push({
+                    biases: [...new Set(biases)],
+                    isWin: o.outcome === 'win',
+                    signalType: sig.signal_type || 'unknown',
+                });
+            }
+
+            // Generate all unique pairs and compute interaction strength
+            const pairStats: Record<string, { wins: number; losses: number; total: number }> = {};
+            const singleStats: Record<string, { wins: number; losses: number; total: number }> = {};
+
+            for (const entry of signalBiases) {
+                // Track singles
+                for (const bias of entry.biases) {
+                    if (!singleStats[bias]) singleStats[bias] = { wins: 0, losses: 0, total: 0 };
+                    singleStats[bias].total++;
+                    if (entry.isWin) singleStats[bias].wins++;
+                    else singleStats[bias].losses++;
+                }
+
+                // Track pairs
+                for (let i = 0; i < entry.biases.length; i++) {
+                    for (let j = i + 1; j < entry.biases.length; j++) {
+                        const pairKey = [entry.biases[i], entry.biases[j]].sort().join('+');
+                        if (!pairStats[pairKey]) pairStats[pairKey] = { wins: 0, losses: 0, total: 0 };
+                        pairStats[pairKey].total++;
+                        if (entry.isWin) pairStats[pairKey].wins++;
+                        else pairStats[pairKey].losses++;
+                    }
+                }
+            }
+
+            // Compute interaction strength for each pair
+            const interactions: Array<{
+                pair: string;
+                combinedFailureRate: number;
+                maxIndividualFailureRate: number;
+                interactionStrength: number;
+                sampleSize: number;
+                isSynergistic: boolean;
+            }> = [];
+
+            for (const [pair, stats] of Object.entries(pairStats)) {
+                if (stats.total < 3) continue; // Need minimum sample
+
+                const [bias1, bias2] = pair.split('+');
+                const single1 = singleStats[bias1];
+                const single2 = singleStats[bias2];
+                if (!single1 || !single2) continue;
+
+                const combinedFailRate = stats.losses / stats.total;
+                const failRate1 = single1.total > 0 ? single1.losses / single1.total : 0;
+                const failRate2 = single2.total > 0 ? single2.losses / single2.total : 0;
+                const maxIndividualFailRate = Math.max(failRate1, failRate2);
+
+                // Interaction strength > 1.3 means the combination is worse than either alone
+                const interactionStrength = maxIndividualFailRate > 0
+                    ? combinedFailRate / maxIndividualFailRate
+                    : 1.0;
+
+                interactions.push({
+                    pair,
+                    combinedFailureRate: Math.round(combinedFailRate * 100),
+                    maxIndividualFailureRate: Math.round(maxIndividualFailRate * 100),
+                    interactionStrength: Math.round(interactionStrength * 100) / 100,
+                    sampleSize: stats.total,
+                    isSynergistic: interactionStrength > 1.3,
+                });
+            }
+
+            // Sort by interaction strength (most dangerous first)
+            interactions.sort((a, b) => b.interactionStrength - a.interactionStrength);
+
+            // Store results
+            const synergistic = interactions.filter(i => i.isSynergistic);
+            console.log(`[AutoLearning] Pairwise: found ${synergistic.length} synergistic toxic pairs out of ${interactions.length} analyzed`);
+            if (synergistic.length > 0) {
+                console.log(`[AutoLearning] Top toxic pairs: ${synergistic.slice(0, 3).map(i => `${i.pair} (strength=${i.interactionStrength}, n=${i.sampleSize})`).join(', ')}`);
+            }
+
+            // Persist to app_settings
+            await supabase
+                .from('app_settings')
+                .upsert({
+                    key: 'pairwise_bias_interactions',
+                    value: {
+                        interactions: interactions.slice(0, 20),
+                        synergistic_count: synergistic.length,
+                        total_analyzed: interactions.length,
+                        generated_at: new Date().toISOString(),
+                    },
+                }, { onConflict: 'key' });
+        } catch (err) {
+            console.warn('[AutoLearning] Pairwise interaction detection failed:', err);
+        }
+    }
+
+    /**
+     * Stratified analysis — group outcomes by signal_type AND regime
+     * before computing weights. Prevents Simpson's paradox where a bias
+     * that hurts in bull markets but helps in bear markets appears neutral overall.
+     */
+    static async runStratifiedAnalysis(): Promise<void> {
+        try {
+            const { data: outcomes } = await supabase
+                .from('signal_outcomes')
+                .select('outcome, signals!inner(signal_type, agent_outputs)')
+                .neq('outcome', 'pending')
+                .limit(200);
+
+            if (!outcomes || outcomes.length < 20) return;
+
+            // Group by signal_type + regime
+            const strata: Record<string, { wins: number; losses: number; total: number }> = {};
+
+            for (const o of outcomes) {
+                const sig = (o as any).signals;
+                const signalType = sig?.signal_type || 'unknown';
+                const regime = sig?.agent_outputs?.market_regime?.regime || 'unknown';
+                const key = `${signalType}|${regime}`;
+
+                if (!strata[key]) strata[key] = { wins: 0, losses: 0, total: 0 };
+                strata[key].total++;
+                if (o.outcome === 'win') strata[key].wins++;
+                else strata[key].losses++;
+            }
+
+            // Compute per-stratum win rates
+            const stratifiedResults = Object.entries(strata)
+                .filter(([_, s]) => s.total >= 3)
+                .map(([key, s]) => ({
+                    stratum: key,
+                    signalType: key.split('|')[0],
+                    regime: key.split('|')[1],
+                    winRate: Math.round((s.wins / s.total) * 100),
+                    sampleSize: s.total,
+                }))
+                .sort((a, b) => a.winRate - b.winRate);
+
+            console.log(`[AutoLearning] Stratified: ${stratifiedResults.length} strata analyzed`);
+            for (const s of stratifiedResults) {
+                console.log(`  ${s.stratum}: ${s.winRate}% WR (n=${s.sampleSize})`);
+            }
+
+            // Persist
+            await supabase
+                .from('app_settings')
+                .upsert({
+                    key: 'stratified_analysis',
+                    value: {
+                        strata: stratifiedResults,
+                        generated_at: new Date().toISOString(),
+                    },
+                }, { onConflict: 'key' });
+        } catch (err) {
+            console.warn('[AutoLearning] Stratified analysis failed:', err);
+        }
+    }
 }
