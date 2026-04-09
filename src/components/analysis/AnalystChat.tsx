@@ -1251,13 +1251,13 @@ function AnalystChatInner() {
                         .single();
 
                     if (agentType === 'OVERREACTION') {
-                        agentResult = await AgentService.evaluateOverreaction(
-                            agentTicker,
-                            latestEvent?.headline || `Analyzing ${agentTicker}`,
-                            latestEvent?.description || 'User-requested analysis',
+                        agentResult = await AgentService.evaluateOverreaction({
+                            ticker: agentTicker,
+                            eventHeadline: latestEvent?.headline || `Analyzing ${agentTicker}`,
+                            eventDesc: latestEvent?.description || 'User-requested analysis',
                             currentPrice,
-                            Math.abs(latestEvent?.price_change_pct || 0),
-                        );
+                            priceDropPct: Math.abs(latestEvent?.price_change_pct || 0),
+                        });
                     } else if (agentType === 'SANITY_CHECK') {
                         // Get the latest signal thesis for this ticker
                         const { data: signal } = await supabase
@@ -1270,13 +1270,13 @@ function AnalystChatInner() {
                             .single();
 
                         if (signal) {
-                            agentResult = await AgentService.runSanityCheck(
-                                agentTicker,
-                                signal.thesis || '',
-                                signal.target_price || currentPrice * 1.1,
-                                signal.stop_loss || currentPrice * 0.9,
-                                signal.signal_type || 'overreaction',
-                            );
+                            agentResult = await AgentService.runSanityCheck({
+                                ticker: agentTicker,
+                                originalThesis: signal.thesis || '',
+                                targetPrice: signal.target_price || currentPrice * 1.1,
+                                stopLoss: signal.stop_loss || currentPrice * 0.9,
+                                agentType: signal.signal_type || 'overreaction',
+                            });
                         } else {
                             setMessages(prev => [...prev, {
                                 role: 'system',
@@ -1285,11 +1285,15 @@ function AnalystChatInner() {
                             }]);
                         }
                     } else if (agentType === 'EARNINGS') {
-                        agentResult = await AgentService.evaluateEarnings(
-                            agentTicker, 0, 0, 0, 0,
-                            latestEvent?.description || 'User-requested earnings analysis',
-                            Math.abs(latestEvent?.price_change_pct || 0),
-                        );
+                        agentResult = await AgentService.evaluateEarnings({
+                            ticker: agentTicker,
+                            epsEstimate: 0,
+                            epsActual: 0,
+                            revenueEstimate: 0,
+                            revenueActual: 0,
+                            guidanceDetails: latestEvent?.description || 'User-requested earnings analysis',
+                            priceDropPct: Math.abs(latestEvent?.price_change_pct || 0),
+                        });
                     }
 
                     if (agentResult?.success && agentResult.data) {
@@ -1616,30 +1620,33 @@ ${memoryBlock}${historyBlock ? `RECENT CONVERSATION:\n${historyBlock}\n` : ''}
 USER'S QUESTION: ${trimmed}
 
 INSTRUCTIONS:
-1. You have the user's COMPLETE portfolio state above — positions, sector allocation, exposure limits, P&L, and active signals. Use this data to give specific, quantitative answers.
-2. When asked about exposure, concentration, or risk — reference their ACTUAL numbers (sector %, position sizes, limit breaches).
-3. When asked about rotation opportunities or what to sell/buy — cross-reference their PORTFOLIO positions against the SCANNER INTELLIGENCE section. Recommend specific replacements with projected ROI, win rates, and confidence scores from the scanner data.
-4. When recent NEWS is provided, reference specific headlines to support your analysis. In portfolio mode, news is tagged with the ticker it affects — use this to flag positions that have negative news catalysts.
-5. Keep responses SHORT — 1-3 paragraphs max. Lead with the answer, skip filler. Use bullet points for multiple data points. Be direct with numbers and specific tickers. When suggesting trades, include entry/target/stop from scanner data.
+1. You have the user's COMPLETE portfolio state above. When asked SPECIFICALLY about exposure, concentration, rotations, or risk limits, use this data to give specific, quantitative answers (e.g., sector %, position sizes).
+2. GEOPOLITICAL & MACRO SEPARATION (CRITICAL): If the user asks about a general market event, geopolitical conflict, or macro news (e.g., "What about the US-Iran war?"), DO NOT default to a rigid, third-person portfolio read-out.
+   - FIRST: Access real-time internet context via grounded search to acknowledge the LIVE event. Speak about it in the present tense as an ongoing situation.
+   - SECOND: Build a quick Causal Map (Event -> First-Order Sector Impacts -> Second-Order Supply Chain/Currency impacts).
+   - THIRD: Identify what Cognitive Bias the overall market might be displaying (e.g., Panic Selling, Base Rate Neglect).
+   - ONLY THEN: Briefly map this causal macro view to their portfolio exposure if relevant, but the focus must be on answering their question about the event itself as an intelligent analyst.
+3. When asked what to sell/buy — cross-reference their PORTFOLIO positions against the SCANNER INTELLIGENCE section. Recommend specific replacements with projected ROI, win rates, and confidence scores.
+4. When recent NEWS is provided, reference specific headlines.
+5. Keep responses SHORT — 1-3 paragraphs max. Lead with the answer. Use bullet points for causal mappings and multiple data points.
 6. AVAILABLE ACTIONS — ONLY include action tags when the user EXPLICITLY and DIRECTLY asks you to perform the action. For example, "close my NBIS position" or "sell AAPL" or "add TSLA to watchlist".
    CRITICAL: NEVER generate action tags based on your own analysis or recommendations. If you think a position should be closed, RECOMMEND it in your response text — do NOT include the action tag. The user must explicitly ask you to execute.
    NEVER close positions, open positions, or modify the portfolio unless the user directly instructs you to do so. Discussing a trade idea or asking "what do you think about X" is NOT a request to execute.
    Available action tags (ONLY when user explicitly requests):
-   - Log a trade: [ACTION:ADD_POSITION] TICKER @PRICE xSHARES SIDE (e.g., [ACTION:ADD_POSITION] AAPL @150.00 x100 LONG)
-   - Close a trade with exit price: [ACTION:CLOSE_POSITION] TICKER @EXIT_PRICE REASON (e.g., [ACTION:CLOSE_POSITION] AAPL @165.00 target_hit)
-   - Update a position (shares, stop, entry): [ACTION:UPDATE_POSITION] TICKER FIELD=VALUE (e.g., [ACTION:UPDATE_POSITION] AAPL shares=50 or [ACTION:UPDATE_POSITION] AAPL entry_price=148.50)
-   - Delete/remove a position (mistaken entry): [ACTION:DELETE_POSITION] TICKER STATUS (e.g., [ACTION:DELETE_POSITION] AZN.L CLOSED or [ACTION:DELETE_POSITION] META OPEN). STATUS is optional: OPEN, CLOSED, or ALL. Omit STATUS to delete all positions for that ticker.
-   - Bulk delete ALL closed positions: [ACTION:DELETE_ALL_CLOSED] (deletes every closed position — use when user says "delete all closed trades" or "clear my trade history")
-   - Delete specific closed positions by ticker list: [ACTION:DELETE_CLOSED_TICKERS] TICKER1 TICKER2 ... (e.g., [ACTION:DELETE_CLOSED_TICKERS] RIO.L AZN.L MRK META — deletes only the closed positions for those tickers)
-   - Delete signal outcomes (performance/win-rate data): [ACTION:DELETE_SIGNAL_OUTCOMES] ALL or [ACTION:DELETE_SIGNAL_OUTCOMES] TICKER1,TICKER2 (e.g., [ACTION:DELETE_SIGNAL_OUTCOMES] ALL resets all performance data; [ACTION:DELETE_SIGNAL_OUTCOMES] RIO.L,AZN.L clears outcomes for specific tickers)
-   - Add to watchlist: [ACTION:ADD_WATCHLIST] TICKER (e.g., [ACTION:ADD_WATCHLIST] TSLA)
-   - Remove from watchlist: [ACTION:REMOVE_WATCHLIST] TICKER (e.g., [ACTION:REMOVE_WATCHLIST] TSLA)
-   - Run scanner on a ticker: [ACTION:RUN_SCAN] TICKER (e.g., [ACTION:RUN_SCAN] NVDA)
-   - Run a specialized agent: [ACTION:RUN_AGENT] AGENT_TYPE TICKER (e.g., [ACTION:RUN_AGENT] SANITY_CHECK AAPL or [ACTION:RUN_AGENT] OVERREACTION NVDA or [ACTION:RUN_AGENT] EARNINGS MSFT)
-   - Calculate position size: [ACTION:POSITION_SIZE] TICKER @PRICE TARGET=X STOP=X SIGNAL_TYPE (e.g., [ACTION:POSITION_SIZE] AAPL @150.00 TARGET=180.00 STOP=140.00 overreaction)
-   IMPORTANT: Use CLOSE_POSITION (not DELETE) when the user wants to exit a trade — this preserves the record with P&L. Use DELETE_POSITION/DELETE_ALL_CLOSED/DELETE_CLOSED_TICKERS only for mistaken entries or data cleanup.
-   IMPORTANT: When the user asks about position sizing, use [ACTION:POSITION_SIZE] to get real calculations from the engine.
-   IMPORTANT: When deleting trades that were logged by mistake, also offer to clean up the associated signal outcomes with [ACTION:DELETE_SIGNAL_OUTCOMES] so win-rate stats are accurate.
+   - Log a trade: [ACTION:ADD_POSITION] TICKER @PRICE xSHARES SIDE
+   - Close a trade with exit price: [ACTION:CLOSE_POSITION] TICKER @EXIT_PRICE REASON
+   - Update a position (shares, stop, entry): [ACTION:UPDATE_POSITION] TICKER FIELD=VALUE
+   - Delete/remove a position: [ACTION:DELETE_POSITION] TICKER STATUS
+   - Bulk delete ALL closed positions: [ACTION:DELETE_ALL_CLOSED]
+   - Delete specific closed positions by ticker list: [ACTION:DELETE_CLOSED_TICKERS] TICKER1 TICKER2
+   - Delete signal outcomes: [ACTION:DELETE_SIGNAL_OUTCOMES] ALL or [ACTION:DELETE_SIGNAL_OUTCOMES] TICKER1,TICKER2
+   - Add to watchlist: [ACTION:ADD_WATCHLIST] TICKER
+   - Remove from watchlist: [ACTION:REMOVE_WATCHLIST] TICKER
+   - Run scanner on a ticker: [ACTION:RUN_SCAN] TICKER
+   - Run a specialized agent: [ACTION:RUN_AGENT] AGENT_TYPE TICKER
+   - Calculate position size: [ACTION:POSITION_SIZE] TICKER @PRICE TARGET=X STOP=X SIGNAL_TYPE
+   IMPORTANT: Use CLOSE_POSITION (not DELETE) when the user wants to exit a trade. Use DELETE_POSITION only for mistaken entries.
+   IMPORTANT: When the user asks about position sizing, use [ACTION:POSITION_SIZE].
 7. If the user asks about something not in the provided context, use your knowledge and grounded search to answer.
 8. Do NOT add financial disclaimers. Be opinionated and direct — this is a trading intelligence system.
 9. At the END of your response, include 2-3 contextual follow-up questions the user might want to ask next, formatted as: [FOLLOWUPS] question1 | question2 | question3

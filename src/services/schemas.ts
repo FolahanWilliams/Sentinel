@@ -335,6 +335,38 @@ export const SANITY_CHECK_SCHEMA = {
     required: ["reasoning", "passes_sanity_check", "risk_score", "fatal_flaws", "counter_thesis"]
 };
 
+// ── Macro Causal Schema (Geopolitics & Systematic Risk) ───────────────────
+
+export const MACRO_CAUSAL_SCHEMA = {
+    type: "object",
+    properties: {
+        causal_chain: {
+            type: "array",
+            items: { type: "string" },
+            description: "Step-by-step mapping: [1. The Event, 2. First-Order Impact, 3. Second-Order Impact]"
+        },
+        exploitable_cognitive_bias: {
+            type: "string",
+            description: "The specific cognitive bias causing the market to misprice this macro event (e.g., Base Rate Neglect, Panic Selling, Availability Heuristic)."
+        },
+        bias_description: { type: "string", description: "1-2 sentences explaining how the bias is currently manifesting." },
+        is_geopolitical_catalyst: { type: "boolean", description: "True if this event creates a valid, tradable signal." },
+        confidence_score: { type: "integer", description: "0-100 confidence in the causal thesis." },
+        thesis: { type: "string", description: "The overarching trade idea (e.g., 'Market is over-selling Defense on hopes of early peace, buy the dip due to Base Rate Neglect on historical conflict duration')." },
+        suggested_entry_low: { type: "number", description: "Entry zone floor." },
+        suggested_entry_high: { type: "number", description: "Entry zone ceiling." },
+        stop_loss: { type: "number", description: "Risk control level (must be below entry)." },
+        target_price: { type: "number", description: "Upside target." },
+        timeframe_days: { type: "integer", description: "Expected playout timeframe (e.g., 30, 90)." },
+        secondary_biases: { type: "array", items: { type: "string" } },
+        moat_rating: { type: "integer", description: "1-10 quality of the core asset mentioned." },
+        lynch_category: { type: "string", description: "E.g., cyclical, stalwart." },
+        conviction_score: { type: "integer", description: "Overall 0-100 conviction." },
+        why_high_conviction: { type: "string", description: "Explain the strong setup." }
+    },
+    required: ["causal_chain", "exploitable_cognitive_bias", "bias_description", "is_geopolitical_catalyst", "confidence_score", "thesis", "target_price", "stop_loss", "timeframe_days"]
+};
+
 // ── Pre-Mortem Agent Schema (Decision Intel Port) ───────────────────────────
 
 export const PRE_MORTEM_SCHEMA = {

@@ -79,6 +79,25 @@ export interface BullishCatalystResult {
     why_high_conviction: string;
 }
 
+export interface MacroCausalResult {
+    causal_chain: string[];
+    exploitable_cognitive_bias: import('./signals').BiasType;
+    bias_description: string;
+    is_geopolitical_catalyst: boolean;
+    confidence_score: number;
+    thesis: string;
+    suggested_entry_low: number;
+    suggested_entry_high: number;
+    stop_loss: number;
+    target_price: number;
+    timeframe_days: number;
+    secondary_biases: import('./signals').BiasType[];
+    moat_rating: number;
+    lynch_category: import('./signals').LynchCategory;
+    conviction_score: number;
+    why_high_conviction: string;
+}
+
 export interface SanityCheckResult {
     reasoning: string;
     passes_sanity_check: boolean;

@@ -14,6 +14,7 @@ import {
     SANITY_CHECK_AGENT_PROMPT,
     BULLISH_CATALYST_AGENT_PROMPT,
     BIAS_DETECTIVE_AGENT_PROMPT,
+    MACRO_CAUSAL_AGENT_PROMPT,
     getRegimeOverlay
 } from './prompts';
 import type { MarketRegimeType } from './marketRegime';
@@ -24,10 +25,11 @@ import {
     SANITY_CHECK_SCHEMA,
     SATELLITE_DISCOVERY_SCHEMA,
     BULLISH_CATALYST_SCHEMA,
-    BIAS_DETECTIVE_SCHEMA
+    BIAS_DETECTIVE_SCHEMA,
+    MACRO_CAUSAL_SCHEMA
 } from './schemas';
 import { GEMINI_MODEL, BIAS_DETECTIVE_MAX_PENALTY } from '@/config/constants';
-import type { AgentResult, OverreactionResult, ContagionResult, SanityCheckResult, BullishCatalystResult, BiasDetectiveResult } from '@/types/agents';
+import type { AgentResult, OverreactionResult, ContagionResult, SanityCheckResult, BullishCatalystResult, BiasDetectiveResult, MacroCausalResult } from '@/types/agents';
 
 /**
  * Cascading agent context — structured summary of a prior agent's output
@@ -116,6 +118,41 @@ export class AgentService {
             requireGroundedSearch: false,
             responseSchema: OVERREACTION_SCHEMA,
             temperature: 0.4,
+            model: GEMINI_MODEL,
+        });
+    }
+
+    /**
+     * 1b. Macro Causal Agent
+     * Maps geopolitical and macroeconomic events to causal trading setups.
+     * Uses temperature 0.5 for slightly more creative causal linking.
+     */
+    static async evaluateMacroCausal(input: {
+        eventHeadline: string;
+        eventDesc: string;
+        marketContext?: MarketContext;
+    }): Promise<AgentResult<MacroCausalResult>> {
+        const { eventHeadline, eventDesc, marketContext } = input;
+
+        const marketBlock = marketContext
+            ? `\n\nMARKET CONTEXT:\nSector Performance: ${marketContext.sectorPerformance ?? 'N/A'}\nCNN Fear & Greed Index: ${marketContext.fearGreedScore ?? 'N/A'} (${marketContext.fearGreedRating ?? 'N/A'})`
+            : '';
+
+        const prompt = `
+    MACRO EVENT HEADLINE: ${eventHeadline}
+    EVENT DESCRIPTION: ${eventDesc}
+    ${marketBlock}
+    Perform a strict causal analysis mapping the first-order and second-order impacts of this event.
+    Identify any prevailing cognitive biases (e.g. Panic Selling, Base Rate Neglect) mispricing the situation.
+    Return JSON perfectly matching the expected schema.
+    `;
+
+        return GeminiService.generate({
+            prompt,
+            systemInstruction: MACRO_CAUSAL_AGENT_PROMPT,
+            requireGroundedSearch: false, // Or true if we want real-time lookup inside the agent
+            responseSchema: MACRO_CAUSAL_SCHEMA,
+            temperature: 0.5,
             model: GEMINI_MODEL,
         });
     }
