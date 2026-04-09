@@ -334,3 +334,56 @@ export const SANITY_CHECK_SCHEMA = {
     },
     required: ["reasoning", "passes_sanity_check", "risk_score", "fatal_flaws", "counter_thesis"]
 };
+
+// ── Pre-Mortem Agent Schema (Decision Intel Port) ───────────────────────────
+
+export const PRE_MORTEM_SCHEMA = {
+    type: "object",
+    properties: {
+        reasoning: {
+            type: "string",
+            description: "Think step-by-step. Assume this trade loses money. Walk through the most likely failure paths: macro risks, company-specific events, technical breakdowns, timing issues, and thesis invalidation triggers."
+        },
+        scenarios: {
+            type: "array",
+            description: "Exactly 3 specific failure scenarios, ordered by probability (highest first).",
+            items: {
+                type: "object",
+                properties: {
+                    description: {
+                        type: "string",
+                        description: "Specific, concrete failure scenario (e.g., 'Fed raises rates unexpectedly, triggering sector-wide sell-off that drags this stock below stop loss')."
+                    },
+                    probability: {
+                        type: "integer",
+                        description: "0-100 probability this scenario occurs within the trade's timeframe."
+                    },
+                    severity: {
+                        type: "string",
+                        enum: ["mild", "moderate", "severe"],
+                        description: "mild = <5% loss, moderate = 5-15% loss, severe = >15% loss or thesis invalidation."
+                    },
+                    early_warning_sign: {
+                        type: "string",
+                        description: "Specific observable event that would confirm this failure is materializing (e.g., 'VIX spikes above 30' or 'Company files 8-K for executive departure')."
+                    }
+                },
+                required: ["description", "probability", "severity", "early_warning_sign"]
+            }
+        },
+        avg_failure_probability: {
+            type: "integer",
+            description: "Average probability across all 3 scenarios."
+        },
+        highest_risk_scenario: {
+            type: "string",
+            description: "The scenario description with the highest probability × severity."
+        },
+        resilience_rating: {
+            type: "string",
+            enum: ["fragile", "moderate", "resilient"],
+            description: "fragile = avg probability > 50 OR 2+ severe scenarios. moderate = avg 30-50 with 1 severe. resilient = avg < 30 and no severe scenarios."
+        }
+    },
+    required: ["reasoning", "scenarios", "avg_failure_probability", "highest_risk_scenario", "resilience_rating"]
+};

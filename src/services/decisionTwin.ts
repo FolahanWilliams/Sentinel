@@ -17,6 +17,7 @@
  */
 
 import { GeminiService } from './gemini';
+import { supabase } from '@/config/supabase';
 import { GEMINI_MODEL } from '@/config/constants';
 import {
     TWIN_UNANIMOUS_TAKE_BOOST,
@@ -33,6 +34,79 @@ import {
 import { DECISION_TWIN_SCHEMA } from './schemas';
 import type { PersonaVerdict, DecisionTwinResult } from '@/types/agents';
 import type { TASnapshot } from '@/types/signals';
+
+// ── Institutional Memory (Decision Intel Port) ──────────────────────────────
+
+interface InstitutionalMemory {
+    lessons: Array<{ severity: string; rule: string }>;
+    historicalWinRate: number | null;
+    warningCount: number;
+}
+
+/**
+ * Fetch lessons from the Reflection Agent and historical win rates
+ * for this signal type / sector / bias combination.
+ */
+async function fetchInstitutionalMemory(
+    signalType: string,
+    biasType: string,
+): Promise<InstitutionalMemory> {
+    try {
+        // Fetch reflection agent lessons from app_settings
+        const { data: settings } = await supabase
+            .from('app_settings' as any)
+            .select('value')
+            .eq('key', 'reflection_lessons')
+            .maybeSingle() as any;
+
+        let lessons: Array<{ severity: string; rule: string; bias_type?: string }> = [];
+        if (settings?.value?.lessons) {
+            const allLessons = settings.value.lessons as Array<{ severity: string; rule: string; bias_type?: string }>;
+            // Filter to relevant lessons (matching bias type or universal "all")
+            lessons = allLessons
+                .filter((l: any) => l.bias_type === biasType || l.bias_type === 'all' || l.severity === 'critical')
+                .slice(0, 5); // Cap at 5 most relevant
+        }
+
+        // Fetch win rate for this signal_type
+        const { data: outcomes } = await supabase
+            .from('signal_outcomes')
+            .select('outcome, signals!inner(signal_type)')
+            .neq('outcome', 'pending');
+
+        let winRate: number | null = null;
+        if (outcomes && outcomes.length > 0) {
+            const matching = outcomes.filter((o: any) => o.signals?.signal_type === signalType);
+            if (matching.length >= 3) {
+                const wins = matching.filter((o: any) => o.outcome === 'win').length;
+                winRate = Math.round((wins / matching.length) * 100);
+            }
+        }
+
+        return {
+            lessons: lessons.map(l => ({ severity: l.severity, rule: l.rule })),
+            historicalWinRate: winRate,
+            warningCount: lessons.filter(l => l.severity === 'critical' || l.severity === 'warning').length,
+        };
+    } catch (err) {
+        console.warn('[DecisionTwin] Institutional memory fetch failed (non-fatal):', err);
+        return { lessons: [], historicalWinRate: null, warningCount: 0 };
+    }
+}
+
+function formatInstitutionalMemory(memory: InstitutionalMemory): string {
+    if (memory.lessons.length === 0 && memory.historicalWinRate === null) return '';
+
+    let block = '\n\nINSTITUTIONAL MEMORY (learn from past mistakes):';
+    if (memory.historicalWinRate !== null) {
+        block += `\n- Historical win rate for this signal type: ${memory.historicalWinRate}%`;
+    }
+    for (const lesson of memory.lessons) {
+        block += `\n- [${lesson.severity.toUpperCase()}] ${lesson.rule}`;
+    }
+    block += '\nUse this memory to calibrate your verdict. If history shows poor performance for this pattern, be more skeptical.';
+    return block;
+}
 
 // ── Context passed to the simulation ─────────────────────────────────────────
 
@@ -253,6 +327,19 @@ export class DecisionTwinService {
         if (ctx.cascadingContext) {
             ctx = { ...ctx, reasoning: ctx.reasoning + ctx.cascadingContext };
         }
+
+        // Fetch institutional memory (non-blocking — fallback to empty if slow/fails)
+        let memoryBlock = '';
+        try {
+            const memory = await fetchInstitutionalMemory(
+                ctx.signalType || 'unknown',
+                (ctx as any).biasType || 'unknown',
+            );
+            memoryBlock = formatInstitutionalMemory(memory);
+            if (memoryBlock) {
+                ctx = { ...ctx, reasoning: ctx.reasoning + memoryBlock };
+            }
+        } catch { /* non-fatal */ }
 
         // Fire all 3 persona calls in parallel — allSettled so a single failure
         // falls back gracefully rather than rejecting the whole simulation

@@ -88,6 +88,21 @@ export interface AgentContext {
         summary: string;
     };
 
+    // Pre-Mortem output (Decision Intel — feeds into Noise Panel + Decision Twin)
+    preMortem?: {
+        scenarios: Array<{ description: string; probability: number; severity: string }>;
+        avgFailureProbability: number;
+        resilienceRating: string;
+        confidencePenalty: number;
+    };
+
+    // Toxic Combination output (Decision Intel — feeds into Self-Critique + Pre-Mortem)
+    toxicCombination?: {
+        patternsDetected: Array<{ name: string; biases: string[]; amplifiedRisk: number }>;
+        compoundRiskScore: number;
+        isToxic: boolean;
+    };
+
     // Market context
     regime?: string;
     fearGreedScore?: number;
@@ -219,6 +234,33 @@ export class AgentContextBus {
         };
     }
 
+    /** Store Pre-Mortem Agent output (Decision Intel) */
+    static setPreMortem(ctx: AgentContext, result: import('@/types/agents').PreMortemResult): void {
+        ctx.preMortem = {
+            scenarios: result.scenarios.map(s => ({
+                description: s.description,
+                probability: s.probability,
+                severity: s.severity,
+            })),
+            avgFailureProbability: result.avg_failure_probability,
+            resilienceRating: result.resilience_rating,
+            confidencePenalty: result.confidence_penalty,
+        };
+    }
+
+    /** Store Toxic Combination Detector output (Decision Intel) */
+    static setToxicCombination(ctx: AgentContext, result: import('@/types/agents').ToxicCombinationResult): void {
+        ctx.toxicCombination = {
+            patternsDetected: result.patterns_detected.map(p => ({
+                name: p.name,
+                biases: p.biases,
+                amplifiedRisk: p.amplified_risk,
+            })),
+            compoundRiskScore: result.compound_risk_score,
+            isToxic: result.is_toxic,
+        };
+    }
+
     /**
      * Build a condensed context string for injection into downstream agent prompts.
      * Each agent gets a summary of what upstream agents have found.
@@ -247,11 +289,23 @@ export class AgentContextBus {
             sections.push(rtLine);
         }
 
+        // Toxic Combination findings (available to Self-Critique and beyond)
+        if (ctx.toxicCombination && ctx.toxicCombination.isToxic && ['self_critique', 'pre_mortem', 'noise_panel', 'decision_twin', 'swot'].includes(forStage)) {
+            const patterns = ctx.toxicCombination.patternsDetected.map(p => `"${p.name}" (${p.biases.join('+')})`).join(', ');
+            sections.push(`Toxic Combinations DETECTED: ${patterns}. Compound risk: ${ctx.toxicCombination.compoundRiskScore}/100`);
+        }
+
         // Self-Critique findings (available to Noise Panel and beyond)
-        if (ctx.selfCritique && ['noise_panel', 'decision_twin', 'swot'].includes(forStage)) {
+        if (ctx.selfCritique && ['pre_mortem', 'noise_panel', 'decision_twin', 'swot'].includes(forStage)) {
             if (ctx.selfCritique.criticalFlaws.length > 0) {
                 sections.push(`Self-Critique flagged ${ctx.selfCritique.criticalFlaws.length} critical flaws: ${ctx.selfCritique.criticalFlaws.join('; ')}`);
             }
+        }
+
+        // Pre-Mortem findings (available to Noise Panel and beyond)
+        if (ctx.preMortem && ['noise_panel', 'decision_twin', 'swot'].includes(forStage)) {
+            const topScenario = ctx.preMortem.scenarios[0];
+            sections.push(`Pre-Mortem: resilience=${ctx.preMortem.resilienceRating}, avg failure prob=${ctx.preMortem.avgFailureProbability}%. Top risk: "${topScenario?.description?.slice(0, 150) || 'N/A'}"`);
         }
 
         // Noise Panel (available to Decision Twin and SWOT)
@@ -285,8 +339,10 @@ export class AgentContextBus {
         const stages: string[] = [];
         if (ctx.primaryAgent) stages.push(ctx.primaryAgent.name);
         if (ctx.biasDetective) stages.push('bias_detective');
+        if (ctx.toxicCombination) stages.push('toxic_combination');
         if (ctx.redTeam) stages.push('red_team');
         if (ctx.selfCritique) stages.push('self_critique');
+        if (ctx.preMortem) stages.push('pre_mortem');
         if (ctx.noisePanel) stages.push('noise_panel');
         if (ctx.decisionTwin) stages.push('decision_twin');
 
