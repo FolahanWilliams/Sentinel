@@ -31,7 +31,7 @@ export class RPDPatternMatcher {
         ticker: string,
         signalType: string,
         biasType: string,
-        sector: string,
+        _sector: string,
         regime: string | undefined,
         confidence: number,
     ): Promise<RPDMatchResult> {

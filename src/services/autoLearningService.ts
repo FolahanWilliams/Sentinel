@@ -463,6 +463,7 @@ Generate weight adjustments for each pipeline step. Focus on steps with enough d
                 if (stats.total < 3) continue; // Need minimum sample
 
                 const [bias1, bias2] = pair.split('+');
+                if (!bias1 || !bias2) continue;
                 const single1 = singleStats[bias1];
                 const single2 = singleStats[bias2];
                 if (!single1 || !single2) continue;

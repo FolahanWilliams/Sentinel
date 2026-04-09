@@ -677,7 +677,8 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                     // 6h. Peer strength
                                     PeerStrengthService.analyze(ev.ticker, priceDrop),
                                     // 6i. RPD Pattern Matcher (Decision Intel — Klein framework)
-                                    RPDPatternMatcher.match(ev.ticker, signalType, (analysis?.data as any)?.bias_type || 'recency_bias', tickersToScan.find(t => t.ticker === ev.ticker)?.sector || 'Unknown', regimeResult?.regime, 65),
+                                    // Uses defaults here since signalType/analysis aren't yet set; RPD adjustment runs later at step 7.10b
+                                    RPDPatternMatcher.match(ev.ticker, 'overreaction_drop', 'recency_bias', tickersToScan.find(t => t.ticker === ev.ticker)?.sector || 'Unknown', regimeResult?.regime, 65),
                                 ]);
 
                                 // Unpack RPD (6i)
@@ -993,7 +994,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             if (biasDetectiveOutput && biasDetectiveOutput.findings.length > 0) {
                                                 const toxicCtx: ToxicContextFlags = {
                                                     taAlignment: taAlignment,
-                                                    sourceCount: sourceDiversityResult?.sourceCount ?? undefined,
+                                                    sourceCount: undefined, // sourceDiversityResult computed later in pipeline
                                                     debtToEquity: fundamentalsData?.debt_to_equity ?? null,
                                                     profitMargin: fundamentalsData?.profit_margin ?? null,
                                                     regime: regimeResult?.regime,
