@@ -56,6 +56,9 @@ const TIER_2_FEEDS: Feed[] = [
     { name: 'Politico Tech', url: 'https://rss.politico.com/technology.xml', category: 'policy' },
     { name: 'CB Insights', url: 'https://www.cbinsights.com/research/feed/', category: 'startups' },
     { name: 'Dark Reading', url: 'https://www.darkreading.com/rss.xml', category: 'security' },
+    { name: 'This is Money', url: 'https://www.thisismoney.co.uk/money/markets/index.rss', category: 'markets' },
+    { name: 'Proactive Investors', url: 'https://www.proactiveinvestors.co.uk/companies/rss', category: 'markets' },
+    { name: 'Bank of England', url: 'https://www.bankofengland.co.uk/rss/news', category: 'macro' },
 ]
 
 const gnews = (query: string) => `https://news.google.com/rss/search?q=${query}&hl=en-US&gl=US&ceid=US:en`

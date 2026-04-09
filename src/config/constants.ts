@@ -33,6 +33,16 @@ export const CONFIDENCE_GATE_CATALYST = 65; // Initial gate for bullish catalyst
 export const CONFIDENCE_GATE_CONTAGION = 70; // Initial gate for contagion signal
 export const CONFIDENCE_GATE_CRITIQUE = 50; // Floor after self-critique pass
 export const CONFIDENCE_EXPIRY_THRESHOLD = 40; // Below this, signal is expired by decay
+// ===========================
+// SCREENER CONSTANTS
+// ===========================
+export const SCREENER_MIN_GAP_PCT = 4;
+export const SCREENER_MIN_VOLUME_MULT = 3;
+export const SCREENER_RSI_OVERSOLD = 25;
+export const SCREENER_RSI_OVERBOUGHT = 75;
+export const SCREENER_MIN_DOLLAR_VOLUME = 5_000_000;
+export const SCREENER_MAX_CANDIDATES = 15;
+export const SCREENER_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour
 
 // ===========================
 // SECTOR ROTATION OVERLAY

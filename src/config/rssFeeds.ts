@@ -79,6 +79,25 @@ export const RSS_FEEDS: RSSFeedConfig[] = [
     { name: 'Earnings Whispers', url: 'https://www.earningswhispers.com/rss', category: 'earnings', priority: 'high' },
     // Zacks feed is 404 — replaced with Nasdaq earnings news
     { name: 'Nasdaq Earnings', url: 'https://www.nasdaq.com/feed/rssoutbound?category=Earnings', category: 'earnings', priority: 'medium' },
+    
+    // === UK Markets ===
+    { name: 'This is Money', url: 'https://www.thisismoney.co.uk/money/markets/index.rss', category: 'uk_markets', priority: 'high' },
+    { name: 'Proactive Investors UK', url: 'https://www.proactiveinvestors.co.uk/companies/rss', category: 'uk_markets', priority: 'high' },
+    { name: 'ShareCast', url: 'https://www.sharecast.com/rss/news/shares', category: 'uk_markets', priority: 'high' },
+    { name: 'City AM Markets', url: 'https://www.cityam.com/feed/', category: 'uk_markets', priority: 'medium' },
+    { name: 'Investors Chronicle', url: 'https://www.investorschronicle.co.uk/rss', category: 'uk_markets', priority: 'high' },
+    { name: 'London South East', url: 'https://www.lse.co.uk/rss/ShareNews.xml', category: 'uk_markets', priority: 'medium' },
+    { name: 'AJ Bell Shares Mag', url: 'https://www.sharesmagazine.co.uk/rss', category: 'uk_markets', priority: 'medium' },
+
+    // === UK Macro ===
+    { name: 'Bank of England', url: 'https://www.bankofengland.co.uk/rss/news', category: 'macro', priority: 'high' },
+    { name: 'FCA News', url: 'https://www.fca.org.uk/news/rss.xml', category: 'regulatory', priority: 'medium' },
+    { name: 'ONS Releases', url: 'https://www.ons.gov.uk/rss', category: 'macro', priority: 'medium' },
+
+    // === SEC Enhanced ===
+    { name: 'SEC Form 4 Insider', url: 'https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=4&dateb=&owner=include&count=20&search_text=&action=getcurrent&output=atom', category: 'regulatory', priority: 'high' },
+    { name: 'SEC 13F Institutional', url: 'https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=13F&dateb=&owner=include&count=10&search_text=&action=getcurrent&output=atom', category: 'regulatory', priority: 'medium' },
+    { name: 'SEC Press Releases', url: 'https://www.sec.gov/news/pressreleases.rss', category: 'regulatory', priority: 'medium' },
 ];
 
 export const RSS_CATEGORIES = [
@@ -94,6 +113,7 @@ export const RSS_CATEGORIES = [
     'regulatory',
     'earnings',
     'retail_sentiment',
+    'uk_markets',
 ] as const;
 
 export type RSSCategory = (typeof RSS_CATEGORIES)[number];

@@ -57,7 +57,8 @@ import { ToxicCombinationDetector, type ToxicContextFlags } from './toxicCombina
 import { RPDPatternMatcher } from './rpdPatternMatcher';
 import { BeneficialPatternDetector, type BeneficialContext } from './beneficialPatternDetector';
 import { DecisionQualityIndex, type DQIInputs } from './decisionQualityIndex';
-import { DEFAULT_MIN_CONFIDENCE, DEFAULT_MIN_PRICE_RISE_PCT, CONFIDENCE_GATE_OVERREACTION, CONFIDENCE_GATE_CATALYST, CONFIDENCE_GATE_CONTAGION, CONFIDENCE_GATE_CRITIQUE, CONFIDENCE_FLOOR, CONFIDENCE_CEILING, MAX_CUMULATIVE_PENALTY, MAX_CUMULATIVE_BOOST, SWOT_WEAKNESS_IMBALANCE_PENALTY, SWOT_SEVERE_IMBALANCE_PENALTY, ROTATION_FAVORED_SECTOR_BOOST, ROTATION_DISFAVORED_SECTOR_PENALTY, ROTATION_HEADWIND_PENALTY, SEVERITY_THRESHOLD, DQI_MINIMUM_THRESHOLD } from '@/config/constants';
+import { MarketWideScreener } from './marketWideScreener';
+import { DEFAULT_MIN_CONFIDENCE, DEFAULT_MIN_PRICE_RISE_PCT, CONFIDENCE_GATE_OVERREACTION, CONFIDENCE_GATE_CATALYST, CONFIDENCE_GATE_CONTAGION, CONFIDENCE_GATE_CRITIQUE, CONFIDENCE_FLOOR, CONFIDENCE_CEILING, MAX_CUMULATIVE_PENALTY, MAX_CUMULATIVE_BOOST, SWOT_WEAKNESS_IMBALANCE_PENALTY, SWOT_SEVERE_IMBALANCE_PENALTY, ROTATION_FAVORED_SECTOR_BOOST, ROTATION_DISFAVORED_SECTOR_PENALTY, ROTATION_HEADWIND_PENALTY, SEVERITY_THRESHOLD, DQI_MINIMUM_THRESHOLD, SCREENER_MIN_DOLLAR_VOLUME } from '@/config/constants';
 import {
     FEAR_GREED_EXTREME_FEAR_THRESHOLD, FEAR_GREED_FEAR_THRESHOLD,
     FEAR_GREED_EXTREME_GREED_THRESHOLD, FEAR_GREED_GREED_THRESHOLD,
@@ -204,11 +205,36 @@ export class ScannerService {
         }));
     }
 
+    static getScanPhase(): 'pre_market' | 'market_open' | 'midday' | 'power_hour' | 'after_hours' | 'overnight' {
+        const etTime = new Date().toLocaleString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: 'numeric', hour12: false });
+        const parts = etTime.split(':');
+        const hourStr = parts[0] ?? '0';
+        const minuteStr = parts[1] ?? '0';
+        const hour = parseInt(hourStr, 10);
+        const minute = parseInt(minuteStr, 10);
+        const timeVal = hour + minute / 60.0;
+        
+        if (timeVal >= 4 && timeVal < 9.5) return 'pre_market';
+        if (timeVal >= 9.5 && timeVal < 10.5) return 'market_open';
+        if (timeVal >= 10.5 && timeVal < 14.5) return 'midday';
+        if (timeVal >= 14.5 && timeVal < 16) return 'power_hour';
+        if (timeVal >= 16 && timeVal < 20) return 'after_hours';
+        return 'overnight';
+    }
+
+    /**
+     * Run the screener subset of the scan pipeline.
+     */
+    static async runScreenerScan() {
+        return this.runScan('screener');
+    }
+
     /**
      * Run the master scan.
      */
-    static async runScan(scanType: 'full' | 'fast' = 'full') {
+    static async runScan(scanType: 'full' | 'fast' | 'screener' = 'full') {
         const startTime = Date.now();
+        const currentScanPhase = this.getScanPhase();
         let eventsFound = 0;
         let signalsGenerated = 0;
         const skippedTickers: string[] = [];
@@ -226,8 +252,9 @@ export class ScannerService {
                     tickers_scanned: 0,
                     events_detected: 0,
                     signals_generated: 0,
-                    estimated_cost_usd: 0
-                })
+                    estimated_cost_usd: 0,
+                    scan_phase: currentScanPhase
+                } as any)
                 .select('id')
                 .single();
 
@@ -258,20 +285,35 @@ export class ScannerService {
                 return { success: true, summary: 'Scan skipped: daily budget exceeded.' };
             }
 
-            // 3. Sync RSS Feeds + Google News via Gemini (Feed the beast)
-            // Moved AFTER budget gate to prevent spending quota when over budget
-            await RSSReaderService.syncAllFeeds();
+            let tickers: string[] = [];
+            let tickersToScan: any[] = [];
+            const extraction: { success: boolean; data: { events: any[] } | null } = { success: true, data: { events: [] } };
+            const actionableArticles: any[] = [];
+            
+            if (scanType === 'screener') {
+                const anomalies = await MarketWideScreener.runScreener();
+                if (anomalies.length === 0) {
+                    return { success: true, summary: 'Scan completed: No anomalies found.' };
+                }
+                tickers = anomalies.map(a => a.ticker);
+                tickersToScan = anomalies.map(a => ({ ticker: a.ticker }));
+                extraction.data!.events = anomalies;
+            } else {
+                // 3. Sync RSS Feeds + Google News via Gemini (Feed the beast)
+                // Moved AFTER budget gate to prevent spending quota when over budget
+                await RSSReaderService.syncAllFeeds();
 
-            // Smart Scan Prioritization — rank tickers by urgency
-            const prioritized = await this.prioritizeTickers(watchlist);
-            const maxTickers = scanType === 'fast' ? Math.min(5, prioritized.length) : prioritized.length;
-            const tickersToScan = prioritized.slice(0, maxTickers);
-            const tickers = tickersToScan.map(w => w.ticker);
+                // Smart Scan Prioritization — rank tickers by urgency
+                const prioritized = await this.prioritizeTickers(watchlist);
+                const maxTickers = scanType === 'fast' ? Math.min(5, prioritized.length) : prioritized.length;
+                tickersToScan = prioritized.slice(0, maxTickers);
+                tickers = tickersToScan.map(w => w.ticker);
 
-            console.log(`[Scanner] Prioritized ${tickers.length} tickers:`, tickersToScan.map(t => {
-                const src = t.prioritySources.length > 0 ? ` [${t.prioritySources.join(', ')}]` : '';
-                return `${t.ticker}(${t.priority}${src})`;
-            }).join(', '));
+                console.log(`[Scanner] Prioritized ${tickers.length} tickers:`, tickersToScan.map(t => {
+                    const src = t.prioritySources && t.prioritySources.length > 0 ? ` [${t.prioritySources.join(', ')}]` : '';
+                    return `${t.ticker}(${t.priority || 0}${src})`;
+                }).join(', '));
+            }
 
             // 3a–3g. Build scan context (external sentiment, regime, thresholds, etc.)
             await fetchExternalSentiment(tickers);
@@ -293,10 +335,8 @@ export class ScannerService {
 
             // 5. Extract Events via Gemini Fast-Pass
             // Always initialize extraction so grounded search + earnings calendar can inject events
-            const extraction: { success: boolean; data: { events: any[] } | null } = { success: true, data: { events: [] } };
-            const actionableArticles: any[] = [];
 
-            if (freshArticles && freshArticles.length > 0) {
+            if (scanType !== 'screener' && freshArticles && freshArticles.length > 0) {
                 // A. Semantic Deduplication (TF-IDF cosine similarity — replaces Jaccard)
                 const articlesWithDefaults = freshArticles.map(a => ({
                     ...a,
@@ -338,7 +378,7 @@ export class ScannerService {
 
             // From here on, grounded search + earnings calendar + event processing run
             // regardless of whether RSS articles were available.
-            {
+            if (scanType !== 'screener') {
                 // 5b. Per-Ticker Grounded Search — supplement RSS with Gemini Google Search
                 // This ensures we always have fresh context, even when RSS lacks ticker-specific news.
                 console.log(`[Scanner] Running per-ticker grounded search for ${tickers.length} tickers...`);
@@ -637,6 +677,14 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                 // Skip ticker if no real price data available
                                 if (!quote?.price) {
                                     console.warn(`[Scanner] Skipping ${ev.ticker} — no live quote available (data_quality: no_quote)`);
+                                    skippedTickers.push(ev.ticker);
+                                    continue;
+                                }
+
+                                // Feature 9: Minimum Liquidity Gate
+                                const dollarVol = quote.price * (quote.volume || quote.avgVolume || 0);
+                                if (dollarVol > 0 && dollarVol < SCREENER_MIN_DOLLAR_VOLUME) {
+                                    console.warn(`[Scanner] Liquidity gate rejected ${ev.ticker}: $${dollarVol.toLocaleString()} < $${SCREENER_MIN_DOLLAR_VOLUME.toLocaleString()}`);
                                     skippedTickers.push(ev.ticker);
                                     continue;
                                 }
@@ -1758,7 +1806,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             projected_win_rate: projectedWinRate,
                                             similar_events_count: similarEventsCount,
                                             data_quality: 'full',
-                                            agent_outputs: {
+                                            agent_outputs: { scan_phase: currentScanPhase,
                                                 overreaction: catalystAgentUsed ? undefined : analysis.data,
                                                 bullish_catalyst: catalystAgentUsed ? analysis.data as any : undefined,
                                                 red_team: sanity.data,
@@ -1989,7 +2037,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             if (savedSignal) {
                                                 const existingOutputs = (savedSignal.agent_outputs as unknown as AgentOutputsJson) || {};
                                                 await supabase.from('signals').update({
-                                                    agent_outputs: {
+                                                    agent_outputs: { scan_phase: currentScanPhase,
                                                         ...existingOutputs,
                                                         position_sizing: {
                                                             recommended_pct: sizing.recommendedPct,
@@ -2103,7 +2151,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                                 target_price: contagion.data.target_price,
                                                                 confluence_score: contagionConfluence.score,
                                                                 confluence_level: contagionConfluence.level,
-                                                                agent_outputs: {
+                                                                agent_outputs: { scan_phase: currentScanPhase,
                                                                     contagion: contagion.data,
                                                                     red_team: contagionSanity.data,
                                                                     epicenter: { ticker: ev.ticker, headline: ev.headline }

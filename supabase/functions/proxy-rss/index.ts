@@ -25,7 +25,10 @@ const ALLOWED_DOMAINS = new Set([
   'www.securityweek.com', 'www.pymnts.com',
   'www.calculatedriskblog.com', 'wolfstreet.com',
   'www.fool.com',
-  'www.earningswhispers.com', 'www.nasdaq.com'
+  'www.earningswhispers.com', 'www.nasdaq.com',
+  'www.thisismoney.co.uk', 'www.proactiveinvestors.co.uk', 'www.sharecast.com',
+  'www.cityam.com', 'www.investorschronicle.co.uk', 'www.lse.co.uk',
+  'www.sharesmagazine.co.uk', 'www.bankofengland.co.uk', 'www.fca.org.uk', 'www.ons.gov.uk'
 ])
 
 function isAllowedUrl(urlString: string): boolean {
