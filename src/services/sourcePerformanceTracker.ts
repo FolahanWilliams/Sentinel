@@ -28,12 +28,13 @@ export class SourcePerformanceTracker {
     /**
      * Called when an outcome is resolved as profitable/unprofitable.
      */
-    static async recordSignalSource(ticker: string, sourceUrl: string, isWinner: boolean): Promise<void> {
+    static async recordSignalSource(_ticker: string, sourceUrl: string, isWinner: boolean): Promise<void> {
         const domain = this.getDomain(sourceUrl);
         
         try {
+            const db = supabase as any;
             // First select the existing stats
-            const { data: existing } = await supabase
+            const { data: existing } = await db
                 .from('source_performance')
                 .select('*')
                 .eq('domain', domain)
@@ -43,7 +44,7 @@ export class SourcePerformanceTracker {
                 const total = existing.total_signals + 1;
                 const wins = existing.winning_signals + (isWinner ? 1 : 0);
                 
-                await supabase
+                await db
                     .from('source_performance')
                     .update({
                         total_signals: total,
@@ -53,7 +54,7 @@ export class SourcePerformanceTracker {
                     })
                     .eq('domain', domain);
             } else {
-                await supabase
+                await db
                     .from('source_performance')
                     .insert({
                         domain,
@@ -75,7 +76,8 @@ export class SourcePerformanceTracker {
         const domain = this.getDomain(sourceUrl);
         
         try {
-            const { data } = await supabase
+            const db = supabase as any;
+            const { data } = await db
                 .from('source_performance')
                 .select('win_rate, total_signals')
                 .eq('domain', domain)

@@ -123,7 +123,7 @@ Write the post-mortem analysis.`;
 
         const { error } = await supabase
             .from('positions')
-            .update({ notes: updatedNotes } as Record<string, unknown>)
+            .update({ notes: updatedNotes } as any)
             .eq('id', positionId);
 
         if (error) {

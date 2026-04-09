@@ -29,7 +29,7 @@ interface ActiveSignalRow {
 }
 
 /** Partial update shape for the signals table (includes JSONB columns) */
-type SignalUpdate = Record<string, unknown>;
+type SignalUpdate = any;
 
 export interface ReEvalResult {
     signalId: string;

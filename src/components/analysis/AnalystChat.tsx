@@ -960,7 +960,7 @@ function AnalystChatInner() {
                     }
 
                     const { error } = await supabase.from('positions')
-                        .update(updateData)
+                        .update(updateData as any)
                         .eq('ticker', updateTicker)
                         .eq('status', 'open');
 

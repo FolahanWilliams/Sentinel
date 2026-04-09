@@ -130,7 +130,7 @@ export class OutcomeTracker {
 
                     await supabase
                         .from('signal_outcomes')
-                        .update(updates)
+                        .update(updates as any)
                         .eq('id', outcome.id);
 
                     // Update outcome_status on the parent signal

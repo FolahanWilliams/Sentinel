@@ -1784,7 +1784,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             }
                                         } catch { /* non-fatal */ }
 
-                                        const { data: savedSignal, error: signalInsertErr } = await supabase.from('signals').insert({
+                                        const { data: savedSignal, error: signalInsertErr } = await (supabase as any).from('signals').insert({
                                             ticker: ev.ticker,
                                             signal_type: signalType,
                                             confidence_score: analysis.data.confidence_score,
