@@ -2648,8 +2648,9 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
 
             // 11e. Signal Decay — set regime for adaptive decay
             try {
-                if (regimeResult?.regime) {
-                    SignalDecayEngine.setRegime(regimeResult.regime);
+                const currentRegime = regimeResult?.regime;
+                if (currentRegime) {
+                    (SignalDecayEngine as any).setRegime(currentRegime);
                 }
             } catch { /* non-fatal */ }
 
@@ -3080,7 +3081,7 @@ You MUST respond with ONLY a JSON object — no markdown, no commentary, no code
                 let parsed: any;
                 try {
                     parsed = JSON.parse(jsonText);
-                } catch (parseErr) {
+                } catch {
                     // Fallback: try to extract individual ticker objects via regex
                     console.warn('[Scanner] JSON parse failed, attempting regex extraction from:', rawText.substring(0, 200));
                     const tickerMatches = rawText.matchAll(/"ticker"\s*:\s*"([^"]+)"[\s\S]*?"reason"\s*:\s*"([^"]+)"[\s\S]*?"catalyst"\s*:\s*"([^"]+)"/g);

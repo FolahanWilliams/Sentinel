@@ -100,12 +100,10 @@ export class ConvictionGuardrails {
             // Calculate category exposure
             let cyclicalExposure = 0;
             let lowMoatExposure = 0;
-            let totalExposure = 0;
 
             for (const pos of positions) {
                 const sizeUsd = (pos as any).position_size_usd || 0;
                 const signal = (pos as any).signals;
-                totalExposure += sizeUsd;
 
                 if (signal?.lynch_category === 'cyclical') {
                     cyclicalExposure += sizeUsd;

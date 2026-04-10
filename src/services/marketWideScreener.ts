@@ -82,7 +82,7 @@ export class MarketWideScreener {
                 try {
                     const ta: any = await TechnicalAnalysisService.getSnapshot(ticker);
                     rsi = ta?.rsi || ta?.indicators?.rsi;
-                } catch (e) {
+                } catch {
                     // Ignore TA fetch errors
                 }
             }
@@ -113,8 +113,8 @@ export class MarketWideScreener {
                 metrics: { gapPct, volumeMult, rsi },
                 severity: Math.min(severityLevel, 5) // Cap at 5
             };
-        } catch (e) {
-            console.warn(`[Screener] Failed to analyze ${ticker}:`, e);
+        } catch {
+            console.warn(`[Screener] Failed to analyze ${ticker}:`);
             return null;
         }
     }

@@ -170,6 +170,7 @@ export class MarketRegimeFilter {
             spyChangeWeek: spyWeekly,
             confidencePenalty: penalty,
             reason,
+        };
     }
 
     /**

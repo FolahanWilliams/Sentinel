@@ -95,7 +95,7 @@ export class SourcePerformanceTracker {
             }
 
             return 1.0;
-        } catch (err) {
+        } catch {
             return 1.0;
         }
     }

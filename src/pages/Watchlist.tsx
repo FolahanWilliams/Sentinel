@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
 import { ListPlus, Trash2, ShieldAlert, Zap, ArrowRight, TrendingUp, TrendingDown } from 'lucide-react';
@@ -30,37 +30,7 @@ export function Watchlist() {
     const [ticker, setTicker] = useState('');
     const [sector, setSector] = useState('');
 
-    useEffect(() => {
-        fetchWatchlist();
-    }, []);
-
-    async function fetchWatchlist() {
-        setLoading(true);
-        const { data } = await supabase
-            .from('watchlist')
-            .select('*')
-            .order('added_at', { ascending: false });
-
-        if (data) {
-            setWatchlist(data);
-            // Fetch quotes for the active tickers
-            const activeTickers = data.filter(w => w.is_active).map(w => w.ticker);
-            if (activeTickers.length > 0) {
-                try {
-                    const bulkQuotes = await MarketDataService.getQuotesBulk(activeTickers);
-                    setQuotes(bulkQuotes);
-                } catch (e) {
-                    console.warn('Market data fetch failed on watchlist load', e);
-                }
-
-                // Phase 3: Fetch strategy signals for active tickers (async, non-blocking)
-                fetchStrategySignals(activeTickers);
-            }
-        }
-        setLoading(false);
-    }
-
-    async function fetchStrategySignals(tickers: string[]) {
+    const fetchStrategySignals = useCallback(async (tickers: string[]) => {
         // Mark all as loading
         const loadingState: Record<string, TickerStrategySignal> = {};
         tickers.forEach(t => {
@@ -98,7 +68,37 @@ export function Watchlist() {
                 })
             );
         }
-    }
+    }, []);
+
+    const fetchWatchlist = useCallback(async () => {
+        setLoading(true);
+        const { data } = await supabase
+            .from('watchlist')
+            .select('*')
+            .order('added_at', { ascending: false });
+
+        if (data) {
+            setWatchlist(data);
+            // Fetch quotes for the active tickers
+            const activeTickers = data.filter(w => w.is_active).map(w => w.ticker);
+            if (activeTickers.length > 0) {
+                try {
+                    const bulkQuotes = await MarketDataService.getQuotesBulk(activeTickers);
+                    setQuotes(bulkQuotes);
+                } catch (e) {
+                    console.warn('Market data fetch failed on watchlist load', e);
+                }
+
+                // Phase 3: Fetch strategy signals for active tickers (async, non-blocking)
+                fetchStrategySignals(activeTickers);
+            }
+        }
+        setLoading(false);
+    }, [fetchStrategySignals]);
+
+    useEffect(() => {
+        fetchWatchlist();
+    }, [fetchWatchlist]);
 
     async function handleAdd(e: React.FormEvent) {
         e.preventDefault();
