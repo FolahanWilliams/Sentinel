@@ -18,6 +18,12 @@ export interface GeminiRequest {
     model?: string;
     temperature?: number; // Per-request temperature (0.0-2.0, default 0.2)
     enableThinking?: boolean; // Enable Gemini's native thinking mode for deeper reasoning
+    /**
+     * When true, MASTER_SYSTEM_PROMPT is NOT prepended to systemInstruction.
+     * Use for lightweight utility calls (classification, extraction) where the
+     * trading-persona framing wastes tokens and is irrelevant.
+     */
+    skipMasterPrompt?: boolean;
 }
 
 export class GeminiService {
@@ -43,12 +49,17 @@ export class GeminiService {
         const modelToUse = req.model ?? GEMINI_MODEL;
         try {
             // 1. Prepare payload
+            // skipMasterPrompt: omit the ~100-token MASTER_SYSTEM_PROMPT for utility
+            // calls (classification, extraction) that don't need the trading persona.
+            const effectiveSystemInstruction = req.skipMasterPrompt
+                ? (req.systemInstruction ?? '')
+                : (req.systemInstruction
+                    ? `${MASTER_SYSTEM_PROMPT}\n\n${req.systemInstruction}`
+                    : MASTER_SYSTEM_PROMPT);
             const payload: any = {
                 model: modelToUse,
                 prompt: req.prompt,
-                systemInstruction: req.systemInstruction
-                    ? `${MASTER_SYSTEM_PROMPT}\n\n${req.systemInstruction}`
-                    : MASTER_SYSTEM_PROMPT,
+                systemInstruction: effectiveSystemInstruction,
                 requireGroundedSearch: req.requireGroundedSearch ?? false,
                 responseSchema: req.responseSchema,
                 temperature: req.temperature,
@@ -160,12 +171,15 @@ export class GeminiService {
 
         const modelToUse = req.model ?? GEMINI_MODEL;
         try {
+            const streamSystemInstruction = req.skipMasterPrompt
+                ? (req.systemInstruction ?? '')
+                : (req.systemInstruction
+                    ? `${MASTER_SYSTEM_PROMPT}\n\n${req.systemInstruction}`
+                    : MASTER_SYSTEM_PROMPT);
             const payload: any = {
                 model: modelToUse,
                 prompt: req.prompt,
-                systemInstruction: req.systemInstruction
-                    ? `${MASTER_SYSTEM_PROMPT}\n\n${req.systemInstruction}`
-                    : MASTER_SYSTEM_PROMPT,
+                systemInstruction: streamSystemInstruction,
                 requireGroundedSearch: req.requireGroundedSearch ?? false,
                 temperature: req.temperature,
                 enableThinking: req.enableThinking ?? false,

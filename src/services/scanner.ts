@@ -76,6 +76,14 @@ import type { AgentOutputsJson, LynchCategory } from '@/types/signals';
 import type { Json } from '@/types/database';
 import type { Quote } from '@/types/market';
 
+// ---------------------------------------------------------------------------
+// In-memory TTL cache for discoverTrendingTickers
+// Grounded search calls are the most expensive ($0.50/M output tokens).
+// Caching for 30 minutes avoids redundant discovery within the same session.
+// ---------------------------------------------------------------------------
+const DISCOVERY_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+let _discoveryCache: { result: { ticker: string; reason: string; catalyst: string }[]; expiresAt: number } | null = null;
+
 /**
  * Clamp confidence within bounds, respecting cumulative adjustment limits.
  * Returns the clamped confidence and the updated cumulative penalty/boost.
@@ -3162,6 +3170,12 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
      * Returns up to `count` tickers with context on why each was flagged.
      */
     static async discoverTrendingTickers(count: number = 5): Promise<{ ticker: string; reason: string; catalyst: string }[]> {
+        // Return cached result if still fresh (avoids expensive grounded search calls)
+        if (_discoveryCache && Date.now() < _discoveryCache.expiresAt) {
+            console.log(`[Scanner] discoverTrendingTickers: returning cached result (${_discoveryCache.result.length} tickers, expires in ${Math.round((_discoveryCache.expiresAt - Date.now()) / 1000)}s)`);
+            return _discoveryCache.result.slice(0, count);
+        }
+
         console.log(`[Scanner] Discovering ${count} trending tickers via AI...`);
 
         try {
@@ -3227,6 +3241,10 @@ You MUST respond with ONLY a JSON object — no markdown, no commentary, no code
                 });
 
                 console.log(`[Scanner] Discovered ${discovered.length} trending tickers:`, discovered.map((d: any) => `${d.ticker} (${d.catalyst})`).join(', '));
+                // Populate cache so subsequent calls within the TTL window skip this expensive grounded search
+                if (discovered.length > 0) {
+                    _discoveryCache = { result: discovered, expiresAt: Date.now() + DISCOVERY_CACHE_TTL_MS };
+                }
                 return discovered;
             }
 
