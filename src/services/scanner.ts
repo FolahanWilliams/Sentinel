@@ -1095,10 +1095,14 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
 
                                         // Reduce confidence if TA conflicts
                                         if (taAlignment === 'conflicting') {
-                                            analysis.data.confidence_score = Math.max(0, analysis.data.confidence_score - 20);
+                                            const taBefore = analysis.data.confidence_score;
+                                            analysis.data.confidence_score = Math.max(0, taBefore - 20);
                                             console.log(`[Scanner] TA conflicting for ${ev.ticker} — confidence reduced to ${analysis.data.confidence_score}`);
+                                            AgentContextBus.recordAdjustment(agentCtx, 'ta_alignment', taBefore, analysis.data.confidence_score, 'ta_conflicting');
                                         } else if (taAlignment === 'partial') {
-                                            analysis.data.confidence_score = Math.max(0, analysis.data.confidence_score - 10);
+                                            const taBefore = analysis.data.confidence_score;
+                                            analysis.data.confidence_score = Math.max(0, taBefore - 10);
+                                            AgentContextBus.recordAdjustment(agentCtx, 'ta_alignment', taBefore, analysis.data.confidence_score, 'ta_partial');
                                         }
                                     } catch (taErr) {
                                         console.warn(`[Scanner] TA fetch failed for ${ev.ticker}, proceeding without TA:`, taErr);
@@ -1359,6 +1363,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             analysis.data.confidence_score = bounded.confidence;
                                             cumulativePenalty = bounded.cumulativePenalty;
                                             cumulativeBoost = bounded.cumulativeBoost;
+                                            AgentContextBus.recordAdjustment(agentCtx, 'sentiment_divergence', before, analysis.data.confidence_score, divergenceResult.divergenceType);
                                             console.log(`[Scanner] Divergence ${divergenceResult.divergenceType} adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${weightedDivBoost > 0 ? '+' : ''}${weightedDivBoost})`);
                                         }
 
@@ -1369,6 +1374,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             analysis.data.confidence_score = bounded.confidence;
                                             cumulativePenalty = bounded.cumulativePenalty;
                                             cumulativeBoost = bounded.cumulativeBoost;
+                                            AgentContextBus.recordAdjustment(agentCtx, 'earnings_guard', before, analysis.data.confidence_score, earningsGuardResult.reason || 'earnings proximity');
                                             console.log(`[Scanner] Earnings guard adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${earningsGuardResult.confidencePenalty})`);
                                         }
 
@@ -1390,6 +1396,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                 analysis.data.confidence_score = bounded.confidence;
                                                 cumulativePenalty = bounded.cumulativePenalty;
                                                 cumulativeBoost = bounded.cumulativeBoost;
+                                                AgentContextBus.recordAdjustment(agentCtx, 'fundamentals', before, analysis.data.confidence_score, `penalty=${fundPenalty}`);
                                                 console.log(`[Scanner] Fundamentals penalty for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${fundPenalty})`);
                                             }
                                         }
@@ -1401,6 +1408,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             analysis.data.confidence_score = bounded.confidence;
                                             cumulativePenalty = bounded.cumulativePenalty;
                                             cumulativeBoost = bounded.cumulativeBoost;
+                                            AgentContextBus.recordAdjustment(agentCtx, 'market_regime', before, analysis.data.confidence_score, regimeResult.regime);
                                             console.log(`[Scanner] Market regime (${regimeResult.regime}) adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${regimeResult.confidencePenalty})`);
                                         }
 
@@ -1468,6 +1476,10 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                 cumulativePenalty = bounded.cumulativePenalty;
                                                 cumulativeBoost = bounded.cumulativeBoost;
                                                 console.log(`[Scanner] Backtest adjusted confidence for ${ev.ticker}: ${before} → ${analysis.data.confidence_score} (${backtestResult.confidencePenalty})`);
+                                                AgentContextBus.recordAdjustment(agentCtx, 'backtest_validation', before, analysis.data.confidence_score, backtestResult.reason);
+                                            }
+                                            if (backtestResult.degradingEdge) {
+                                                console.warn(`[Scanner] DEGRADING EDGE for ${ev.ticker}: recent win rate (${((backtestResult.recencyWeightedWinRate ?? 0) * 100).toFixed(0)}%) significantly below historical (${((backtestResult.signalTypeWinRate ?? 0) * 100).toFixed(0)}%)`);
                                             }
                                         } catch { /* non-fatal */ }
 
@@ -2022,6 +2034,8 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                     ticker_win_rate: backtestResult.tickerWinRate,
                                                     ticker_consecutive_losses: backtestResult.tickerConsecutiveLosses,
                                                     penalty: backtestResult.confidencePenalty,
+                                                    recency_weighted_win_rate: backtestResult.recencyWeightedWinRate,
+                                                    degrading_edge: backtestResult.degradingEdge,
                                                 } : null,
                                                 multi_timeframe: mtfResult ? {
                                                     weekly_trend: mtfResult.weeklyTrend,
