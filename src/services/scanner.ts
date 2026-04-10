@@ -14,6 +14,7 @@ import { supabase } from '@/config/supabase';
 import { MarketDataService } from './marketData';
 import { AgentService, type MarketContext, type PriorAgentContext } from './agents';
 import { GeminiService } from './gemini';
+import { AlpacaService } from './alpaca';
 import { NotificationService } from './notifications';
 import { RSSReaderService } from './rssReader';
 import { OutcomeTracker } from './outcomeTracker';
@@ -2056,6 +2057,20 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                         },
                                                     } as any,
                                                 }).eq('id', savedSignal.id);
+
+                                                // SECURE PAPER TRADE EXECUTION 
+                                                // Trigger auto-execution if conviction and calibration thresholds are met
+                                                if ((calibratedConfidence ?? 0) >= 85 && sizing.shares && sizing.shares > 0) {
+                                                    console.log(`[Scanner] Auto-executing Alpaca bracket order for ${sizing.shares}x ${ev.ticker} (Confidence: ${calibratedConfidence})`);
+                                                    await AlpacaService.submitBracketOrder(
+                                                        ev.ticker,
+                                                        sizing.shares,
+                                                        'buy',
+                                                        entryPrice,
+                                                        analysis.data.target_price,
+                                                        sizing.stopLoss || stopLoss
+                                                    );
+                                                }
                                             }
                                         } catch { /* non-fatal */ }
                                     }
