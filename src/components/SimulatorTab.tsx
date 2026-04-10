@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
-import { Play, History, Brain, CheckCircle, AlertTriangle, TrendingUp, TrendingDown } from 'lucide-react';
-import { HistoricalSimulationService, GOLDEN_SCENARIOS } from '@/services/historicalSimulation';
+import { useState } from 'react';
+import { Play, History, Brain, CheckCircle, TrendingUp, TrendingDown } from 'lucide-react';
+import { HistoricalSimulationService, MASTER_SCENARIOS } from '@/services/historicalSimulation';
 import { AutoLearningService } from '@/services/autoLearningService';
+import type { SimulationScenario } from '@/services/historicalScenarios';
 
 export function SimulatorTab() {
     const [results, setResults] = useState<any[]>([]);
@@ -26,7 +27,7 @@ export function SimulatorTab() {
         setIsRunning(true);
         setLearningStatus('Training agents on Golden Dataset...');
         try {
-            for (const s of GOLDEN_SCENARIOS) {
+            for (const s of MASTER_SCENARIOS) {
                 const res = await HistoricalSimulationService.runScenario(s.id);
                 if (res) setResults(prev => [res, ...prev]);
             }
@@ -71,7 +72,7 @@ export function SimulatorTab() {
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {GOLDEN_SCENARIOS.map(scenario => (
+                {MASTER_SCENARIOS.map((scenario: SimulationScenario) => (
                     <div key={scenario.id} className="p-5 bg-slate-800/40 rounded-xl border border-slate-700/50 hover:border-indigo-500/50 transition-colors group">
                         <div className="flex justify-between items-start mb-3">
                             <div>

@@ -4,6 +4,7 @@ import { AgentService } from './agents';
 import { AutoLearningService } from './autoLearningService';
 import { MarketRegimeFilter } from './marketRegime';
 import { MASTER_SCENARIOS } from './historicalScenarios';
+export { MASTER_SCENARIOS };
 
 export class HistoricalSimulationService {
     
