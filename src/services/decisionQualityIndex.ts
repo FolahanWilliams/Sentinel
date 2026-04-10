@@ -192,8 +192,8 @@ export class DecisionQualityIndex {
         const hasRpdData = rpdSufficientData && rpdWinRate !== null;
         const rpdBoost = hasRpdData ? (rpdWinRate! - 50) / 100 : 0; // -0.5 to +0.5
 
-        let rpdWeight = Math.max(0.05, Math.min(0.25, WEIGHTS.rpd_pattern_match + rpdBoost));
-        let biasWeight = biasIsClean ? Math.min(0.30, WEIGHTS.bias_audit + 0.10) : WEIGHTS.bias_audit;
+        const rpdWeight = Math.max(0.05, Math.min(0.25, WEIGHTS.rpd_pattern_match + rpdBoost));
+        const biasWeight = biasIsClean ? Math.min(0.30, WEIGHTS.bias_audit + 0.10) : WEIGHTS.bias_audit;
 
         // Re-distribute remaining weight proportionally
         const remaining = 1 - rpdWeight - biasWeight;
