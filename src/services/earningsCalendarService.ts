@@ -34,7 +34,7 @@ export class EarningsCalendarService {
         
         try {
             // First check if user configured Finnhub
-            const finnhubKey = process.env.FINNHUB_API_KEY || process.env.VITE_FINNHUB_API_KEY || import.meta.env?.VITE_FINNHUB_API_KEY;
+            const finnhubKey = (import.meta as any).env?.VITE_FINNHUB_API_KEY || (globalThis as any).process?.env?.FINNHUB_API_KEY || (globalThis as any).process?.env?.VITE_FINNHUB_API_KEY;
             
             if (finnhubKey) {
                 // Fetch next earnings using Finnhub earnings calendar
