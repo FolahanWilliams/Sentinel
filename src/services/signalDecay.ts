@@ -41,6 +41,7 @@ const DEFAULT_HALF_LIVES: Record<SignalType, number> = {
     sector_contagion: 4,
     earnings_overreaction: 5,
     bullish_catalyst: 14,
+    bearish_catalyst: 7,
     short_overreaction: 5,
     information: 10,
     capital_allocation: 21,

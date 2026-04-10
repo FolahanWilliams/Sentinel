@@ -9,6 +9,8 @@
 interface ValidationResult {
     valid: boolean;
     warnings: string[];
+    /** Risk/reward ratio computed from price targets, if available. */
+    rrRatio?: number;
 }
 
 export class ResponseValidator {
@@ -33,8 +35,8 @@ export class ResponseValidator {
         // Validate confidence scores are within bounds
         this.validateConfidence(data, warnings);
 
-        // Validate price targets are logically consistent
-        this.validatePriceTargets(data, warnings);
+        // Validate price targets are logically consistent; returns computed R/R ratio
+        const rrRatio = this.validatePriceTargets(data, warnings);
 
         // Validate statistics aren't impossible
         this.validateStatistics(data, warnings);
@@ -44,7 +46,8 @@ export class ResponseValidator {
 
         return {
             valid: warnings.filter(w => w.startsWith('FATAL:')).length === 0,
-            warnings
+            warnings,
+            rrRatio,
         };
     }
 
@@ -85,7 +88,16 @@ export class ResponseValidator {
         }
     }
 
-    private validatePriceTargets(data: Record<string, unknown>, warnings: string[]) {
+    /**
+     * Validate price targets and compute the risk/reward ratio.
+     * Returns the computed R/R ratio (undefined when inputs are insufficient).
+     *
+     * R/R gate rules:
+     *   < 1.0  → FATAL (signal is blocked — negative or zero reward vs risk)
+     *   1.0–1.5 → warning + −10 confidence penalty flag
+     *   ≥ 1.5  → acceptable
+     */
+    private validatePriceTargets(data: Record<string, unknown>, warnings: string[]): number | undefined {
         const stopLoss = data.stop_loss as number | undefined;
         const targetPrice = data.target_price as number | undefined;
         const entryLow = data.suggested_entry_low as number | undefined;
@@ -137,6 +149,47 @@ export class ResponseValidator {
                 warnings.push(`entry_low ($${entryLow}) is below stop_loss ($${stopLoss})`);
             }
         }
+
+        // ── Risk/Reward ratio gate ─────────────────────────────────────────────
+        // Use the midpoint of the entry range (or entryLow as fallback) as the entry reference.
+        const entryRef = entryLow !== undefined && entryHigh !== undefined
+            ? (entryLow + entryHigh) / 2
+            : entryLow ?? entryHigh;
+
+        if (
+            entryRef !== undefined && entryRef > 0 &&
+            stopLoss !== undefined && stopLoss > 0 &&
+            targetPrice !== undefined && targetPrice > 0
+        ) {
+            let rrRatio: number;
+            if (isShort) {
+                // Short: reward = entry − target, risk = stop − entry
+                const reward = entryRef - targetPrice;
+                const risk = stopLoss - entryRef;
+                rrRatio = risk > 0 ? reward / risk : 0;
+            } else {
+                // Long: reward = target − entry, risk = entry − stop
+                const reward = targetPrice - entryRef;
+                const risk = entryRef - stopLoss;
+                rrRatio = risk > 0 ? reward / risk : 0;
+            }
+
+            const rrRounded = Math.round(rrRatio * 100) / 100;
+
+            if (rrRounded < 1.0) {
+                warnings.push(
+                    `FATAL: risk/reward ratio (${rrRounded.toFixed(2)}) < 1.0 — reward does not cover risk`
+                );
+            } else if (rrRounded < 1.5) {
+                warnings.push(
+                    `RR_RATIO_LOW:${rrRounded.toFixed(2)} — risk/reward below 1.5 threshold; penalty applied`
+                );
+            }
+
+            return rrRounded;
+        }
+
+        return undefined;
     }
 
     private validateStatistics(data: Record<string, unknown>, warnings: string[]) {

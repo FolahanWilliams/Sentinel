@@ -36,10 +36,11 @@ export function formatSignalType(type: string): string {
         case 'sector_contagion': return 'Long \u2014 Contagion';
         case 'earnings_overreaction': return 'Long \u2014 Earnings';
         case 'bullish_catalyst': return 'Long \u2014 Catalyst';
+        case 'bearish_catalyst': return 'Short \u2014 Catalyst';
         default: return type.replace(/_/g, ' ');
     }
 }
 
 export function isLongSignal(type: string): boolean {
-    return type !== 'short_overreaction';
+    return type !== 'short_overreaction' && type !== 'bearish_catalyst';
 }

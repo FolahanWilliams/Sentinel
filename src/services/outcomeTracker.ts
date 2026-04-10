@@ -172,6 +172,9 @@ export class OutcomeTracker {
                     // Refit dynamic calibration curve after new outcomes
                     await DynamicCalibrator.refitIfNeeded();
 
+                    // Refit return-weighted calibration curve (Item 2)
+                    await DynamicCalibrator.buildReturnWeightedCurve();
+
                     // Rebuild static calibration curve
                     if (count != null && count >= 10 && Math.floor(count / 10) > Math.floor((count - updatedCount) / 10)) {
                         await ConfidenceCalibrator.buildCalibrationCurve();

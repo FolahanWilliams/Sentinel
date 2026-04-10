@@ -659,15 +659,44 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                     }
                 }
 
+                // ── Item 6: Event-level deduplication (RSS + grounded search) ─────────────
+                // After ALL injection sources, deduplicate events by (ticker, event_type),
+                // keeping the highest-severity entry per pair to avoid double-billing.
+                if (extraction.data?.events && extraction.data.events.length > 0) {
+                    const deduped = new Map<string, any>();
+                    for (const ev of extraction.data.events) {
+                        const key = `${ev.ticker}:${ev.event_type}`;
+                        const existing = deduped.get(key);
+                        if (!existing || (ev.severity ?? 0) > (existing.severity ?? 0)) {
+                            deduped.set(key, ev);
+                        }
+                    }
+                    const beforeDedup = extraction.data.events.length;
+                    extraction.data.events = Array.from(deduped.values());
+                    if (beforeDedup > extraction.data.events.length) {
+                        console.log(`[Scanner] Event dedup (ticker×type): ${beforeDedup} → ${extraction.data.events.length} (${beforeDedup - extraction.data.events.length} duplicates removed)`);
+                    }
+                }
+
                 // Build a lookup of article descriptions by ticker for full context
                 const articleContextByTicker: Record<string, string> = {};
+                // ── Item 3: Article age tracking per ticker ──────────────────────────────
+                // Freshness penalty schedule (hours): 0-4 → 0, 4-12 → -5, 12-24 → -10, >24 → skip (unless grounded search corroborates)
+                const articleAgeByTicker: Record<string, number> = {}; // hours
+                const nowMs = Date.now();
                 for (const article of actionableArticles) {
                     const text = `${article.title || ''}. ${article.description || ''}`;
+                    const fetchedAt = article.fetched_at ? new Date(article.fetched_at).getTime() : nowMs;
+                    const ageHours = (nowMs - fetchedAt) / 3600_000;
                     for (const t of tickers) {
                         if (text.toLowerCase().includes(t.toLowerCase())) {
                             articleContextByTicker[t] = articleContextByTicker[t]
                                 ? `${articleContextByTicker[t]} | ${text}`
                                 : text;
+                            // Track the OLDEST article for this ticker (worst-case freshness)
+                            if (articleAgeByTicker[t] === undefined || ageHours > articleAgeByTicker[t]) {
+                                articleAgeByTicker[t] = ageHours;
+                            }
                         }
                     }
                 }
@@ -766,7 +795,6 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                     fundResult,
                                     optionsResult,
                                     peerResult,
-                                    rpdResult,
                                 ] = await Promise.allSettled([
                                     // 6a. TA snapshot
                                     TechnicalAnalysisService.getSnapshot(ev.ticker),
@@ -784,19 +812,12 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                     OptionsFlowService.analyze(ev.ticker),
                                     // 6h. Peer strength
                                     PeerStrengthService.analyze(ev.ticker, priceDrop),
-                                    // 6i. RPD Pattern Matcher (Decision Intel — Klein framework)
-                                    // Uses defaults here since signalType/analysis aren't yet set; RPD adjustment runs later at step 7.10b
-                                    RPDPatternMatcher.match(ev.ticker, 'overreaction_drop', 'recency_bias', tickersToScan.find(t => t.ticker === ev.ticker)?.sector || 'Unknown', regimeResult?.regime, 65),
+                                    // 6i. RPD Pattern Matcher moved to after signal type is determined (Item 1 fix)
                                 ]);
 
-                                // Unpack RPD (6i)
+                                // Item 1: rpdMatchResult initialized to null here; the actual RPD call
+                                // runs before step 7.10b using the real signalType + dominant bias.
                                 let rpdMatchResult: import('@/types/agents').RPDMatchResult | null = null;
-                                if (rpdResult.status === 'fulfilled') {
-                                    rpdMatchResult = rpdResult.value;
-                                    if (rpdMatchResult.sufficient_data) {
-                                        console.log(`[Scanner] RPD pattern for ${ev.ticker}: ${rpdMatchResult.pattern_summary}`);
-                                    }
-                                }
 
                                 // Unpack TA (6a)
                                 const earlyTaSnapshot = taResult.status === 'fulfilled' ? taResult.value : null;
@@ -909,6 +930,28 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                 // Combine TA + divergence + gap + earnings + fundamentals + regime + options + peers into unified context
                                 const enrichedTaContext = earlyTaContext + divergenceCtx + gapCtx + earningsCtx + fundamentalsCtx + regimeCtx + sectorRotationCtx + optionsFlowCtx + peerStrengthCtx;
 
+                                // Ticker sector (used for sector-specific prompt overlay and R/R calibration)
+                                const tickerSector = tickersToScan.find(t => t.ticker === ev.ticker)?.sector || 'Unknown';
+
+                                // ── Item 3: News Freshness Penalty ────────────────────────────────────────
+                                // Stale events are one of the biggest false-signal sources — market has already
+                                // partially adjusted. Apply penalty before the agent call to reduce confidence.
+                                // Events from grounded search (no article age tracked) are exempt.
+                                const newsAgeHours = articleAgeByTicker[ev.ticker] ?? null;
+                                let newsFreshnessPenalty = 0;
+                                if (newsAgeHours !== null) {
+                                    if (newsAgeHours > 24) {
+                                        // Very stale — skip unless grounded search injects newer citation
+                                        // We don't have a "grounded corroboration" flag here, so skip entirely
+                                        console.warn(`[Scanner] News freshness gate: ${ev.ticker} event is ${newsAgeHours.toFixed(1)}h old — skipping (>24h without grounded search corroboration)`);
+                                        continue;
+                                    } else if (newsAgeHours > 12) {
+                                        newsFreshnessPenalty = -10;
+                                    } else if (newsAgeHours > 4) {
+                                        newsFreshnessPenalty = -5;
+                                    }
+                                }
+
                                 // Pipeline A: Overreaction Analysis (negative events)
                                 // Pipeline B: Bullish Catalyst Analysis (positive events)
                                 let analysis: import('@/types/agents').AgentResult<import('@/types/agents').OverreactionResult>;
@@ -927,7 +970,8 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                         marketContext: marketContext,
                                         taContext: enrichedTaContext,
                                         historicalContext: historicalCtx,
-                                        regime: regimeResult?.regime
+                                        regime: regimeResult?.regime,
+                                        sector: tickerSector,
                                     });
 
                                     // Normalize catalyst result to overreaction shape for unified downstream processing
@@ -956,7 +1000,8 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             marketContext: marketContext,
                                             taContext: enrichedTaContext,
                                             historicalContext: historicalCtx,
-                                            regime: regimeResult?.regime
+                                            regime: regimeResult?.regime,
+                                            sector: tickerSector,
                                         };
                                         analysis = await AgentService.evaluateOverreaction(overreactionInput);
                                     }
@@ -972,7 +1017,8 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                         marketContext: marketContext,
                                         taContext: enrichedTaContext,
                                         historicalContext: historicalCtx,
-                                        regime: regimeResult?.regime
+                                        regime: regimeResult?.regime,
+                                        sector: tickerSector,
                                     });
                                 }
 
@@ -980,6 +1026,29 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                 const validation = responseValidator.validate(analysis.data);
                                 if (!validation.valid) {
                                     console.warn(`[Scanner] ${catalystAgentUsed ? 'Catalyst' : 'Overreaction'} response failed validation for ${ev.ticker}:`, validation.warnings);
+                                }
+
+                                // ── Item 5: R/R Gate — penalize or block poor risk/reward ──────────────────
+                                // If validation computed an R/R ratio, apply penalty/block based on threshold.
+                                const rrRatio = validation.rrRatio;
+                                if (analysis.success && analysis.data && rrRatio !== undefined) {
+                                    if (rrRatio < 1.0) {
+                                        // Fatal: R/R < 1.0 means we risk more than we could win — block the signal
+                                        console.warn(`[Scanner] R/R gate BLOCKED ${ev.ticker}: R/R=${rrRatio.toFixed(2)} < 1.0 (reward doesn't cover risk)`);
+                                        continue;
+                                    } else if (rrRatio < 1.5) {
+                                        // Insufficient R/R — apply −10 penalty
+                                        const rrPenaltyBefore = analysis.data.confidence_score;
+                                        analysis.data.confidence_score = Math.max(0, rrPenaltyBefore - 10);
+                                        console.log(`[Scanner] R/R penalty for ${ev.ticker}: R/R=${rrRatio.toFixed(2)} → confidence ${rrPenaltyBefore} → ${analysis.data.confidence_score}`);
+                                    }
+                                }
+
+                                // ── Item 3: Apply news freshness penalty ─────────────────────────────────
+                                if (newsFreshnessPenalty !== 0 && analysis.success && analysis.data) {
+                                    const freshnessBefore = analysis.data.confidence_score;
+                                    analysis.data.confidence_score = Math.max(0, freshnessBefore + newsFreshnessPenalty);
+                                    console.log(`[Scanner] Freshness penalty for ${ev.ticker} (${newsAgeHours?.toFixed(1)}h old): ${freshnessBefore} → ${analysis.data.confidence_score} (${newsFreshnessPenalty})`);
                                 }
 
                                 // A/B Test assignment for this ticker
@@ -1403,6 +1472,22 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                         } catch { /* non-fatal */ }
 
                                         // 7.10b. RPD PATTERN CONFIDENCE ADJUSTMENT (Decision Intel — Klein framework)
+                                        // Item 1 fix: call RPD here with the real signalType + dominant bias (not hard-coded defaults)
+                                        try {
+                                            const dominantBias = analysis.data.identified_biases?.[0] ?? 'recency_bias';
+                                            rpdMatchResult = await RPDPatternMatcher.match(
+                                                ev.ticker,
+                                                signalType,
+                                                dominantBias,
+                                                tickerSector,
+                                                regimeResult?.regime,
+                                                analysis.data.confidence_score,
+                                            );
+                                            if (rpdMatchResult.sufficient_data) {
+                                                console.log(`[Scanner] RPD pattern for ${ev.ticker} (type=${signalType}, bias=${dominantBias}): ${rpdMatchResult.pattern_summary}`);
+                                            }
+                                        } catch { /* non-fatal */ }
+
                                         if (rpdMatchResult && rpdMatchResult.confidence_adjustment !== 0) {
                                             const before = analysis.data.confidence_score;
                                             const bounded = applyBoundedAdjustment(before, rpdMatchResult.confidence_adjustment, cumulativePenalty, cumulativeBoost);
@@ -1449,7 +1534,6 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                         } catch { /* non-fatal */ }
 
                                         // 7.12. CORRELATION GUARD — penalize sector concentration
-                                        const tickerSector = tickersToScan.find(t => t.ticker === ev.ticker)?.sector || 'Unknown';
                                         let correlationResult: import('./correlationGuard').CorrelationGuardResult | null = null;
                                         try {
                                             correlationResult = await CorrelationGuard.check(ev.ticker, tickerSector);
@@ -1835,7 +1919,6 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                         } catch {
                                             // Fallback to legacy static calibrator
                                             try {
-                                                const tickerSector = tickersToScan.find(t => t.ticker === ev.ticker)?.sector || 'Unknown';
                                                 calibratedConfidence = await ConfidenceCalibrator.getCalibratedWinRateBySector(
                                                     analysis.data.confidence_score,
                                                     tickerSector || 'Unknown'
@@ -2059,7 +2142,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                     quality_tier: dqiResult.quality_tier,
                                                     components: dqiResult.components,
                                                 } : null,
-                                                // Agent Context Bus — cascading intelligence audit trail
+                                                     // Agent Context Bus — cascading intelligence audit trail
                                                 context_bus: AgentContextBus.serialize(agentCtx),
                                                 // A/B experiment assignment (if any)
                                                 ab_experiment: abAssignments.length > 0 && abAssignments[0] ? {
@@ -2067,6 +2150,9 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                     variant: abAssignments[0].variant,
                                                     params: abAssignments[0].params,
                                                 } : null,
+                                                // Signal quality metadata (Item 3 + 5)
+                                                news_age_hours: newsAgeHours !== null ? Math.round(newsAgeHours * 10) / 10 : null,
+                                                rr_ratio: rrRatio !== undefined ? Math.round(rrRatio * 100) / 100 : null,
                                             } as unknown as Json,
                                             dqi_score: dqiResult?.score ?? null,
                                             dqi_components: dqiResult?.components ? (dqiResult.components as unknown as Json) : null,

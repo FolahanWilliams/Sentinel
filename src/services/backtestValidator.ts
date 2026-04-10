@@ -27,6 +27,10 @@ export interface BacktestResult {
     confidencePenalty: number;
     shouldSuppress: boolean;
     reason: string;
+    /** Exponential-decay weighted win rate (recent outcomes weighted more heavily). */
+    recencyWeightedWinRate: number | null;
+    /** True when recency-weighted rate is 15+ pp below the historical rate. */
+    degradingEdge: boolean;
 }
 
 export interface TimeframeWinRates {
@@ -53,6 +57,7 @@ interface OutcomeRecord {
     return_at_5d: number | null;
     return_at_10d: number | null;
     return_at_30d: number | null;
+    completed_at: string | null;
     signals: {
         signal_type: string;
         ticker: string;
@@ -77,7 +82,7 @@ export class BacktestValidator {
 
         const { data } = await supabase
             .from('signal_outcomes')
-            .select('outcome, signal_id, signals!inner(signal_type, ticker, created_at)')
+            .select('outcome, signal_id, completed_at, signals!inner(signal_type, ticker, created_at)')
             .neq('outcome', 'pending')
             .order('completed_at', { ascending: false })
             .limit(300);
@@ -104,6 +109,8 @@ export class BacktestValidator {
             confidencePenalty: 0,
             shouldSuppress: false,
             reason: 'Insufficient historical data for backtest validation.',
+            recencyWeightedWinRate: null,
+            degradingEdge: false,
         };
 
         try {
@@ -168,6 +175,38 @@ export class BacktestValidator {
                 reasons.push('Backtest validation passed — no adverse patterns detected.');
             }
 
+            // ── Recency-weighted win rate (Item 7) ─────────────────────────────────
+            // Exponential decay: w = exp(−days_since_completion / 30).
+            // Recent outcomes count more; stale ones fade gracefully.
+            let recencyWeightedWinRate: number | null = null;
+            let degradingEdge = false;
+
+            if (typeOutcomes.length >= 5) {
+                const now = Date.now();
+                let weightedWins = 0;
+                let totalWeight = 0;
+
+                for (const o of typeOutcomes) {
+                    const completedMs = o.completed_at ? new Date(o.completed_at).getTime() : now;
+                    const daysSince = (now - completedMs) / (1000 * 60 * 60 * 24);
+                    const w = Math.exp(-daysSince / 30);
+                    totalWeight += w;
+                    if (o.outcome === 'win') weightedWins += w;
+                }
+
+                if (totalWeight > 0) {
+                    recencyWeightedWinRate = weightedWins / totalWeight;
+                    // Flag degrading edge: recency rate is 15+ pp below historical rate
+                    if (signalTypeWinRate !== null && (signalTypeWinRate - recencyWeightedWinRate) >= 0.15) {
+                        degradingEdge = true;
+                        penalty -= 10;
+                        reasons.push(
+                            `Signal type "${signalType}" shows degrading edge: recent win rate ${(recencyWeightedWinRate * 100).toFixed(0)}% vs. historical ${(signalTypeWinRate * 100).toFixed(0)}% — −10 penalty applied.`
+                        );
+                    }
+                }
+            }
+
             return {
                 signalTypeWinRate,
                 signalTypeSampleSize: typeOutcomes.length,
@@ -177,6 +216,8 @@ export class BacktestValidator {
                 confidencePenalty: penalty,
                 shouldSuppress,
                 reason: reasons.join(' '),
+                recencyWeightedWinRate,
+                degradingEdge,
             };
         } catch (err) {
             console.error('[BacktestValidator] Error:', err);
