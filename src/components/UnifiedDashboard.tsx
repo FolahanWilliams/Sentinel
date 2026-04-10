@@ -23,7 +23,7 @@ const WatchlistSection = lazy(() => import('@/components/dashboard/WatchlistSect
 const PerformanceMetrics = lazy(() => import('@/components/dashboard/PerformanceMetrics').then(m => ({ default: m.PerformanceMetrics })));
 const SentinelPanel = lazy(() => import('@/components/sentinel/SentinelPanel').then(m => ({ default: m.SentinelPanel })));
 const Alerts = lazy(() => import('@/pages/Alerts').then(m => ({ default: m.Alerts })));
-const SimulatorTab = lazy(() => import('./SimulatorTab').then(m => ({ default: m.SimulatorTab })));
+const SimulatorTab = lazy(() => import('@/components/SimulatorTab').then(m => ({ default: m.SimulatorTab })));
 import {
     Activity, Briefcase, Eye, BarChart3, Zap, User, TrendingUp, Newspaper, Bell, History,
 } from 'lucide-react';
