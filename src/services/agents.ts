@@ -33,8 +33,41 @@ import {
     SHORT_OVERREACTION_SCHEMA,
     BEARISH_CATALYST_SCHEMA,
 } from './schemas';
-import { GEMINI_MODEL, BIAS_DETECTIVE_MAX_PENALTY } from '@/config/constants';
+import { GEMINI_MODEL, GEMINI_MODEL_LITE, BIAS_DETECTIVE_MAX_PENALTY } from '@/config/constants';
 import type { AgentResult, OverreactionResult, ContagionResult, SanityCheckResult, BullishCatalystResult, BiasDetectiveResult, MacroCausalResult } from '@/types/agents';
+
+/**
+ * Build a compact MARKET CONTEXT block for agent prompts.
+ *
+ * Only emits fields that carry real values — undefined/NaN fields are skipped
+ * entirely rather than rendered as "N/A", saving ~20-40 tokens per call.
+ */
+function buildMarketBlock(ctx: MarketContext | undefined): string {
+    if (!ctx) return '';
+
+    const lines: string[] = [];
+
+    const hi = Number(ctx.fiftyTwoWeekHigh);
+    const lo = Number(ctx.fiftyTwoWeekLow);
+    if (!isNaN(hi) && hi > 0 && !isNaN(lo) && lo > 0) {
+        lines.push(`52-Week High: $${hi.toFixed(2)} | 52-Week Low: $${lo.toFixed(2)}`);
+    }
+
+    if (ctx.avgVolume != null && ctx.currentVolume != null) {
+        lines.push(`Avg Volume: ${ctx.avgVolume.toLocaleString()} | Current: ${ctx.currentVolume.toLocaleString()}`);
+    }
+
+    if (ctx.sectorPerformance) {
+        lines.push(`Sector: ${ctx.sectorPerformance}`);
+    }
+
+    if (ctx.fearGreedScore != null) {
+        const label = ctx.fearGreedRating ? ` (${ctx.fearGreedRating})` : '';
+        lines.push(`Fear & Greed: ${ctx.fearGreedScore}${label}`);
+    }
+
+    return lines.length > 0 ? `\n\nMARKET CONTEXT:\n${lines.join('\n')}` : '';
+}
 
 /**
  * Cascading agent context — structured summary of a prior agent's output
@@ -93,13 +126,7 @@ export class AgentService {
             ? `\n\n${performanceContext}\n\nUse the performance data above to calibrate your confidence. If this bias type or sector historically underperforms, lower your confidence. If it outperforms, you may raise it slightly.`
             : '';
 
-        const marketBlock = marketContext
-            ? `\n\nMARKET CONTEXT:
-    52-Week High: $${Number(marketContext.fiftyTwoWeekHigh).toFixed(2) || 'N/A'} | 52-Week Low: $${Number(marketContext.fiftyTwoWeekLow).toFixed(2) || 'N/A'}
-    Average Volume: ${marketContext.avgVolume?.toLocaleString() ?? 'N/A'} | Current Volume: ${marketContext.currentVolume?.toLocaleString() ?? 'N/A'}
-    Sector Performance: ${marketContext.sectorPerformance ?? 'N/A'}
-    CNN Fear & Greed Index: ${marketContext.fearGreedScore ?? 'N/A'} (${marketContext.fearGreedRating ?? 'N/A'})`
-            : '';
+        const marketBlock = buildMarketBlock(marketContext);
 
         const taBlock = taContext || '';
         const histBlock = historicalContext || '';
@@ -186,13 +213,7 @@ export class AgentService {
             ? `\n\n${performanceContext}\n\nUse the performance data above to calibrate your confidence. If sector contagion signals historically underperform, be more skeptical. If they outperform, you may be slightly more confident.`
             : '';
 
-        const marketBlock = marketContext
-            ? `\n\nMARKET CONTEXT:
-    52-Week High: $${marketContext.fiftyTwoWeekHigh?.toFixed(2) ?? 'N/A'} | 52-Week Low: $${marketContext.fiftyTwoWeekLow?.toFixed(2) ?? 'N/A'}
-    Average Volume: ${marketContext.avgVolume?.toLocaleString() ?? 'N/A'} | Current Volume: ${marketContext.currentVolume?.toLocaleString() ?? 'N/A'}
-    Sector Performance: ${marketContext.sectorPerformance ?? 'N/A'}
-    CNN Fear & Greed Index: ${marketContext.fearGreedScore ?? 'N/A'} (${marketContext.fearGreedRating ?? 'N/A'})`
-            : '';
+        const marketBlock = buildMarketBlock(marketContext);
 
         const prompt = `
     EPICENTER TICKER: ${epicenterTicker}
@@ -240,13 +261,7 @@ export class AgentService {
             ? `\n\n${performanceContext}\n\nUse the performance data above to calibrate your confidence. If earnings overreaction signals historically underperform in this sector, lower your confidence. If they outperform, you may raise it slightly.`
             : '';
 
-        const marketBlock = marketContext
-            ? `\n\nMARKET CONTEXT:
-    52-Week High: $${marketContext.fiftyTwoWeekHigh?.toFixed(2) ?? 'N/A'} | 52-Week Low: $${marketContext.fiftyTwoWeekLow?.toFixed(2) ?? 'N/A'}
-    Average Volume: ${marketContext.avgVolume?.toLocaleString() ?? 'N/A'} | Current Volume: ${marketContext.currentVolume?.toLocaleString() ?? 'N/A'}
-    Sector Performance: ${marketContext.sectorPerformance ?? 'N/A'}
-    CNN Fear & Greed Index: ${marketContext.fearGreedScore ?? 'N/A'} (${marketContext.fearGreedRating ?? 'N/A'})`
-            : '';
+        const marketBlock = buildMarketBlock(marketContext);
 
         const prompt = `
     TICKER: ${ticker}
@@ -369,13 +384,7 @@ export class AgentService {
             ? `\n\n${performanceContext}\n\nUse the performance data above to calibrate your confidence.`
             : '';
 
-        const marketBlock = marketContext
-            ? `\n\nMARKET CONTEXT:
-    52-Week High: $${Number(marketContext.fiftyTwoWeekHigh).toFixed(2) || 'N/A'} | 52-Week Low: $${Number(marketContext.fiftyTwoWeekLow).toFixed(2) || 'N/A'}
-    Average Volume: ${marketContext.avgVolume?.toLocaleString() ?? 'N/A'} | Current Volume: ${marketContext.currentVolume?.toLocaleString() ?? 'N/A'}
-    Sector Performance: ${marketContext.sectorPerformance ?? 'N/A'}
-    CNN Fear & Greed Index: ${marketContext.fearGreedScore ?? 'N/A'} (${marketContext.fearGreedRating ?? 'N/A'})`
-            : '';
+        const marketBlock = buildMarketBlock(marketContext);
 
         const taBlock = taContext || '';
         const histBlock = historicalContext || '';
@@ -488,7 +497,8 @@ export class AgentService {
                 required: ["actionable_ids"]
             },
             temperature: 0.1,
-            model: GEMINI_MODEL,
+            model: GEMINI_MODEL_LITE,
+            skipMasterPrompt: true,
         });
     }
 
@@ -602,7 +612,8 @@ Return JSON.
                 required: ["events"]
             },
             temperature: 0.1,
-            model: GEMINI_MODEL,
+            model: GEMINI_MODEL_LITE,
+            skipMasterPrompt: true,
         });
     }
 
@@ -635,13 +646,7 @@ Return JSON.
             ? `\n\n${performanceContext}\n\nUse the performance data above to calibrate your conviction. If short overreaction signals historically underperform in this sector, lower your confidence.`
             : '';
 
-        const marketBlock = marketContext
-            ? `\n\nMARKET CONTEXT:
-    52-Week High: $${Number(marketContext.fiftyTwoWeekHigh).toFixed(2) || 'N/A'} | 52-Week Low: $${Number(marketContext.fiftyTwoWeekLow).toFixed(2) || 'N/A'}
-    Average Volume: ${marketContext.avgVolume?.toLocaleString() ?? 'N/A'} | Current Volume: ${marketContext.currentVolume?.toLocaleString() ?? 'N/A'}
-    Sector Performance: ${marketContext.sectorPerformance ?? 'N/A'}
-    CNN Fear & Greed Index: ${marketContext.fearGreedScore ?? 'N/A'} (${marketContext.fearGreedRating ?? 'N/A'})`
-            : '';
+        const marketBlock = buildMarketBlock(marketContext);
 
         const taBlock = taContext || '';
         const histBlock = historicalContext || '';
@@ -698,13 +703,7 @@ Return JSON.
             ? `\n\n${performanceContext}\n\nUse the performance data to calibrate your conviction for bearish setups.`
             : '';
 
-        const marketBlock = marketContext
-            ? `\n\nMARKET CONTEXT:
-    52-Week High: $${Number(marketContext.fiftyTwoWeekHigh).toFixed(2) || 'N/A'} | 52-Week Low: $${Number(marketContext.fiftyTwoWeekLow).toFixed(2) || 'N/A'}
-    Average Volume: ${marketContext.avgVolume?.toLocaleString() ?? 'N/A'} | Current Volume: ${marketContext.currentVolume?.toLocaleString() ?? 'N/A'}
-    Sector Performance: ${marketContext.sectorPerformance ?? 'N/A'}
-    CNN Fear & Greed Index: ${marketContext.fearGreedScore ?? 'N/A'} (${marketContext.fearGreedRating ?? 'N/A'})`
-            : '';
+        const marketBlock = buildMarketBlock(marketContext);
 
         const taBlock = taContext || '';
         const histBlock = historicalContext || '';
