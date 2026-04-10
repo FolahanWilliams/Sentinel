@@ -4,8 +4,8 @@ import { TrendingUp, TrendingDown, Target, ShieldAlert, ChevronRight, RefreshCw,
 import { Link } from 'react-router-dom';
 import { TABadge } from '@/components/shared/TABadge';
 import { SignalQualityBadge } from '@/components/shared/SignalQualityBadge';
+import { formatSignalType, isLongSignal, getConfidenceColor, getConfidenceBg } from '@/utils/badgeUtils';
 import {
-    formatSignalType, isLongSignal, getConfidenceColor, getConfidenceBg,
     ConfluenceBadge, RoiBadge, ConvictionBadge, MarketRegimeBadge, EarningsWarningBadge,
 } from '@/components/shared/SignalBadges';
 import type { AgentOutputsJson, TASnapshot } from '@/types/signals';

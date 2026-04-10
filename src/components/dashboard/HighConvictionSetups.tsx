@@ -9,8 +9,8 @@ import { supabase } from '@/config/supabase';
 import { TrendingUp, Crown, ChevronRight, RefreshCw, Calculator } from 'lucide-react';
 import { SignalQualityBadge } from '@/components/shared/SignalQualityBadge';
 import { TickerLink } from '@/components/shared/TickerLink';
+import { formatSignalType, isLongSignal } from '@/utils/badgeUtils';
 import {
-    formatSignalType, isLongSignal,
     ConfidenceBadge, ConvictionBadge, MoatBadge, LynchBadge, RoiBadge, MarketRegimeBadge, EarningsWarningBadge,
 } from '@/components/shared/SignalBadges';
 import type { AgentOutputsJson } from '@/types/signals';
