@@ -69,31 +69,6 @@ export async function buildScanContext(): Promise<ScanContext> {
         console.warn('[Scanner] Failed to load performance context (non-fatal):', perfErr);
     }
 
-    // 3c. Reflection Agent lessons (RAG loop)
-    try {
-        const lessons = await ReflectionAgent.getLessonsForContext();
-        if (lessons) {
-            perfContext += lessons;
-            console.log('[Scanner] Reflection lessons injected into agent context.');
-        } else {
-            console.log('[Scanner] No reflection lessons available yet — run Reflection Agent after accumulating signal outcomes.');
-        }
-    } catch (reflErr) {
-        console.warn('[Scanner] Failed to load reflection lessons (non-fatal):', reflErr);
-    }
-
-    // 3c-2. Calibration Feedback Loop
-    try {
-        const calibCurve = await ConfidenceCalibrator.getCachedCurve();
-        const calibCtx = ConfidenceCalibrator.formatForPrompt(calibCurve);
-        perfContext += calibCtx;
-        if (calibCurve.totalOutcomes >= 10) {
-            console.log(`[Scanner] Calibration feedback injected (${calibCurve.totalOutcomes} outcomes, ${calibCurve.overallWinRate}% win rate).`);
-        }
-    } catch (calibErr) {
-        console.warn('[Scanner] Failed to load calibration feedback (non-fatal):', calibErr);
-    }
-
     // 3d. Market Regime Detection
     let regimeResult: MarketRegimeResult | null = null;
     let regimeCtx = '';
@@ -121,6 +96,38 @@ export async function buildScanContext(): Promise<ScanContext> {
         }
     } catch (fgErr) {
         console.warn('[Scanner] Fear & Greed fetch failed (non-fatal):', fgErr);
+    }
+
+    // 3c. Reflection Agent lessons (RAG loop) — Regime-aware injection
+    try {
+        const lessons = await ReflectionAgent.getLessonsForContext({
+            regime: regimeResult?.regime,
+            vix: regimeResult?.vixLevel ?? undefined,
+            spyTrend: regimeResult?.spyTrend
+        });
+        if (lessons) {
+            perfContext += lessons;
+            console.log('[Scanner] Reflection lessons (Master + Dynamic) injected into agent context.');
+        } else {
+            console.log('[Scanner] No reflection lessons available yet.');
+        }
+    } catch (reflErr) {
+        console.warn('[Scanner] Failed to load reflection lessons (non-fatal):', reflErr);
+    }
+
+    // 3c-2. Calibration Feedback Loop
+    try {
+        const calibCurve = await ConfidenceCalibrator.getCachedCurve();
+        // Since we are in buildScanContext, we don't know the exact signal type/sector yet,
+        // but formatForPrompt now accepts them. For the general context, we just pass the overall curve.
+        // The specific sectoral calibration happens inside the scanner loop per-ticker.
+        const calibCtx = ConfidenceCalibrator.formatForPrompt(calibCurve);
+        perfContext += calibCtx;
+        if (calibCurve.totalOutcomes >= 10) {
+            console.log(`[Scanner] Calibration feedback injected (${calibCurve.totalOutcomes} outcomes, ${calibCurve.overallWinRate}% win rate).`);
+        }
+    } catch (calibErr) {
+        console.warn('[Scanner] Failed to load calibration feedback (non-fatal):', calibErr);
     }
 
     // 3d-1b. Sector Rotation

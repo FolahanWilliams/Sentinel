@@ -395,7 +395,8 @@ Deno.serve(async (req) => {
         }
 
         // 3. Check server-side cache before hitting upstream APIs
-        const cacheKey = `${endpoint}:${(ticker || (tickersParam && tickersParam.sort().join(',')) || tickerParam || 'general').toUpperCase()}`
+        const isFull = !!body.full;
+        const cacheKey = `${endpoint}:${(ticker || (tickersParam && tickersParam.sort().join(',')) || tickerParam || 'general').toUpperCase()}${isFull ? ':full' : ''}`
         const cached = getCached(cacheKey)
         if (cached) {
             console.log(`[proxy-market-data] Cache hit: ${cacheKey}`)
@@ -934,6 +935,7 @@ Deno.serve(async (req) => {
 
             // ─── HISTORICAL endpoint ─────────────────────────────────────────
         } else if (endpoint === 'historical') {
+            const isFull = !!body.full;
             if (!ticker) {
                 return new Response(
                     JSON.stringify({ success: false, error: 'Missing ticker for historical endpoint' }),
@@ -971,7 +973,8 @@ Deno.serve(async (req) => {
 
                 async function tryYahooTicker(t: string): Promise<any[] | null> {
                     try {
-                        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(t)}?range=2y&interval=1d`
+                        const range = isFull ? '10y' : '2y';
+                        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(t)}?range=${range}&interval=1d`
                         const res = await fetchWithTimeout(url, yfHeaders, 10000)
                         if (!res.ok) return null
                         const data = await res.json()
@@ -1052,8 +1055,9 @@ Deno.serve(async (req) => {
             async function fetchTiingo(): Promise<{ bars: any[]; provider: string } | null> {
                 if (!TIINGO_KEY) return null
                 try {
-                    const twoYearsAgo = new Date(Date.now() - 730 * 86400000).toISOString().split('T')[0]
-                    const url = `https://api.tiingo.com/tiingo/daily/${encodeURIComponent(tickerUpper)}/prices?startDate=${twoYearsAgo}&token=${TIINGO_KEY}`
+                    const years = isFull ? 5 : 2;
+                    const startDate = new Date(Date.now() - (years * 365) * 86400000).toISOString().split('T')[0]
+                    const url = `https://api.tiingo.com/tiingo/daily/${encodeURIComponent(tickerUpper)}/prices?startDate=${startDate}&token=${TIINGO_KEY}`
                     const res = await fetchWithTimeout(url, {
                         'Content-Type': 'application/json',
                         'Authorization': `Token ${TIINGO_KEY}`,

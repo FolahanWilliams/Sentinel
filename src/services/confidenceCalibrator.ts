@@ -26,6 +26,7 @@ export interface CalibrationCurve {
 
 const APP_SETTINGS_KEY = 'confidence_calibration';
 const APP_SETTINGS_KEY_BY_TYPE = 'confidence_calibration_by_type';
+const APP_SETTINGS_KEY_BY_SECTOR = 'confidence_calibration_by_sector';
 
 export class ConfidenceCalibrator {
     // In-memory cache — avoids repeated DB hits during a single scan cycle
@@ -36,22 +37,31 @@ export class ConfidenceCalibrator {
     // Per-signal-type calibration cache
     private static cachedCurvesByType: Record<string, CalibrationCurve> = {};
     private static cacheByTypeTimestamp = 0;
+    // Per-sector calibration cache
+    private static cachedCurvesBySector: Record<string, CalibrationCurve> = {};
+    private static cacheBySectorTimestamp = 0;
 
     /**
      * Build calibration curve from historical signal outcomes.
      * Groups by confidence buckets and computes actual win rates.
-     * Now also builds per-signal-type curves.
+     * Now builds curves by: Overall, Type, and Sector.
      */
     static async buildCalibrationCurve(): Promise<CalibrationCurve> {
-        // Fetch completed outcomes joined with signals for confidence score + signal_type
+        // Fetch completed outcomes joined with signals for confidence score + signal_type + ticker
         const { data: outcomes, error } = await supabase
             .from('signal_outcomes')
-            .select('outcome, signals!inner(confidence_score, signal_type)')
+            .select('outcome, signals!inner(confidence_score, signal_type, ticker)')
             .neq('outcome', 'pending');
 
         if (error || !outcomes || outcomes.length === 0) {
             return this.emptyCurve();
         }
+
+        // Fetch watchlist to map tickers to sectors
+        const { data: watchlist } = await supabase
+            .from('watchlist')
+            .select('ticker, sector');
+        const tickerToSector = new Map(watchlist?.map(w => [w.ticker, w.sector]) || []);
 
         // Initialize 10 buckets (0-10, 10-20, ..., 90-100)
         const bucketMap: Record<string, { wins: number; total: number }> = {};
@@ -59,14 +69,17 @@ export class ConfidenceCalibrator {
             bucketMap[`${i * 10}-${(i + 1) * 10}`] = { wins: 0, total: 0 };
         }
 
-        // Per-signal-type bucket maps
+        // Partitioned bucket maps
         const typeBucketMaps: Record<string, Record<string, { wins: number; total: number }>> = {};
+        const sectorBucketMaps: Record<string, Record<string, { wins: number; total: number }>> = {};
 
         let totalWins = 0;
 
         for (const row of outcomes) {
             const confidence = (row as any).signals?.confidence_score ?? 0;
             const signalType = (row as any).signals?.signal_type ?? 'unknown';
+            const ticker = (row as any).signals?.ticker ?? 'unknown';
+            const sector = tickerToSector.get(ticker) ?? 'Unknown';
             const isWin = row.outcome === 'win';
 
             const bucketIdx = Math.min(9, Math.floor(confidence / 10));
@@ -92,6 +105,18 @@ export class ConfidenceCalibrator {
                 typeBucketMaps[signalType][key].total++;
                 if (isWin) typeBucketMaps[signalType][key].wins++;
             }
+
+            // Per-sector curve
+            if (!sectorBucketMaps[sector]) {
+                sectorBucketMaps[sector] = {};
+                for (let i = 0; i < 10; i++) {
+                    sectorBucketMaps[sector][`${i * 10}-${(i + 1) * 10}`] = { wins: 0, total: 0 };
+                }
+            }
+            if (sectorBucketMaps[sector][key]) {
+                sectorBucketMaps[sector][key].total++;
+                if (isWin) sectorBucketMaps[sector][key].wins++;
+            }
         }
 
         const buckets: CalibrationBucket[] = Object.entries(bucketMap)
@@ -110,28 +135,18 @@ export class ConfidenceCalibrator {
             overallWinRate: outcomes.length > 0 ? Math.round((totalWins / outcomes.length) * 100 * 10) / 10 : 0,
         };
 
-        // Build per-type curves
+        // Build partitioned curves (Type & Sector)
         const curvesByType: Record<string, CalibrationCurve> = {};
         for (const [signalType, bMap] of Object.entries(typeBucketMaps)) {
-            const typeBuckets: CalibrationBucket[] = Object.entries(bMap)
-                .filter(([, v]) => v.total > 0)
-                .map(([range, v]) => ({
-                    range,
-                    predicted: parseInt(range.split('-')[0] ?? '0') + 5,
-                    actualWinRate: Math.round((v.wins / v.total) * 100 * 10) / 10,
-                    sampleSize: v.total,
-                }));
-            const typeTotal = Object.values(bMap).reduce((s, v) => s + v.total, 0);
-            const typeWins = Object.values(bMap).reduce((s, v) => s + v.wins, 0);
-            curvesByType[signalType] = {
-                buckets: typeBuckets,
-                lastUpdated: new Date().toISOString(),
-                totalOutcomes: typeTotal,
-                overallWinRate: typeTotal > 0 ? Math.round((typeWins / typeTotal) * 100 * 10) / 10 : 0,
-            };
+            curvesByType[signalType] = this.buildCurveFromBucketMap(bMap);
         }
 
-        // Persist both curves
+        const curvesBySector: Record<string, CalibrationCurve> = {};
+        for (const [sector, bMap] of Object.entries(sectorBucketMaps)) {
+            curvesBySector[sector] = this.buildCurveFromBucketMap(bMap);
+        }
+
+        // Persist all curves
         await Promise.allSettled([
             supabase.from('app_settings').upsert({
                 key: APP_SETTINGS_KEY,
@@ -143,13 +158,42 @@ export class ConfidenceCalibrator {
                 value: curvesByType as any,
                 updated_at: new Date().toISOString(),
             }, { onConflict: 'key,user_id' }),
+            supabase.from('app_settings').upsert({
+                key: APP_SETTINGS_KEY_BY_SECTOR,
+                value: curvesBySector as any,
+                updated_at: new Date().toISOString(),
+            }, { onConflict: 'key,user_id' }),
         ]);
 
         // Update in-memory caches
         this.cachedCurvesByType = curvesByType;
         this.cacheByTypeTimestamp = Date.now();
+        this.cachedCurvesBySector = curvesBySector;
+        this.cacheBySectorTimestamp = Date.now();
 
         return curve;
+    }
+
+    /**
+     * Helper to build a CalibrationCurve from a bucket map.
+     */
+    private static buildCurveFromBucketMap(bMap: Record<string, { wins: number; total: number }>): CalibrationCurve {
+        const typeBuckets: CalibrationBucket[] = Object.entries(bMap)
+            .filter(([, v]) => v.total > 0)
+            .map(([range, v]) => ({
+                range,
+                predicted: parseInt(range.split('-')[0] ?? '0') + 5,
+                actualWinRate: Math.round((v.wins / v.total) * 100 * 10) / 10,
+                sampleSize: v.total,
+            }));
+        const typeTotal = Object.values(bMap).reduce((s, v) => s + v.total, 0);
+        const typeWins = Object.values(bMap).reduce((s, v) => s + v.wins, 0);
+        return {
+            buckets: typeBuckets,
+            lastUpdated: new Date().toISOString(),
+            totalOutcomes: typeTotal,
+            overallWinRate: typeTotal > 0 ? Math.round((typeWins / typeTotal) * 100 * 10) / 10 : 0,
+        };
     }
 
     /**
@@ -248,39 +292,74 @@ export class ConfidenceCalibrator {
     }
 
     /**
-     * Generate a prompt-injection context string that tells the AI about its own
-     * historical accuracy, so it can self-correct overconfident/underconfident scoring.
-     *
-     * This closes the feedback loop: outcomes → calibration curve → prompt context → better scores.
+     * Get calibrated win rate for a specific sector.
+     * Falls back to the overall curve if the sector has insufficient data.
      */
-    static formatForPrompt(curve: CalibrationCurve): string {
+    static async getCalibratedWinRateBySector(
+        aiConfidence: number,
+        sector: string,
+    ): Promise<number> {
+        // Refresh per-sector cache if stale
+        if (Object.keys(this.cachedCurvesBySector).length === 0 ||
+            (Date.now() - this.cacheBySectorTimestamp) > this.CACHE_TTL_MS) {
+            try {
+                const { data } = await supabase
+                    .from('app_settings')
+                    .select('value')
+                    .eq('key', APP_SETTINGS_KEY_BY_SECTOR)
+                    .maybeSingle();
+                if (data?.value) {
+                    this.cachedCurvesBySector = data.value as unknown as Record<string, CalibrationCurve>;
+                    this.cacheBySectorTimestamp = Date.now();
+                }
+            } catch { /* fall through to overall curve */ }
+        }
+
+        const sectorCurve = this.cachedCurvesBySector[sector];
+        if (sectorCurve && sectorCurve.totalOutcomes >= 5) { // Lower threshold for sectors
+            return this.getCalibratedWinRate(aiConfidence, sectorCurve);
+        }
+
+        // Fall back to overall curve
+        const overallCurve = await this.getCachedCurve();
+        return this.getCalibratedWinRate(aiConfidence, overallCurve);
+    }
+
+    /**
+     * Generate a prompt-injection context string that tells the AI about its own
+     * historical accuracy across signal types and sectors.
+     */
+    static formatForPrompt(curve: CalibrationCurve, typeCurve?: CalibrationCurve, sectorCurve?: CalibrationCurve): string {
         if (curve.totalOutcomes < 10) {
             return '\nCALIBRATION DATA: Insufficient outcome history (<10 tracked). Default 20% haircut applied to your confidence scores. Be conservative.';
         }
 
-        const lines = curve.buckets
+        const overallLines = curve.buckets
             .filter(b => b.sampleSize >= 3)
             .sort((a, b) => a.predicted - b.predicted)
             .map(b => {
                 const gap = b.actualWinRate - b.predicted;
-                const direction = gap > 5 ? '(underconfident — raise scores)'
-                    : gap < -5 ? '(overconfident — lower scores)'
-                    : '(well-calibrated)';
-                return `  ${b.range}: AI predicted ~${b.predicted}% → actual ${b.actualWinRate}% win rate (n=${b.sampleSize}) ${direction}`;
+                const direction = gap > 5 ? '↑ (underconfident)' : gap < -5 ? '↓ (overconfident)' : '✓ (accurate)';
+                return `  ${b.range}: predicted ~${b.predicted}% → actual ${b.actualWinRate}% WR (n=${b.sampleSize}) ${direction}`;
             });
 
-        const overallGap = curve.overallWinRate - 50;
-        const overallNote = overallGap > 10
-            ? 'Your signals are profitable overall — maintain selectivity.'
-            : overallGap < -10
-            ? 'Your signals have been unprofitable — be MORE skeptical and raise confidence thresholds.'
-            : 'Your signals are near break-even — focus on high-conviction setups only.';
+        let typeContext = '';
+        if (typeCurve && typeCurve.totalOutcomes >= 5) {
+            typeContext = `\nACCURACY FOR THIS SIGNAL TYPE: overall win rate ${typeCurve.overallWinRate}% (${typeCurve.totalOutcomes} samples).`;
+        }
 
-        return `\nCALIBRATION FEEDBACK (${curve.totalOutcomes} tracked outcomes, overall win rate: ${curve.overallWinRate}%):
-${overallNote}
-Accuracy by confidence bucket:
-${lines.join('\n')}
-Use this data to adjust your confidence_score output — if you historically overpredict in the 70-80 range, score lower.`;
+        let sectorContext = '';
+        if (sectorCurve && sectorCurve.totalOutcomes >= 5) {
+            sectorContext = `\nACCURACY FOR THIS SECTOR: overall win rate ${sectorCurve.overallWinRate}% (${sectorCurve.totalOutcomes} samples).`;
+        }
+
+        const overallNote = curve.overallWinRate < 45 ? 'CRITICAL: High failure rate detected. Raise your quality bar significantly.' : 'Continue optimizing for edge.';
+
+        return `\nCALIBRATION FEEDBACK (${curve.totalOutcomes} tracked outcomes, overall WR: ${curve.overallWinRate}%):
+${overallNote}${typeContext}${sectorContext}
+Accuracy by overall bucket:
+${overallLines.join('\n')}
+Use this to self-correct — if you underperform in a sector/bucket, score more conservatively.`;
     }
 
     private static emptyCurve(): CalibrationCurve {

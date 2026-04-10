@@ -143,10 +143,10 @@ export class AutoLearningService {
      * Analyze completed outcomes to build pipeline step weight adjustments.
      * Can be called manually or via checkAndTrigger().
      */
-    static async analyzeAndUpdateWeights(): Promise<AutoLearningResult> {
+    static async analyzeAndUpdateWeights(options: { force?: boolean } = {}): Promise<AutoLearningResult> {
         console.log('[AutoLearning] Starting pipeline weight analysis...');
 
-        // 1. Fetch completed outcomes with full agent_outputs
+        const minOutcomes = options.force ? 5 : 10;
         const { data: outcomes, error } = await supabase
             .from('signal_outcomes')
             .select('*, signals!inner(ticker, signal_type, confidence_score, agent_outputs, ta_alignment, confluence_level)')
@@ -154,8 +154,8 @@ export class AutoLearningService {
             .order('completed_at', { ascending: false })
             .limit(100);
 
-        if (error || !outcomes || outcomes.length < 10) {
-            console.log(`[AutoLearning] Insufficient data (${outcomes?.length ?? 0} outcomes, need 10+). Skipping.`);
+        if (error || !outcomes || outcomes.length < minOutcomes) {
+            console.log(`[AutoLearning] Insufficient data (${outcomes?.length ?? 0} outcomes, need ${minOutcomes}+). Skipping.`);
             return this.defaultResult(outcomes?.length ?? 0);
         }
 
@@ -203,6 +203,7 @@ export class AutoLearningService {
                 confidence: o.signals?.confidence_score,
                 ta_alignment: o.signals?.ta_alignment,
                 confluence_level: o.signals?.confluence_level,
+                is_simulated: o.is_simulated || false,
                 pipeline_steps: stepStates,
             };
         });
@@ -213,8 +214,12 @@ export class AutoLearningService {
         // 4. Send to Gemini for deeper pattern analysis
         const totalWins = condensed.filter((c: any) => c.outcome === 'win').length;
         const overallAccuracy = Math.round((totalWins / condensed.length) * 100);
+        const simCount = condensed.filter((c: any) => c.is_simulated).length;
+        const liveCount = condensed.length - simCount;
 
-        const prompt = `Analyze ${condensed.length} completed signal outcomes. Overall win rate: ${overallAccuracy}%.
+        const prompt = `Analyze ${condensed.length} completed signal outcomes. 
+Overall win rate: ${overallAccuracy}%.
+DATA MIX: ${liveCount} live market signals, ${simCount} simulated Training Dojo scenarios.
 
 PRE-COMPUTED STEP CORRELATIONS:
 ${JSON.stringify(stepStats, null, 2)}
@@ -222,7 +227,7 @@ ${JSON.stringify(stepStats, null, 2)}
 RAW OUTCOME DATA (last 50):
 ${JSON.stringify(condensed.slice(0, 50), null, 2)}
 
-Generate weight adjustments for each pipeline step. Focus on steps with enough data (5+ samples) and clear directional signal.`;
+Generate weight adjustments for each pipeline step based on both live performance and historical simulations. Focus on steps with enough data (5+ samples) and clear directional signal. Use the data mix information to decide how heavily to weight simulated findings vs live results.`;
 
         const result = await GeminiService.generate<any>({
             prompt,

@@ -24,6 +24,7 @@ import {
     ChevronLeft,
     ChevronRight,
     LogOut,
+    Zap,
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -34,6 +35,7 @@ const NAV_ITEMS = [
     { to: '/research', icon: Microscope, label: 'Research' },
     { to: '/backtest', icon: FlaskConical, label: 'Analytics' },
     { to: '/journal', icon: BookOpen, label: 'Journal' },
+    { to: '/training-dojo', icon: Zap, label: 'Dojo' },
     { to: '/risk', icon: Shield, label: 'Risk' },
     { to: '/settings', icon: Settings, label: 'Settings' },
 ] as const;

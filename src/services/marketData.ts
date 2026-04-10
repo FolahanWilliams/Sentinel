@@ -310,4 +310,82 @@ export class MarketDataService {
             return [];
         }
     }
+
+    /**
+     * Fetch a ticker's price at a specific historical date.
+     * Uses the 'historical' endpoint and finds the closest matching bar.
+     */
+    static async getHistoricalPriceAtDate(ticker: string, targetDate: string): Promise<number | null> {
+        try {
+            const { data, error } = await supabase.functions.invoke('proxy-market-data', {
+                body: {
+                    endpoint: 'historical',
+                    ticker: ticker.toUpperCase(),
+                    full: true, // Fetch max range for simulations
+                }
+            });
+
+            if (error || !data?.success || !Array.isArray(data.data)) {
+                console.warn(`[MarketData] Proxy returned no data for ${ticker}`);
+                return null;
+            }
+
+            const bars = (data.data as any[]).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+            console.log(`[MarketData] Lookup ${ticker} @ ${targetDate}. Found ${bars.length} historical bars.`);
+            
+            const targetTime = new Date(targetDate).getTime();
+            let closestPrice = null;
+
+            for (const bar of bars) {
+                const barTime = new Date(bar.date).getTime();
+                if (barTime <= targetTime) {
+                    closestPrice = bar.close;
+                } else if (closestPrice === null) {
+                    // If target is BEFORE our first bar, take the first available bar
+                    closestPrice = bar.close;
+                    break;
+                } else {
+                    break;
+                }
+            }
+            return closestPrice;
+        } catch (err) {
+            console.error(`[MarketData] Historical price lookup error for ${ticker}:`, err);
+            return null;
+        }
+    }
+
+    /**
+     * Use Gemini Grounded Search to reconstruct the news environment for a specific past date.
+     * This is the engine for the "Historical Simulation".
+     */
+    static async getHistoricalNewsAtDate(ticker: string, date: string): Promise<NewsItem[]> {
+        try {
+            const { data, error } = await supabase.functions.invoke('proxy-gemini', {
+                body: {
+                    prompt: `RECONSTRUCT THE PAST: Today is ${date}. Find and summarize the top 5 most significant market-moving news headlines for ${ticker.toUpperCase()} on or immediately preceding ${date}. Focus on actual events, earnings, or macro catalysts that were known ON THAT DAY. Avoid foresight. Return a JSON array of objects: [{"title": string, "summary": string, "source": string, "publishedAt": "${date}"}]`,
+                    systemInstruction: 'You are a financial investigator tracking historical events. Return ONLY valid JSON.',
+                    requireGroundedSearch: true,
+                    temperature: 0.1,
+                },
+            });
+
+            if (error || !data?.text) return [];
+
+            const cleanText = data.text.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+            const newsItems = JSON.parse(cleanText) as any[];
+
+            return newsItems.map(item => ({
+                title: item.title,
+                link: '#',
+                source: item.source || 'Historical Archive',
+                publishedAt: item.publishedAt || date,
+                summary: item.summary,
+                relatedTickers: [ticker.toUpperCase()]
+            }));
+        } catch (err) {
+            console.error(`[MarketData] Historical news reconstruction failed for ${ticker} on ${date}:`, err);
+            return [];
+        }
+    }
 }

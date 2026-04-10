@@ -61,4 +61,4 @@ export interface CategoryWinRate {
 }
 
 /** Tab names for the unified dashboard */
-export type DashboardTab = 'signals' | 'portfolio' | 'watchlist' | 'performance' | 'intelligence' | 'alerts';
+export type DashboardTab = 'signals' | 'portfolio' | 'watchlist' | 'performance' | 'intelligence' | 'alerts' | 'simulator';

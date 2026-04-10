@@ -23,8 +23,9 @@ const WatchlistSection = lazy(() => import('@/components/dashboard/WatchlistSect
 const PerformanceMetrics = lazy(() => import('@/components/dashboard/PerformanceMetrics').then(m => ({ default: m.PerformanceMetrics })));
 const SentinelPanel = lazy(() => import('@/components/sentinel/SentinelPanel').then(m => ({ default: m.SentinelPanel })));
 const Alerts = lazy(() => import('@/pages/Alerts').then(m => ({ default: m.Alerts })));
+const SimulatorTab = lazy(() => import('@/components/SimulatorTab').then(m => ({ default: m.SimulatorTab })));
 import {
-    Activity, Briefcase, Eye, BarChart3, Zap, User, TrendingUp, Newspaper, Bell,
+    Activity, Briefcase, Eye, BarChart3, Zap, User, TrendingUp, Newspaper, Bell, History,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MarketSnapshot } from '@/components/dashboard/MarketSnapshot';
@@ -39,6 +40,7 @@ const TABS: { id: DashboardTab; label: string; icon: typeof Activity }[] = [
     { id: 'watchlist', label: 'Watchlist', icon: Eye },
     { id: 'performance', label: 'Performance', icon: BarChart3 },
     { id: 'alerts', label: 'Alerts', icon: Bell },
+    { id: 'simulator', label: 'Simulator', icon: History },
 ];
 
 export function UnifiedDashboard() {
@@ -46,7 +48,7 @@ export function UnifiedDashboard() {
     const [searchParams] = useSearchParams();
     const initialTab = (searchParams.get('tab') as DashboardTab) || 'signals';
     const [activeTab, setActiveTab] = useState<DashboardTab>(
-        (['signals', 'intelligence', 'portfolio', 'watchlist', 'performance', 'alerts'] as DashboardTab[]).includes(initialTab)
+        (['signals', 'intelligence', 'portfolio', 'watchlist', 'performance', 'alerts', 'simulator'] as DashboardTab[]).includes(initialTab)
             ? initialTab
             : 'signals'
     );
@@ -282,6 +284,7 @@ export function UnifiedDashboard() {
                             {activeTab === 'watchlist' && <WatchlistSection />}
                             {activeTab === 'performance' && <PerformanceMetrics />}
                             {activeTab === 'alerts' && <Alerts />}
+                            {activeTab === 'simulator' && <SimulatorTab />}
                         </Suspense>
                     </motion.div>
                 </AnimatePresence>

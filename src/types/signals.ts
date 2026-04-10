@@ -75,6 +75,7 @@ export interface Signal {
     data_quality: DataQuality;
     user_notes: string | null;
     is_paper: boolean;
+    is_simulated: boolean;
     outcome_status: OutcomeStatus;
     outcome_due_at: string | null;
     outcome_review_days: number | null;
@@ -392,6 +393,7 @@ export interface SignalOutcome {
     return_at_10d: number | null;
     return_at_30d: number | null;
     outcome: 'win' | 'loss' | 'breakeven' | 'pending';
+    is_simulated: boolean;
     hit_stop_loss: boolean;
     hit_target: boolean;
     max_drawdown: number | null;

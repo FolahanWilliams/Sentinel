@@ -11,6 +11,7 @@
 import { supabase } from '@/config/supabase';
 import { GeminiService } from './gemini';
 import { GEMINI_MODEL } from '@/config/constants';
+import { InstitutionalWisdom } from './institutionalWisdom';
 
 export interface LessonRule {
     id: string;
@@ -197,47 +198,69 @@ Analyze this data and generate the Lessons Learned rules.`;
 
     /**
      * Retrieves cached lessons relevant to a specific bias type and/or sector.
+     * Blends dynamic live-learned lessons with static "Institutional Wisdom" case studies.
      * Returns a formatted string ready to inject into agent prompts.
      */
-    static async getLessonsForContext(biasType?: string, sector?: string): Promise<string> {
+    static async getLessonsForContext(options?: {
+        biasType?: string;
+        sector?: string;
+        regime?: string;
+        vix?: number;
+        spyTrend?: 'above_200sma' | 'below_200sma' | 'unknown';
+    }): Promise<string> {
         try {
+            // 1. Get Institutional "Master Lessons"
+            const masterLessons = InstitutionalWisdom.getRelevantLessons({
+                regime: options?.regime,
+                vix: options?.vix,
+                spyTrend: options?.spyTrend,
+                sector: options?.sector
+            });
+            const masterCtx = InstitutionalWisdom.formatForPrompt(masterLessons);
+
+            // 2. Get Dynamic "Auto-Learned" Lessons from outcomes
             const { data, error } = await supabase
                 .from('app_settings')
                 .select('value')
                 .eq('key', 'reflection_lessons')
                 .maybeSingle();
 
-            if (error || !data?.value) return '';
+            if (error || !data?.value) return masterCtx;
 
             const reflection = data.value as unknown as ReflectionResult;
-            if (!reflection.lessons || reflection.lessons.length === 0) return '';
+            if (!reflection.lessons || reflection.lessons.length === 0) return masterCtx;
 
-            // Skip stale lessons (older than 7 days) — market conditions change
+            // Skip stale dynamic lessons (older than 7 days) — market conditions change
+            let dynamicCtx = '';
+            let skipDynamic = false;
             if (reflection.generated_at) {
                 const ageMs = Date.now() - new Date(reflection.generated_at).getTime();
                 const MAX_LESSON_AGE_MS = 7 * 24 * 60 * 60 * 1000;
                 if (ageMs > MAX_LESSON_AGE_MS) {
-                    console.warn(`[ReflectionAgent] Lessons are ${(ageMs / 86400000).toFixed(1)} days old, skipping stale context`);
-                    return '';
+                    console.warn(`[ReflectionAgent] Dynamic lessons are ${(ageMs / 86400000).toFixed(1)} days old, skipping stale context`);
+                    skipDynamic = true;
                 }
             }
 
-            // Filter lessons relevant to the context (require minimum sample size for reliability)
-            const relevant = reflection.lessons.filter(lesson => {
-                if (lesson.sample_size < 3) return false; // Too few samples to be reliable
-                const matchesBias = !biasType || lesson.bias_type === biasType || lesson.bias_type === 'all';
-                const matchesSector = !sector || lesson.sector === sector || lesson.sector === 'all';
-                return matchesBias && matchesSector;
-            });
+            if (!skipDynamic) {
+                // Filter lessons relevant to the context (require minimum sample size for reliability)
+                const relevant = reflection.lessons.filter(lesson => {
+                    if (lesson.sample_size < 3) return false;
+                    const matchesBias = !options?.biasType || lesson.bias_type === options.biasType || lesson.bias_type === 'all';
+                    const matchesSector = !options?.sector || lesson.sector === options.sector || lesson.sector === 'all';
+                    return matchesBias && matchesSector;
+                });
 
-            if (relevant.length === 0) return '';
+                if (relevant.length > 0) {
+                    const formatted = relevant.map(l => {
+                        const icon = l.severity === 'critical' ? '🚨' : l.severity === 'warning' ? '⚠️' : 'ℹ️';
+                        return `${icon} [DYNAMIC LESSON: ${l.bias_type}/${l.sector}] ${l.rule} (Win Rate: ${l.win_rate}%, n=${l.sample_size})`;
+                    }).join('\n');
+                    dynamicCtx = `\n\n--- DYNAMIC LESSONS FROM RECENT PERFORMANCE ---\nThe following rules were learned by analyzing ${reflection.outcomes_analyzed} of your recent trade outcomes. RESPECT these findings:\n\n${formatted}\n--- END DYNAMIC LESSONS ---\n`;
+                }
+            }
 
-            const formatted = relevant.map(l => {
-                const icon = l.severity === 'critical' ? '🚨' : l.severity === 'warning' ? '⚠️' : 'ℹ️';
-                return `${icon} [${l.bias_type}/${l.sector}] ${l.rule} (Win Rate: ${l.win_rate}%, n=${l.sample_size})`;
-            }).join('\n');
-
-            return `\n\n--- LESSONS FROM PAST PERFORMANCE (Self-Learning Context) ---\nThe following rules were learned from analyzing ${reflection.outcomes_analyzed} historical signal outcomes. RESPECT these rules and adjust your confidence accordingly:\n\n${formatted}\n--- END LESSONS ---\n`;
+            return masterCtx + dynamicCtx;
 
         } catch (err) {
             console.error('[ReflectionAgent] Failed to fetch lessons:', err);

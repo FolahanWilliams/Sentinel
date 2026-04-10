@@ -114,6 +114,53 @@ function applyBoundedAdjustment(
 export class ScannerService {
 
     /**
+     * Check if a ticker has been scanned for a high-priority event in the last 24 hours.
+     * Prevents redundant AI analysis and saves API credits.
+     */
+    private static async checkScanCooldown(ticker: string, eventType: string): Promise<boolean> {
+        const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        const { data, error } = await supabase
+            .from('signals')
+            .select('id')
+            .eq('ticker', ticker.toUpperCase())
+            .eq('signal_type', eventType)
+            .gt('created_at', twentyFourHoursAgo)
+            .limit(1)
+            .maybeSingle();
+
+        if (error) {
+            console.error(`[Scanner] Cooldown check failed for ${ticker}:`, error.message);
+            return false;
+        }
+
+        return !!data; // Return true if a signal was already generated recently
+    }
+
+    /**
+     * 200-SMA Guard: Blocks "Long" signals in a crisis regime if the stock is below its 200-day average.
+     * Statistically, going long on downtrending stocks in a crash is high-risk/low-win-rate.
+     */
+    private static checkSMAGuard(
+        direction: 'long' | 'short',
+        taSnapshot: any,
+        marketRegime: string
+    ): { blocked: boolean; reason: string } {
+        if (!taSnapshot) return { blocked: false, reason: '' };
+
+        const currentPrice = taSnapshot.currentPrice || (taSnapshot.bollingerPosition !== undefined ? taSnapshot.sma50 : null);
+        const sma200 = taSnapshot.sma200;
+
+        if (direction === 'long' && marketRegime === 'CRISIS' && sma200 && currentPrice < sma200) {
+            return {
+                blocked: true,
+                reason: '200-SMA Guard: Blocking long signal in CRISIS regime for stock in long-term downtrend.'
+            };
+        }
+
+        return { blocked: false, reason: '' };
+    }
+
+    /**
      * Ensure a ticker exists in the watchlist table for the current user.
      * Uses select-then-insert to avoid partial-index ON CONFLICT issues.
      */
@@ -780,7 +827,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                     console.log(`[Scanner] Gap detected for ${ev.ticker}: ${gapFill.gapType} gap ${gapFill.gapPct.toFixed(1)}%`);
                                 }
 
-                                // Unpack earnings guard (6e) — can block signal
+                                // 6e. EARNINGS GUARD
                                 let earningsCtx = '';
                                 let earningsGuardResult = null;
                                 if (earningsResult.status === 'fulfilled') {
@@ -790,6 +837,15 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                         continue;
                                     }
                                     earningsCtx = EarningsGuard.formatForPrompt(earningsGuardResult);
+                                }
+
+                                // 6e.5. SCAN COOLDOWN GUARD — skip if we generated a similar signal in the last 24h
+                                const isPositiveEvent = priceDrop >= 0 || ['analyst_upgrade', 'product_launch', 'fda_approval', 'partnership', 'guidance_raise', 'contract_win', 'sector_tailwind', 'upcoming_earnings'].includes(ev.event_type);
+                                const estSignalType = isPositiveEvent ? 'bullish_catalyst' : 'long_overreaction';
+                                const inCooldown = await ScannerService.checkScanCooldown(ev.ticker, estSignalType);
+                                if (inCooldown) {
+                                    console.log(`[Scanner] COOLDOWN: Skipping ${ev.ticker} (already analyzed for ${estSignalType} in last 24h)`);
+                                    continue;
                                 }
 
                                 // Unpack fundamentals (6f)
@@ -843,8 +899,6 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
 
                                 // Pipeline A: Overreaction Analysis (negative events)
                                 // Pipeline B: Bullish Catalyst Analysis (positive events)
-                                const isPositiveEvent = priceDrop >= 0 || ['analyst_upgrade', 'product_launch', 'fda_approval', 'partnership', 'guidance_raise', 'contract_win', 'sector_tailwind', 'upcoming_earnings'].includes(ev.event_type);
-
                                 let analysis: import('@/types/agents').AgentResult<import('@/types/agents').OverreactionResult>;
                                 let signalType: import('@/types/signals').SignalType = 'long_overreaction';
                                 let catalystAgentUsed = false;
@@ -1766,9 +1820,26 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                         } catch {
                                             // Fallback to legacy static calibrator
                                             try {
-                                                const curve = await ConfidenceCalibrator.getCachedCurve();
-                                                calibratedConfidence = ConfidenceCalibrator.getCalibratedWinRate(analysis.data.confidence_score, curve);
-                                            } catch { /* non-fatal */ }
+                                                const tickerSector = tickersToScan.find(t => t.ticker === ev.ticker)?.sector || 'Unknown';
+                                                calibratedConfidence = await ConfidenceCalibrator.getCalibratedWinRateBySector(
+                                                    analysis.data.confidence_score,
+                                                    tickerSector || 'Unknown'
+                                                );
+                                            } catch { /* non-fatal fallback to raw */
+                                                calibratedConfidence = analysis.data.confidence_score;
+                                            }
+                                        }
+
+                                        // LOW-COST ACCURACY GUARD: 200-SMA Guard in CRISIS
+                                        const smaGuard = ScannerService.checkSMAGuard(
+                                            signalType === 'long_overreaction' || signalType === 'bullish_catalyst' ? 'long' : 'short',
+                                            taSnapshot,
+                                            regimeResult?.regime || 'NORMAL'
+                                        );
+
+                                        if (smaGuard.blocked) {
+                                            console.warn(`[Scanner] ACCURACY GUARD: Blocking signal for ${ev.ticker} due to: ${smaGuard.reason}`);
+                                            continue;
                                         }
 
                                         // Weighted Similarity ROI — multi-factor matching

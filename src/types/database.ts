@@ -626,6 +626,7 @@ export type Database = {
           user_reported_result: string | null
           user_outcome_notes: string | null
           confirmed_biases: string[] | null
+          is_simulated: boolean
           lessons_learned: string | null
         }
         Insert: {
@@ -769,6 +770,7 @@ export type Database = {
           outcome_status: string | null
           outcome_due_at: string | null
           outcome_review_days: number | null
+          is_simulated: boolean
         }
         Insert: {
           agent_outputs?: Json | null

@@ -51,6 +51,7 @@ const StockAnalysis = lazyWithRetry(() => import('@/pages/StockAnalysis'), 'Stoc
 const Positions = lazyWithRetry(() => import('@/pages/Positions'), 'Positions');
 const RiskDashboard = lazyWithRetry(() => import('@/pages/RiskDashboard'), 'RiskDashboard');
 const NotFound = lazyWithRetry(() => import('@/pages/NotFound'), 'NotFound');
+const TrainingDojo = lazyWithRetry(() => import('@/pages/TrainingDojo'), 'default');
 
 /** Minimal loading spinner shown while a lazy chunk loads */
 function RouteLoader() {
@@ -143,6 +144,7 @@ export default function App() {
                                 <Route path="/journal" element={<Journal />} />
                                 <Route path="/positions" element={<Positions />} />
                                 <Route path="/risk" element={<RiskDashboard />} />
+                                <Route path="/training-dojo" element={<TrainingDojo />} />
                                 {/* Redirects for consolidated pages */}
                                 <Route path="/watchlist" element={<Navigate to="/?tab=watchlist" replace />} />
                                 <Route path="/performance" element={<Navigate to="/backtest?tab=performance" replace />} />
