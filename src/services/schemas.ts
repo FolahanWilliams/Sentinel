@@ -419,3 +419,84 @@ export const PRE_MORTEM_SCHEMA = {
     },
     required: ["reasoning", "scenarios", "avg_failure_probability", "highest_risk_scenario", "resilience_rating"]
 };
+
+// ── Short Signal Schemas (Item 10) ───────────────────────────────────────────
+
+/**
+ * SHORT_OVERREACTION_SCHEMA — mirror of OVERREACTION_SCHEMA for euphoria shorts.
+ * target_price is BELOW current price; stop_loss is ABOVE current price.
+ */
+export const SHORT_OVERREACTION_SCHEMA = {
+    type: "object",
+    properties: {
+        reasoning: { type: "string", description: "Think step-by-step. Analyze the catalyst driving the rally, its actual fundamental merit, the magnitude of the move vs. the underlying change in intrinsic value, and whether cognitive biases are inflating the move. Then reach your conclusion." },
+        is_overreaction: { type: "boolean", description: "True if the price rally is an irrational overreaction creating a short opportunity." },
+        confidence_score: { type: "integer", description: "0-100 confidence score." },
+        identified_biases: {
+            type: "array",
+            items: { type: "string" },
+            description: "Cognitive biases driving the irrational rally (e.g., 'narrative_fallacy', 'overconfidence', 'herding')."
+        },
+        bias_type: {
+            type: "string",
+            enum: ["bullish", "bearish", "neutral"],
+            description: "For a short overreaction this should be 'bearish' — the stock is expected to fall back."
+        },
+        secondary_biases: {
+            type: "array",
+            items: { type: "string", enum: ["bullish", "bearish", "neutral"] }
+        },
+        thesis: { type: "string", description: "Brief, objective explanation of why this rally is irrational and the stock is expected to fall." },
+        financial_impact_assessment: { type: "string", description: "Assessment of the actual long-term cash flow impact of the catalyst — explaining why the rally is unjustified." },
+        suggested_entry_low: { type: "number", description: "Low-end of the short entry zone." },
+        suggested_entry_high: { type: "number", description: "High-end of the short entry zone." },
+        stop_loss: { type: "number", description: "Stop loss ABOVE the current price (limits upside against the short position)." },
+        target_price: { type: "number", description: "Target price for the short — must be BELOW the current price." },
+        timeframe_days: { type: "integer", description: "Expected days for the setup to play out." },
+        moat_rating: { type: "integer", description: "Economic moat score 1-10 for the company (low moat = better short candidate)." },
+        lynch_category: { type: "string", description: "Peter Lynch category: 'fast_grower', 'stalwart', 'turnaround', 'asset_play', 'cyclical', 'slow_grower'." },
+        conviction_score: { type: "integer", description: "Short conviction 0-100. Only ≥70 = strong short setup." },
+        why_high_conviction: { type: "string", description: "Explain the overvaluation case or the key weakness in the thesis." }
+    },
+    required: ["reasoning", "is_overreaction", "confidence_score", "identified_biases", "bias_type", "secondary_biases", "thesis", "financial_impact_assessment", "stop_loss", "target_price", "moat_rating", "lynch_category", "conviction_score"]
+};
+
+/**
+ * BEARISH_CATALYST_SCHEMA — for negative catalysts that haven't been fully priced in.
+ * Mirrors BULLISH_CATALYST_SCHEMA but for short setups.
+ */
+export const BEARISH_CATALYST_SCHEMA = {
+    type: "object",
+    properties: {
+        reasoning: { type: "string", description: "Think step-by-step. Analyze the negative catalyst, its structural impact on revenue/earnings, whether the market has fully priced in the deterioration, and whether continued downside is likely. Then reach your conclusion." },
+        is_underreaction: { type: "boolean", description: "True if the market hasn't fully priced in the negative catalyst (more downside ahead)." },
+        confidence_score: { type: "integer", description: "0-100 confidence score." },
+        catalyst_type: { type: "string", description: "Type of catalyst: 'guidance_cut', 'earnings_miss', 'product_failure', 'regulatory_action', 'executive_departure', 'accounting_restatement', 'competitive_loss', 'ratings_downgrade', 'credit_event', 'sector_headwind'." },
+        identified_biases: {
+            type: "array",
+            items: { type: "string" },
+            description: "Cognitive biases causing under-pricing of downside (e.g., 'status_quo_bias', 'anchoring', 'sunk_cost')."
+        },
+        bias_type: {
+            type: "string",
+            enum: ["bullish", "bearish", "neutral"],
+            description: "For bearish catalyst this should be 'bearish'."
+        },
+        secondary_biases: {
+            type: "array",
+            items: { type: "string", enum: ["bullish", "bearish", "neutral"] }
+        },
+        thesis: { type: "string", description: "Why this negative catalyst has more downside than the market expects." },
+        catalyst_impact_assessment: { type: "string", description: "Assessment of the catalyst's structural impact on forward earnings, revenue, or competitive position." },
+        suggested_entry_low: { type: "number", description: "Low-end of the short entry zone." },
+        suggested_entry_high: { type: "number", description: "High-end of the short entry zone." },
+        stop_loss: { type: "number", description: "Hard stop loss ABOVE the current price." },
+        target_price: { type: "number", description: "Target price — must be BELOW the current price." },
+        timeframe_days: { type: "integer", description: "Expected days for the setup to play out." },
+        moat_rating: { type: "integer", description: "Economic moat score 1-10 (moat erosion is the best bearish signal)." },
+        lynch_category: { type: "string", description: "Peter Lynch category." },
+        conviction_score: { type: "integer", description: "Short conviction 0-100. Only ≥70 = strong setup." },
+        why_high_conviction: { type: "string", description: "Explain the structural deterioration case or key weakness." }
+    },
+    required: ["reasoning", "is_underreaction", "confidence_score", "catalyst_type", "identified_biases", "bias_type", "secondary_biases", "thesis", "catalyst_impact_assessment", "stop_loss", "target_price", "moat_rating", "lynch_category", "conviction_score"]
+};

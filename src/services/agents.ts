@@ -15,7 +15,10 @@ import {
     BULLISH_CATALYST_AGENT_PROMPT,
     BIAS_DETECTIVE_AGENT_PROMPT,
     MACRO_CAUSAL_AGENT_PROMPT,
-    getRegimeOverlay
+    SHORT_OVERREACTION_AGENT_PROMPT,
+    BEARISH_CATALYST_AGENT_PROMPT,
+    getRegimeOverlay,
+    getSectorPromptOverlay,
 } from './prompts';
 import type { MarketRegimeType } from './marketRegime';
 import {
@@ -26,7 +29,9 @@ import {
     SATELLITE_DISCOVERY_SCHEMA,
     BULLISH_CATALYST_SCHEMA,
     BIAS_DETECTIVE_SCHEMA,
-    MACRO_CAUSAL_SCHEMA
+    MACRO_CAUSAL_SCHEMA,
+    SHORT_OVERREACTION_SCHEMA,
+    BEARISH_CATALYST_SCHEMA,
 } from './schemas';
 import { GEMINI_MODEL, BIAS_DETECTIVE_MAX_PENALTY } from '@/config/constants';
 import type { AgentResult, OverreactionResult, ContagionResult, SanityCheckResult, BullishCatalystResult, BiasDetectiveResult, MacroCausalResult } from '@/types/agents';
@@ -77,10 +82,12 @@ export class AgentService {
         taContext?: string;
         historicalContext?: string;
         regime?: MarketRegimeType;
+        /** Ticker's sector for sector-specific prompt overlay injection. */
+        sector?: string;
     }): Promise<AgentResult<OverreactionResult>> {
         const {
             ticker, eventHeadline, eventDesc, currentPrice, priceDropPct,
-            performanceContext, marketContext, taContext, historicalContext, regime
+            performanceContext, marketContext, taContext, historicalContext, regime, sector
         } = input;
         const perfBlock = performanceContext
             ? `\n\n${performanceContext}\n\nUse the performance data above to calibrate your confidence. If this bias type or sector historically underperforms, lower your confidence. If it outperforms, you may raise it slightly.`
@@ -98,6 +105,7 @@ export class AgentService {
         const histBlock = historicalContext || '';
         // Prepend regime-specific reasoning guidance to the agent's system prompt
         const regimeOverlay = regime ? getRegimeOverlay(regime, 'thesis') : '';
+        const sectorOverlay = sector ? getSectorPromptOverlay(sector, 'overreaction') : '';
 
         const prompt = `
     TICKER: ${ticker}
@@ -112,7 +120,7 @@ export class AgentService {
 
         return GeminiService.generate({
             prompt,
-            systemInstruction: regimeOverlay + OVERREACTION_AGENT_PROMPT,
+            systemInstruction: regimeOverlay + sectorOverlay + OVERREACTION_AGENT_PROMPT,
             // Grounded search is incompatible with responseSchema in the Gemini API.
             // All real-time context (price, TA, market data) is already in the prompt.
             requireGroundedSearch: false,
@@ -350,10 +358,12 @@ export class AgentService {
         taContext?: string;
         historicalContext?: string;
         regime?: MarketRegimeType;
+        /** Ticker's sector for sector-specific prompt overlay injection. */
+        sector?: string;
     }): Promise<AgentResult<BullishCatalystResult>> {
         const {
             ticker, eventHeadline, eventDesc, currentPrice, priceChangePct,
-            performanceContext, marketContext, taContext, historicalContext, regime
+            performanceContext, marketContext, taContext, historicalContext, regime, sector
         } = input;
         const perfBlock = performanceContext
             ? `\n\n${performanceContext}\n\nUse the performance data above to calibrate your confidence.`
@@ -370,6 +380,7 @@ export class AgentService {
         const taBlock = taContext || '';
         const histBlock = historicalContext || '';
         const regimeOverlay = regime ? getRegimeOverlay(regime, 'thesis') : '';
+        const sectorOverlay = sector ? getSectorPromptOverlay(sector, 'bullish_catalyst') : '';
 
         const prompt = `
     TICKER: ${ticker}
@@ -384,7 +395,7 @@ export class AgentService {
 
         return GeminiService.generate({
             prompt,
-            systemInstruction: regimeOverlay + BULLISH_CATALYST_AGENT_PROMPT,
+            systemInstruction: regimeOverlay + sectorOverlay + BULLISH_CATALYST_AGENT_PROMPT,
             requireGroundedSearch: false,
             responseSchema: BULLISH_CATALYST_SCHEMA,
             temperature: 0.4,
@@ -591,6 +602,132 @@ Return JSON.
                 required: ["events"]
             },
             temperature: 0.1,
+            model: GEMINI_MODEL,
+        });
+    }
+
+    /**
+     * 8. Short Overreaction Agent
+     * Analyzes a significant positive price move and determines if the market has
+     * irrationally over-bought (euphoria rally) creating a short opportunity.
+     *
+     * Mirror of evaluateOverreaction() for short setups.
+     */
+    static async evaluateShortOverreaction(input: {
+        ticker: string;
+        eventHeadline: string;
+        eventDesc: string;
+        currentPrice: number;
+        priceRisePct: number;
+        performanceContext?: string;
+        marketContext?: MarketContext;
+        taContext?: string;
+        historicalContext?: string;
+        regime?: MarketRegimeType;
+        sector?: string;
+    }): Promise<AgentResult<OverreactionResult>> {
+        const {
+            ticker, eventHeadline, eventDesc, currentPrice, priceRisePct,
+            performanceContext, marketContext, taContext, historicalContext, regime, sector
+        } = input;
+
+        const perfBlock = performanceContext
+            ? `\n\n${performanceContext}\n\nUse the performance data above to calibrate your conviction. If short overreaction signals historically underperform in this sector, lower your confidence.`
+            : '';
+
+        const marketBlock = marketContext
+            ? `\n\nMARKET CONTEXT:
+    52-Week High: $${Number(marketContext.fiftyTwoWeekHigh).toFixed(2) || 'N/A'} | 52-Week Low: $${Number(marketContext.fiftyTwoWeekLow).toFixed(2) || 'N/A'}
+    Average Volume: ${marketContext.avgVolume?.toLocaleString() ?? 'N/A'} | Current Volume: ${marketContext.currentVolume?.toLocaleString() ?? 'N/A'}
+    Sector Performance: ${marketContext.sectorPerformance ?? 'N/A'}
+    CNN Fear & Greed Index: ${marketContext.fearGreedScore ?? 'N/A'} (${marketContext.fearGreedRating ?? 'N/A'})`
+            : '';
+
+        const taBlock = taContext || '';
+        const histBlock = historicalContext || '';
+        const regimeOverlay = regime ? getRegimeOverlay(regime, 'thesis') : '';
+        const sectorOverlay = sector ? getSectorPromptOverlay(sector, 'short_overreaction') : '';
+
+        const prompt = `
+    TICKER: ${ticker}
+    CURRENT PRICE: $${Number(currentPrice).toFixed(2)} (Up ${Number(priceRisePct).toFixed(2)}%)
+    EVENT HEADLINE: ${eventHeadline}
+    EVENT DESCRIPTION: ${eventDesc}
+    ${marketBlock}${taBlock}${histBlock}${perfBlock}
+    Evaluate if this rally is an irrational overreaction driven by hype/narrative, presenting a SHORT opportunity as the euphoria deflates.
+    Think step-by-step in your reasoning before reaching your verdict.
+    Return JSON perfectly matching the expected schema.
+    `;
+
+        return GeminiService.generate({
+            prompt,
+            systemInstruction: regimeOverlay + sectorOverlay + SHORT_OVERREACTION_AGENT_PROMPT,
+            requireGroundedSearch: false,
+            responseSchema: SHORT_OVERREACTION_SCHEMA,
+            temperature: 0.4,
+            model: GEMINI_MODEL,
+        });
+    }
+
+    /**
+     * 9. Bearish Catalyst Agent
+     * Analyzes a negative catalyst event and determines if the market has
+     * under-reacted — meaning more downside is coming.
+     *
+     * Mirror of evaluateBullishCatalyst() for short setups.
+     */
+    static async evaluateBearishCatalyst(input: {
+        ticker: string;
+        eventHeadline: string;
+        eventDesc: string;
+        currentPrice: number;
+        priceChangePct: number;
+        performanceContext?: string;
+        marketContext?: MarketContext;
+        taContext?: string;
+        historicalContext?: string;
+        regime?: MarketRegimeType;
+        sector?: string;
+    }): Promise<AgentResult<any>> {
+        const {
+            ticker, eventHeadline, eventDesc, currentPrice, priceChangePct,
+            performanceContext, marketContext, taContext, historicalContext, regime, sector
+        } = input;
+
+        const perfBlock = performanceContext
+            ? `\n\n${performanceContext}\n\nUse the performance data to calibrate your conviction for bearish setups.`
+            : '';
+
+        const marketBlock = marketContext
+            ? `\n\nMARKET CONTEXT:
+    52-Week High: $${Number(marketContext.fiftyTwoWeekHigh).toFixed(2) || 'N/A'} | 52-Week Low: $${Number(marketContext.fiftyTwoWeekLow).toFixed(2) || 'N/A'}
+    Average Volume: ${marketContext.avgVolume?.toLocaleString() ?? 'N/A'} | Current Volume: ${marketContext.currentVolume?.toLocaleString() ?? 'N/A'}
+    Sector Performance: ${marketContext.sectorPerformance ?? 'N/A'}
+    CNN Fear & Greed Index: ${marketContext.fearGreedScore ?? 'N/A'} (${marketContext.fearGreedRating ?? 'N/A'})`
+            : '';
+
+        const taBlock = taContext || '';
+        const histBlock = historicalContext || '';
+        const regimeOverlay = regime ? getRegimeOverlay(regime, 'thesis') : '';
+        const sectorOverlay = sector ? getSectorPromptOverlay(sector, 'bearish_catalyst') : '';
+
+        const prompt = `
+    TICKER: ${ticker}
+    CURRENT PRICE: $${Number(currentPrice).toFixed(2)} (${priceChangePct >= 0 ? 'Up' : 'Down'} ${Math.abs(Number(priceChangePct)).toFixed(2)}%)
+    EVENT HEADLINE: ${eventHeadline}
+    EVENT DESCRIPTION: ${eventDesc}
+    ${marketBlock}${taBlock}${histBlock}${perfBlock}
+    Evaluate if this negative catalyst has NOT been fully priced in and there is continued downside ahead.
+    Think step-by-step in your reasoning before reaching your verdict.
+    Return JSON perfectly matching the expected schema.
+    `;
+
+        return GeminiService.generate({
+            prompt,
+            systemInstruction: regimeOverlay + sectorOverlay + BEARISH_CATALYST_AGENT_PROMPT,
+            requireGroundedSearch: false,
+            responseSchema: BEARISH_CATALYST_SCHEMA,
+            temperature: 0.4,
             model: GEMINI_MODEL,
         });
     }

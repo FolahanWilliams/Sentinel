@@ -5,7 +5,7 @@
 import type { BiasType } from '@/config/constants';
 export type { BiasType };
 
-export type SignalType = 'long_overreaction' | 'short_overreaction' | 'sector_contagion' | 'earnings_overreaction' | 'bullish_catalyst' | 'information' | 'capital_allocation' | 'investment_thesis' | 'portfolio_exit';
+export type SignalType = 'long_overreaction' | 'short_overreaction' | 'sector_contagion' | 'earnings_overreaction' | 'bullish_catalyst' | 'bearish_catalyst' | 'information' | 'capital_allocation' | 'investment_thesis' | 'portfolio_exit';
 export type LynchCategory = 'fast_grower' | 'stalwart' | 'turnaround' | 'asset_play' | 'cyclical' | 'slow_grower';
 export type SignalStatus = 'active' | 'triggered' | 'stopped_out' | 'target_hit' | 'manually_closed' | 'expired';
 export type OutcomeStatus = 'pending_outcome' | 'outcome_logged' | 'outcome_overdue';

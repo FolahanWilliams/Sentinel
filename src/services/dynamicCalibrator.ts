@@ -344,6 +344,154 @@ export class DynamicCalibrator {
     this.pendingFetch = null;
   }
 
+  // ── Return-Weighted Calibration (Item 2) ─────────────────────────
+  //
+  // Unlike the binary win/loss PAVA above, this curve weights each outcome
+  // by return magnitude. A +18% win contributes more to the fitted curve
+  // than a +0.1% barely-positive outcome.
+  //
+  // Weight formula: sigmoid((return / avg_return) × 2)
+  //   → avg return outcome: weight ≈ 0.88
+  //   → very high return:   weight → 1.0
+  //   → tiny return:        weight → 0.5 (still counts, but less)
+  //
+  // The resulting "return_weighted_win_rate" per bucket reflects quality-adjusted
+  // win probability, used for stop-loss sizing guidance and position conviction.
+
+  private static readonly RETURN_WEIGHTED_KEY = 'return_weighted_calibration_curve';
+  private static cachedReturnWeightedCurve: DynamicCalibrationCurve | null = null;
+  private static returnWeightedCacheTimestamp = 0;
+
+  /**
+   * Sigmoid helper: maps any real number to (0, 1).
+   */
+  private static sigmoid(x: number): number {
+    return 1 / (1 + Math.exp(-x));
+  }
+
+  /**
+   * Build the return-weighted calibration curve and persist it.
+   * Should be called after fitCurve() when new outcomes are available.
+   */
+  static async buildReturnWeightedCurve(): Promise<DynamicCalibrationCurve> {
+    const { data: outcomes, error } = await supabase
+      .from('signal_outcomes')
+      .select('outcome, return_at_5d, signals!inner(confidence_score, conviction_score)')
+      .neq('outcome', 'pending')
+      .not('return_at_5d', 'is', null);
+
+    if (error || !outcomes || outcomes.length < MIN_OUTCOMES_FOR_FIT) {
+      return this.emptyCurve();
+    }
+
+    // Compute average absolute return across all outcomes
+    const allReturns = (outcomes as any[])
+      .map((o: any) => Math.abs(o.return_at_5d as number))
+      .filter((r: number) => r > 0);
+    const avgAbsReturn = allReturns.length > 0
+      ? allReturns.reduce((a: number, b: number) => a + b, 0) / allReturns.length
+      : 1;
+
+    // Group into confidence buckets with sigmoid-weighted win contributions
+    const bucketMap = new Map<number, { weightedWins: number; totalWeight: number }>();
+    let totalWins = 0;
+
+    for (const row of outcomes as any[]) {
+      const confidence = row.signals?.confidence_score ?? 0;
+      const returnAt5d = row.return_at_5d as number;
+      const bucket = Math.min(100, Math.max(0, Math.round(confidence)));
+      const isWin = row.outcome === 'win';
+
+      // Return-based weight: sigmoid scales the contribution by return magnitude
+      const normalizedReturn = Math.abs(returnAt5d) / avgAbsReturn;
+      const weight = this.sigmoid(normalizedReturn * 2);
+
+      if (!bucketMap.has(bucket)) {
+        bucketMap.set(bucket, { weightedWins: 0, totalWeight: 0 });
+      }
+      const entry = bucketMap.get(bucket)!;
+      entry.totalWeight += weight;
+      if (isWin) {
+        entry.weightedWins += weight;
+        totalWins++;
+      }
+    }
+
+    const pavaInput: { x: number; y: number; w: number }[] = [];
+    for (const [x, { weightedWins, totalWeight }] of bucketMap) {
+      pavaInput.push({
+        x,
+        y: (weightedWins / totalWeight) * 100,
+        w: totalWeight,
+      });
+    }
+
+    const fittedPoints = this.pava(pavaInput);
+
+    const curve: DynamicCalibrationCurve = {
+      points: fittedPoints,
+      lastUpdated: new Date().toISOString(),
+      totalOutcomes: outcomes.length,
+      overallWinRate:
+        outcomes.length > 0
+          ? Math.round((totalWins / outcomes.length) * 100 * 10) / 10
+          : 0,
+      fittedFrom: pavaInput.length,
+    };
+
+    await supabase
+      .from('app_settings')
+      .upsert(
+        {
+          key: this.RETURN_WEIGHTED_KEY,
+          value: curve as any,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'key,user_id' }
+      );
+
+    this.cachedReturnWeightedCurve = curve;
+    this.returnWeightedCacheTimestamp = Date.now();
+
+    console.log(`[DynamicCalibrator] Return-weighted curve fitted from ${outcomes.length} outcomes.`);
+    return curve;
+  }
+
+  /**
+   * Get the cached return-weighted calibration probability for a raw confidence score.
+   * Returns null when insufficient data is available.
+   */
+  static async getReturnWeightedProbability(rawConfidence: number): Promise<number | null> {
+    try {
+      // Use in-memory cache if fresh
+      if (
+        this.cachedReturnWeightedCurve &&
+        Date.now() - this.returnWeightedCacheTimestamp < CACHE_TTL_MS
+      ) {
+        const curve = this.cachedReturnWeightedCurve;
+        if (curve.totalOutcomes < MIN_OUTCOMES_FOR_FIT) return null;
+        return this.getCalibratedProbability(rawConfidence, curve);
+      }
+
+      const { data, error } = await supabase
+        .from('app_settings')
+        .select('value')
+        .eq('key', this.RETURN_WEIGHTED_KEY)
+        .maybeSingle();
+
+      if (error || !data?.value) return null;
+
+      const curve = data.value as unknown as DynamicCalibrationCurve;
+      this.cachedReturnWeightedCurve = curve;
+      this.returnWeightedCacheTimestamp = Date.now();
+
+      if (curve.totalOutcomes < MIN_OUTCOMES_FOR_FIT) return null;
+      return this.getCalibratedProbability(rawConfidence, curve);
+    } catch {
+      return null;
+    }
+  }
+
   // ── Helpers ──────────────────────────────────────────────────────
 
   private static emptyCurve(): DynamicCalibrationCurve {

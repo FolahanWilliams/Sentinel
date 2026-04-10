@@ -288,6 +288,9 @@ Generate weight adjustments for each pipeline step based on both live performanc
             updated_at: new Date().toISOString(),
         }, { onConflict: 'key,user_id' });
 
+        // 7. Run feature importance (adjustment-correlation) analysis in background
+        void this.getAdjustmentCorrelations();
+
         console.log(`[AutoLearning] Generated ${weights.length} weight adjustments from ${condensed.length} outcomes.`);
         return learningResult;
     }
@@ -517,6 +520,127 @@ Generate weight adjustments for each pipeline step based on both live performanc
                 }, { onConflict: 'key' });
         } catch (err) {
             console.warn('[AutoLearning] Pairwise interaction detection failed:', err);
+        }
+    }
+
+    /**
+     * Feature importance: correlate each confidence adjustment stage with eventual
+     * win/loss outcomes.
+     *
+     * Reads the `agent_outputs.context_bus.confidence_trail` (which records every
+     * stage's before/after/adjustment/reason) from signals joined with their
+     * completed outcomes, then computes per-stage point-biserial correlation with
+     * the binary win/loss label.
+     *
+     * Result is persisted to app_settings under 'adjustment_correlations' and
+     * logged so operators can see which stages help vs. hurt signal accuracy.
+     */
+    static async getAdjustmentCorrelations(): Promise<void> {
+        try {
+            const { data: outcomes } = await supabase
+                .from('signal_outcomes')
+                .select('outcome, signals!inner(agent_outputs)')
+                .neq('outcome', 'pending')
+                .limit(300);
+
+            if (!outcomes || outcomes.length < 15) {
+                console.log('[AutoLearning] AdjustmentCorrelations: insufficient data (<15 completed outcomes)');
+                return;
+            }
+
+            // stage → { adjustments (positive=boost), outcomes (1=win, 0=loss) }
+            const stageData: Record<string, { adjustments: number[]; outcomes: number[] }> = {};
+
+            for (const o of outcomes as any[]) {
+                const trail: Array<{ stage: string; adjustment: number }> | undefined =
+                    o.signals?.agent_outputs?.context_bus?.confidence_trail;
+                if (!Array.isArray(trail)) continue;
+
+                const isWin = o.outcome === 'win' ? 1 : 0;
+
+                for (const step of trail) {
+                    if (!step.stage) continue;
+                    if (!stageData[step.stage]) {
+                        stageData[step.stage] = { adjustments: [], outcomes: [] };
+                    }
+                    const stageEntry = stageData[step.stage];
+                    if (!stageEntry) continue; // narrowing for noUncheckedIndexedAccess
+                    stageEntry.adjustments.push(step.adjustment ?? 0);
+                    stageEntry.outcomes.push(isWin);
+                }
+            }
+
+            // Point-biserial correlation for each stage:
+            //   r = (mean_adj_wins − mean_adj_losses) / std_adj × sqrt(n_wins × n_losses / n²)
+            const correlationResults: Array<{
+                stage: string;
+                correlation: number;
+                sampleSize: number;
+                avgAdjustmentOnWins: number;
+                avgAdjustmentOnLosses: number;
+                interpretation: 'helpful' | 'harmful' | 'neutral';
+            }> = [];
+
+            for (const [stage, { adjustments, outcomes: outs }] of Object.entries(stageData)) {
+                if (adjustments.length < 5) continue;
+
+                const wins = adjustments.filter((_, i) => outs[i] === 1);
+                const losses = adjustments.filter((_, i) => outs[i] === 0);
+
+                if (wins.length === 0 || losses.length === 0) continue;
+
+                const mean = (arr: number[]) => arr.reduce((a, b) => a + b, 0) / arr.length;
+                const std = (arr: number[]) => {
+                    const m = mean(arr);
+                    return Math.sqrt(arr.reduce((a, b) => a + (b - m) ** 2, 0) / arr.length);
+                };
+
+                const meanWins = mean(wins);
+                const meanLosses = mean(losses);
+                const allStd = std(adjustments);
+
+                const n = adjustments.length;
+                const nW = wins.length;
+                const nL = losses.length;
+
+                const correlation = allStd > 0
+                    ? ((meanWins - meanLosses) / allStd) * Math.sqrt((nW * nL) / (n * n))
+                    : 0;
+
+                // Positive correlation → stage boosts on winners more than losers = helpful
+                // Negative correlation → stage boosts on eventual losers = harmful
+                const interpretation = correlation > 0.05 ? 'helpful' : correlation < -0.05 ? 'harmful' : 'neutral';
+
+                correlationResults.push({
+                    stage,
+                    correlation: Math.round(correlation * 1000) / 1000,
+                    sampleSize: n,
+                    avgAdjustmentOnWins: Math.round(meanWins * 10) / 10,
+                    avgAdjustmentOnLosses: Math.round(meanLosses * 10) / 10,
+                    interpretation,
+                });
+            }
+
+            correlationResults.sort((a, b) => b.correlation - a.correlation);
+
+            console.log(`[AutoLearning] AdjustmentCorrelations: ${correlationResults.length} stages analyzed`);
+            const harmful = correlationResults.filter(r => r.interpretation === 'harmful');
+            if (harmful.length > 0) {
+                console.warn(`[AutoLearning] Potentially harmful stages: ${harmful.map(r => `${r.stage} (r=${r.correlation}, n=${r.sampleSize})`).join(', ')}`);
+            }
+
+            await supabase
+                .from('app_settings')
+                .upsert({
+                    key: 'adjustment_correlations',
+                    value: {
+                        correlations: correlationResults,
+                        outcomes_analyzed: outcomes.length,
+                        generated_at: new Date().toISOString(),
+                    },
+                }, { onConflict: 'key' });
+        } catch (err) {
+            console.warn('[AutoLearning] getAdjustmentCorrelations failed:', err);
         }
     }
 

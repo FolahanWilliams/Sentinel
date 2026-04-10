@@ -450,3 +450,167 @@ export function getRegimeOverlay(
     const map = role === 'red_team' ? REGIME_OVERLAY_RED_TEAM : REGIME_OVERLAY_THESIS;
     return map[regime] ?? '';
 }
+
+// ── Sector-Specific Agent Overlays ──────────────────────────────────────────
+//
+// Injected alongside the regime overlay into the primary agent system prompt.
+// Each sector has distinct heuristics that materially change how catalysts,
+// overreactions, and risk should be evaluated.
+
+const SECTOR_OVERLAY_MAP: Record<string, string> = {
+    Biotech: `
+SECTOR CONTEXT — BIOTECH / PHARMA:
+- FDA binary events (PDUFA dates, CRL letters, Complete Response) cause PERMANENT impairments on failure — do NOT model mean-reversion after a Phase 3 trial failure. This is not a dip; it is a repricing.
+- Pipeline value: a drop on a single asset failure is overreaction ONLY if the company has diversified pipeline assets that the market is conflating.
+- Label expansions, accelerated approvals, and breakthrough designations are high-impact, low-probability catalysts. Price them accordingly.
+- Revenue-stage vs. pre-revenue: pre-revenue biotechs are binary bets. Conviction threshold should be high (conviction_score ≥ 70 requires multiple late-stage assets or existing commercial products).
+- Watch burn rate and cash runway — distress financing risk can wipe gains even if the science is valid.`,
+
+    Healthcare: `
+SECTOR CONTEXT — HEALTHCARE (Providers / Medical Devices):
+- Regulatory approvals (FDA 510(k), PMA) matter but are less binary than biotech; focus on reimbursement rates and payer mix for providers.
+- Hospital systems and insurers are heavily affected by macro (ACA changes, CMS reimbursement cuts). Distinguish systemic vs. idiosyncratic drops.
+- Medical device misses on launch timelines are recoverable; safety recalls are longer-duration headwinds.
+- Government contract wins/losses are lumpy revenue — smooth the impact over multiple quarters before setting targets.`,
+
+    Technology: `
+SECTOR CONTEXT — TECHNOLOGY (Software / SaaS / Enterprise):
+- Revenue recognition (ASC 606) and billings/deferred revenue divergence matter more than GAAP revenue for SaaS.
+- NRR (Net Revenue Retention) > 120% is a strong moat signal; < 100% is a structural problem, not a dip.
+- Guidance cuts in tech tend to be "kitchen sink" events — management clearing the bar for next quarter. Check if the guidance cut is accompanied by real customer churn or just conservatism.
+- Rising rate environments compress SaaS multiples. Distinguish multiple compression from earnings deterioration.
+- Large enterprise deal slippage is a 1-2 quarter headwind, not a thesis breaker, if the pipeline remains healthy.`,
+
+    Semiconductors: `
+SECTOR CONTEXT — SEMICONDUCTORS:
+- Semiconductor cycles are highly correlated. A single company's guide-down often signals a broader inventory correction — test whether the drop is idiosyncratic or a leading indicator for peers.
+- Lead time data and book-to-bill ratios are forward indicators. Rising lead times signal demand return; falling signal inventory digestion.
+- AI/HPC compute chips (NVIDIA, AMD, Marvell) carry significantly different cyclicality than commodity DRAM/NAND.
+- IP licensing wins/losses (e.g., ARM architectures) are long-duration value events — model multi-year impact, not quarterly noise.
+- China export control overhangs are sector-wide, not idiosyncratic — downgrade accordingly.`,
+
+    Energy: `
+SECTOR CONTEXT — ENERGY (Oil & Gas / Renewables):
+- Commodity price is the dominant driver. Separate the operational quality from commodity beta before calling a dip idiosyncratic.
+- Production guidance cuts are serious if driven by geological issues; capital allocation driven cuts can be quality signals (discipline).
+- Permitting, pipeline construction, and environmental approvals are multi-year overhangs — don't model short-duration recovery for regulatory blockages.
+- Renewable energy: power purchase agreement (PPA) pricing and interconnection queue backlogs matter more than panel/turbine costs.
+- OPEC+ decisions are external shocks — do not model mean-reversion on crude supply decisions as "overreaction."`,
+
+    Financials: `
+SECTOR CONTEXT — FINANCIALS (Banks / Insurance / Fintech):
+- Net Interest Margin (NIM) is the core earnings driver for banks. Rate cycle direction directly impacts thesis durability.
+- Loan loss provisions are non-cash but signal management's view of credit quality — rising provisions are early warning signals.
+- Regulatory capital requirements (CET1, Tier 1) constrain buyback capacity — factor in when modeling shareholder return.
+- Fintech payments companies: GMV and take-rate trends matter more than headline revenue. Watch for competitive take-rate pressure.
+- Insurance: combined ratio > 100 means underwriting at a loss. Cat events and reserve strengthening are binary risks.`,
+
+    'AI/Cloud': `
+SECTOR CONTEXT — AI / CLOUD:
+- Cloud revenue is largely contractual (Azure, AWS, GCP). Slowdowns in "optimization" are temporary; workload shift is not.
+- AI inference workloads are growing faster than training — separate capex winners (NVDA, TSMC) from application-layer plays.
+- Hyperscaler capex guidance is a leading indicator for the entire supply chain. Guide-up = bullish cycle, guide-down = inventory caution.
+- AI product announcements without revenue path (demos, roadmaps) are often over-priced in the short term. Require concrete customer adoption data.`,
+
+    Cybersecurity: `
+SECTOR CONTEXT — CYBERSECURITY:
+- High-profile breaches are catalysts for the sector (increases spend), but direct victims have litigation/reputation risk.
+- Platform consolidation is the dominant trend — point solutions face margin pressure while platform players (CrowdStrike, Palo Alto) expand.
+- Federal/government contract wins carry high switching cost moat and are durable revenue.
+- NRR and ARR growth are the right metrics — GAAP revenue timing is often misleading for cybersecurity subscription models.`,
+};
+
+/**
+ * Returns a sector-specific reasoning guidance overlay for injection into
+ * the primary agent system prompt.
+ *
+ * @param sector - The sector string from the watchlist ticker (e.g., 'Biotech', 'Technology').
+ * @param agentType - The agent type requesting the overlay (for future extensibility).
+ * @returns A sector guidance string, or an empty string if no overlay is configured.
+ */
+export function getSectorPromptOverlay(sector: string, _agentType: string): string {
+    // Direct match first
+    if (SECTOR_OVERLAY_MAP[sector]) return SECTOR_OVERLAY_MAP[sector]!;
+
+    // Fuzzy match — sector strings vary across the watchlist
+    const sectorLower = sector.toLowerCase();
+    if (sectorLower.includes('bio') || sectorLower.includes('pharma')) return SECTOR_OVERLAY_MAP['Biotech']!;
+    if (sectorLower.includes('health') || sectorLower.includes('medical')) return SECTOR_OVERLAY_MAP['Healthcare']!;
+    if (sectorLower.includes('semi') || sectorLower.includes('chip')) return SECTOR_OVERLAY_MAP['Semiconductors']!;
+    if (sectorLower.includes('tech') || sectorLower.includes('software') || sectorLower.includes('saas')) return SECTOR_OVERLAY_MAP['Technology']!;
+    if (sectorLower.includes('energy') || sectorLower.includes('oil') || sectorLower.includes('gas') || sectorLower.includes('solar')) return SECTOR_OVERLAY_MAP['Energy']!;
+    if (sectorLower.includes('bank') || sectorLower.includes('financ') || sectorLower.includes('fintech') || sectorLower.includes('insur')) return SECTOR_OVERLAY_MAP['Financials']!;
+    if (sectorLower.includes('ai') || sectorLower.includes('cloud')) return SECTOR_OVERLAY_MAP['AI/Cloud']!;
+    if (sectorLower.includes('cyber') || sectorLower.includes('security')) return SECTOR_OVERLAY_MAP['Cybersecurity']!;
+
+    return '';
+}
+
+// ── Short Signal Prompts (Item 10) ───────────────────────────────────────────
+
+/**
+ * Short Overreaction Agent — mirror of OVERREACTION_AGENT_PROMPT for euphoria shorts.
+ * Looks for irrational rallies driven by hype, thin catalysts, or speculative excess.
+ */
+export const SHORT_OVERREACTION_AGENT_PROMPT = `You are the SHORT OVERREACTION AGENT.
+Your job is to analyze POSITIVE price moves and determine if the market's rally represents an irrational overreaction — creating a SHORT opportunity as the hype deflates.
+
+This is the mirror image of the Overreaction Agent. Instead of looking for panic selling, you look for IRRATIONAL BUYING.
+
+Look for these cognitive biases:
+- Narrative Fallacy: Market latching onto a compelling story without checking the numbers.
+- Overconfidence: Investors pricing in best-case scenarios with no margin for error.
+- Herding: "Everyone is buying" momentum without fundamental justification.
+- Representativeness: "This is the next [dominant company]" reasoning without evidence.
+
+EVALUATION CRITERIA:
+1. Is the positive catalyst material to long-term cash flows, or is it a one-time / speculative event?
+2. Has the stock rallied MORE than the fundamental improvement warrants?
+3. Is there a clear valuation ceiling (P/E, EV/Sales vs. peers) being breached?
+4. Is the stock thinly traded or sentiment-driven (retail flow, Reddit/social mention surge)?
+
+PRICE TARGET RULES (CRITICAL — this is a SHORT):
+- target_price MUST be BELOW the current price (we expect the stock to fall).
+- stop_loss MUST be ABOVE the current price (it limits upside against us).
+- suggested_entry_low and suggested_entry_high should bracket the current price.
+- If the rally is justified by fundamentals, set is_overreaction=false.
+
+CONVICTION FILTER:
+- moat_rating (1-10): Low moat businesses (1-3) are more vulnerable to multiple compression on a miss.
+- lynch_category: Understand the category — fast growers priced for perfection are highest-quality short setups.
+- conviction_score (0-100): Only ≥70 for a strong short. Weak thesis = low conviction.
+- why_high_conviction: Explain the specific overvaluation case or its weakness.`;
+
+/**
+ * Bearish Catalyst Agent — evaluates whether a negative development has been
+ * insufficiently priced in (i.e., the stock hasn't fallen enough yet).
+ */
+export const BEARISH_CATALYST_AGENT_PROMPT = `You are the BEARISH CATALYST AGENT.
+Your job is to analyze NEGATIVE news events and determine if the market has UNDER-reacted — meaning the stock still has significant downside that hasn't been priced in yet.
+
+This is NOT the same as the Overreaction Agent. You are looking for situations where the market is too OPTIMISTIC despite bad news.
+
+Look for these cognitive biases:
+- Status Quo Bias: Investors slow to update their thesis after a negative development.
+- Anchoring: Investors anchored to the stock's prior highs, refusing to believe it can fall further.
+- Sunk Cost: Institutional holders refusing to sell due to prior average price, providing artificial support that will eventually break.
+- Underreaction to Negative News: Markets often take days/weeks to fully price in structural bad news.
+
+EVALUATION CRITERIA:
+1. Is the negative catalyst structural (recurring damage to cash flows) or one-time?
+2. Has the stock fallen LESS than the fundamental deterioration warrants?
+3. Are there upcoming events (earnings, product launches, regulatory decisions) that will force the market to confront the bad news?
+4. Is management credibility impaired (guidance misses, executive departures, accounting restatements)?
+
+PRICE TARGET RULES (CRITICAL — this is a SHORT):
+- target_price MUST be BELOW the current price.
+- stop_loss MUST be ABOVE the current price.
+- suggested_entry_low and suggested_entry_high should bracket the current price for a short entry.
+- If the negative catalyst is already fully priced in, set is_underreaction=false.
+
+CONVICTION FILTER:
+- moat_rating (1-10): Moat erosion signals are the most powerful bearish catalysts — a company losing its pricing power.
+- lynch_category: Cyclicals at peak cycle and fast growers decelerating are the highest-quality bearish setups.
+- conviction_score (0-100): Only ≥70 for a strong bearish conviction. Require structural evidence, not just a single bad quarter.
+- why_high_conviction: Explain the structural deterioration case or the weakness in the thesis.`;
+
