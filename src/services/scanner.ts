@@ -26,7 +26,7 @@ import { SentimentDivergenceDetector } from './sentimentDivergence';
 import { EarningsGuard } from './earningsGuard';
 import { calculateWeightedRoi } from '@/utils/weightedRoi';
 import { CorrelationGuard } from './correlationGuard';
-import { BacktestValidator } from './backtestValidator';
+import { BacktestValidator, type DynamicThresholds } from './backtestValidator';
 import { OptionsFlowService } from './optionsFlowService';
 import { AutoLearningService } from './autoLearningService';
 import { SignalDecayEngine } from './signalDecay';
@@ -372,6 +372,18 @@ export class ScannerService {
                 adaptiveMinConfidence, adaptiveMinPriceDrop,
                 autoLearnWeights,
             } = await buildScanContext();
+
+            // 3h. Dynamic Threshold Calibration — adjust confidence gates based on signal type win rates
+            const signalTypeThresholds: Record<string, DynamicThresholds> = {};
+            try {
+                const signalTypes = ['long_overreaction', 'bullish_catalyst', 'sector_contagion', 'earnings_overreaction'];
+                for (const st of signalTypes) {
+                    signalTypeThresholds[st] = await BacktestValidator.getDynamicThresholds(st, adaptiveMinConfidence, Math.abs(adaptiveMinPriceDrop));
+                }
+                console.log('[Scanner] Dynamic thresholds by signal type:', Object.keys(signalTypeThresholds).map(k => `${k}: conf≥${signalTypeThresholds[k]?.recommendedMinConfidence ?? adaptiveMinConfidence}`).join(', '));
+            } catch (err) {
+                console.warn('[Scanner] Dynamic threshold calibration failed:', err);
+            }
 
             // 4. Find fresh unparsed articles from the cache
             // In a real flow, we'd only grab articles from the last hour
@@ -1646,8 +1658,11 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                         }
 
                                         // Pre-SWOT drop check: bail early if already below threshold
-                                        if (analysis.data.confidence_score < adaptiveMinConfidence) {
-                                            console.warn(`[Scanner] Signal for ${ev.ticker} dropped — confidence ${analysis.data.confidence_score} below ${adaptiveMinConfidence} after adjustments`);
+                                        // Use dynamic threshold if available for this signal type, otherwise fall back to adaptive
+                                        const dynamicThreshold = signalTypeThresholds[signalType];
+                                        const minConfidenceForType = dynamicThreshold?.recommendedMinConfidence ?? adaptiveMinConfidence;
+                                        if (analysis.data.confidence_score < minConfidenceForType) {
+                                            console.warn(`[Scanner] Signal for ${ev.ticker} dropped — confidence ${analysis.data.confidence_score} below ${minConfidenceForType} (${dynamicThreshold?.source ?? 'adaptive'}) after adjustments`);
                                             continue;
                                         }
 

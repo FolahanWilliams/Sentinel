@@ -176,4 +176,38 @@ export class DecisionQualityIndex {
         if (score >= DQI_MINIMUM_THRESHOLD) return 'low';
         return 'rejected';
     }
+
+    /**
+     * Get adaptive weights based on historical performance.
+     *
+     * When RPD shows high historical win rate, boost RPD weight
+     * since we've proven this signal type works historically.
+     * When bias audit is clean, boost its weight.
+     */
+    static getAdaptiveWeights(
+        rpdWinRate: number | null,
+        rpdSufficientData: boolean,
+        biasIsClean: boolean,
+    ): Record<string, number> {
+        const hasRpdData = rpdSufficientData && rpdWinRate !== null;
+        const rpdBoost = hasRpdData ? (rpdWinRate! - 50) / 100 : 0; // -0.5 to +0.5
+
+        let rpdWeight = Math.max(0.05, Math.min(0.25, WEIGHTS.rpd_pattern_match + rpdBoost));
+        let biasWeight = biasIsClean ? Math.min(0.30, WEIGHTS.bias_audit + 0.10) : WEIGHTS.bias_audit;
+
+        // Re-distribute remaining weight proportionally
+        const remaining = 1 - rpdWeight - biasWeight;
+        const baseRemainder = 1 - WEIGHTS.bias_audit - WEIGHTS.rpd_pattern_match;
+
+        return {
+            bias_audit: biasWeight,
+            noise_convergence: (WEIGHTS.noise_convergence / baseRemainder) * remaining,
+            pre_mortem_resilience: (WEIGHTS.pre_mortem_resilience / baseRemainder) * remaining,
+            twin_consensus: (WEIGHTS.twin_consensus / baseRemainder) * remaining,
+            self_critique_quality: (WEIGHTS.self_critique_quality / baseRemainder) * remaining,
+            cross_source_quality: (WEIGHTS.cross_source_quality / baseRemainder) * remaining,
+            rpd_pattern_match: rpdWeight,
+            toxic_combination: (WEIGHTS.toxic_combination / baseRemainder) * remaining,
+        };
+    }
 }
