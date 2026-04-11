@@ -280,6 +280,56 @@ export const DQI_HIGH_THRESHOLD = 65;
 export const DQI_MODERATE_THRESHOLD = 50;
 
 // ===========================
+// BEHAVIORAL LAYER (Category-Defining)
+// ===========================
+// Three new Gemini agents that model OTHER market participants — not prices.
+// Every signal must name its weak counterparty, its narrative phase, and its
+// position in the cohort reaction sequence. See docs/behavioral-layer.md.
+//
+// Pre-gate: if the primary agent's post-self-consistency confidence is below
+// this threshold, the behavioral layer is skipped entirely to save API spend
+// on signals that will be filtered downstream anyway.
+export const BEHAVIORAL_MIN_CONFIDENCE_GATE = 50;
+
+// --- Other-Mind Simulation ---------------------------------------------------
+/** edge_clarity < this → signal is blocked (no nameable weak counterparty). */
+export const OTHER_MIND_MIN_EDGE_CLARITY = 50;
+/** edge_clarity ≥ this → "emit" recommendation. 50-74 → "defer". */
+export const OTHER_MIND_DEFER_THRESHOLD = 75;
+
+// --- Narrative Lifecycle -----------------------------------------------------
+/** Boost when a narrative is newly born (under-priced, early trade). */
+export const NARRATIVE_PHASE_BIRTH_BOOST = 5;
+/** Boost during early amplification — story is spreading but not saturated. */
+export const NARRATIVE_PHASE_EARLY_BOOST = 3;
+/** Penalty during saturation — narrative is already priced in. */
+export const NARRATIVE_PHASE_SATURATION_PENALTY = -5;
+/** Penalty during exhaustion — repetition without new information. */
+export const NARRATIVE_PHASE_EXHAUSTION_PENALTY = -10;
+/** Penalty during reversal — a long signal on a reversing narrative. */
+export const NARRATIVE_PHASE_REVERSAL_PENALTY = -15;
+/** Boost for short signals on a reversing / exhausted narrative. */
+export const NARRATIVE_REVERSAL_SHORT_BOOST = 10;
+/** Max cumulative adjustment the narrative lifecycle agent can contribute. */
+export const NARRATIVE_MAX_ADJUSTMENT = 15;
+
+// --- Cohort Reaction Sequencer ----------------------------------------------
+/** Boost when Sentinel is ahead of the first reaction wave. */
+export const COHORT_STAGE_PRE_REACTION_BOOST = 5;
+/** Boost during the first wave (still early). */
+export const COHORT_STAGE_FIRST_WAVE_BOOST = 3;
+/** Boost during overshoot (mean-reversion setup ripe). */
+export const COHORT_STAGE_OVERSHOOT_BOOST = 2;
+/** Penalty when the sequence has already corrected — edge is gone. */
+export const COHORT_STAGE_POST_CORRECTION_PENALTY = -10;
+/** Penalty when the cohort sequencer itself is uncertain about its prediction. */
+export const COHORT_LOW_CONFIDENCE_PENALTY = -5;
+/** confidence_in_sequence below this → low-confidence penalty applies. */
+export const COHORT_LOW_CONFIDENCE_THRESHOLD = 40;
+/** Max cumulative adjustment the cohort sequencer can contribute. */
+export const COHORT_MAX_ADJUSTMENT = 10;
+
+// ===========================
 // CATEGORY COLOR MAP
 // ===========================
 export const CATEGORY_COLORS: Record<string, string> = {

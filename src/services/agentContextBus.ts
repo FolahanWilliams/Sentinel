@@ -20,6 +20,12 @@ import type {
     NoiseConfidenceResult,
     DecisionTwinResult,
     BullishCatalystResult,
+    OtherMindResult,
+    NarrativeLifecycleResult,
+    CohortSequenceResult,
+    MarketParticipantCohort,
+    NarrativePhase,
+    CohortSequenceStage,
 } from '@/types/agents';
 import type { TASnapshot } from '@/types/signals';
 
@@ -101,6 +107,37 @@ export interface AgentContext {
         patternsDetected: Array<{ name: string; biases: string[]; amplifiedRisk: number }>;
         compoundRiskScore: number;
         isToxic: boolean;
+    };
+
+    // Other-Mind Simulation (Behavioral Layer — category-defining) ──────────
+    // Names the specific counterparty cohort, their cognitive mechanism, and
+    // the correction catalyst. Feeds into Bias Detective and Red Team cascade.
+    otherMind?: {
+        counterpartyCohort: MarketParticipantCohort;
+        counterpartyBias: string;
+        counterpartyTrigger: string;
+        counterpartyWeakness: string;
+        correctionCatalyst: string;
+        edgeClarity: number;
+        emitRecommendation: 'emit' | 'defer' | 'suppress';
+    };
+
+    // Narrative Lifecycle (Behavioral Layer)
+    narrativeLifecycle?: {
+        dominantNarrative: string;
+        lifecyclePhase: NarrativePhase;
+        saturationScore: number;
+        directionPressure: 'long_supportive' | 'short_supportive' | 'neutral';
+        confidenceAdjustment: number;
+    };
+
+    // Cohort Reaction Sequencer (Behavioral Layer)
+    cohortSequence?: {
+        primaryMispricer: MarketParticipantCohort;
+        sequenceStage: CohortSequenceStage;
+        correctionCatalyst: string;
+        confidenceInSequence: number;
+        confidenceAdjustment: number;
     };
 
     // Market context
@@ -258,6 +295,45 @@ export class AgentContextBus {
             })),
             compoundRiskScore: result.compound_risk_score,
             isToxic: result.is_toxic,
+        };
+    }
+
+    /**
+     * Store Other-Mind Simulation output (Behavioral Layer, category-defining).
+     * The counterparty profile is available to all downstream agents via the
+     * 'behavioral' cascade stage in buildPromptContext().
+     */
+    static setOtherMind(ctx: AgentContext, result: OtherMindResult): void {
+        ctx.otherMind = {
+            counterpartyCohort: result.counterparty_cohort,
+            counterpartyBias: result.counterparty_dominant_bias,
+            counterpartyTrigger: result.counterparty_trigger,
+            counterpartyWeakness: result.counterparty_weakness,
+            correctionCatalyst: result.correction_catalyst,
+            edgeClarity: result.edge_clarity,
+            emitRecommendation: result.emit_recommendation,
+        };
+    }
+
+    /** Store Narrative Lifecycle output (Behavioral Layer). */
+    static setNarrative(ctx: AgentContext, result: NarrativeLifecycleResult): void {
+        ctx.narrativeLifecycle = {
+            dominantNarrative: result.dominant_narrative,
+            lifecyclePhase: result.lifecycle_phase,
+            saturationScore: result.saturation_score,
+            directionPressure: result.direction_pressure,
+            confidenceAdjustment: result.confidence_adjustment,
+        };
+    }
+
+    /** Store Cohort Reaction Sequencer output (Behavioral Layer). */
+    static setCohortSequence(ctx: AgentContext, result: CohortSequenceResult): void {
+        ctx.cohortSequence = {
+            primaryMispricer: result.primary_mispricer,
+            sequenceStage: result.sequence_stage,
+            correctionCatalyst: result.correction_catalyst,
+            confidenceInSequence: result.confidence_in_sequence,
+            confidenceAdjustment: result.confidence_adjustment,
         };
     }
 

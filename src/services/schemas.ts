@@ -505,3 +505,189 @@ export const BEARISH_CATALYST_SCHEMA = {
     },
     required: ["reasoning", "is_underreaction", "confidence_score", "catalyst_type", "identified_biases", "bias_type", "secondary_biases", "thesis", "catalyst_impact_assessment", "stop_loss", "target_price", "moat_rating", "lynch_category", "conviction_score"]
 };
+
+// ── Behavioral Layer Schemas (Category-Defining Agents) ────────────────────
+
+/**
+ * OTHER_MIND_SCHEMA — structured output for the Other-Mind Simulation agent.
+ * This agent thinks AS THE COUNTERPARTY and scores the clarity of the error
+ * Sentinel is exploiting. Hard-gates the signal if edge_clarity is too low.
+ */
+export const OTHER_MIND_SCHEMA = {
+    type: "object",
+    properties: {
+        reasoning: {
+            type: "string",
+            description: "Step-by-step: who is on the other side of this trade, why they believe they are right, and what specifically they are getting wrong."
+        },
+        counterparty_cohort: {
+            type: "string",
+            enum: [
+                "retail_yolo", "retail_informed", "quant_factor",
+                "long_only_pension", "hedge_fund_tactical", "hedge_fund_macro",
+                "market_maker_dealer", "corporate_insider", "passive_index_flow", "unknown"
+            ],
+            description: "The SPECIFIC cohort Sentinel is trading against. 'unknown' is an escape hatch — using it will drop edge_clarity to near zero."
+        },
+        counterparty_latency: {
+            type: "string",
+            enum: ["minutes", "hours", "days", "weeks", "months"],
+            description: "How quickly this cohort typically reacts to new information."
+        },
+        counterparty_dominant_bias: {
+            type: "string",
+            description: "The specific cognitive bias driving the counterparty's error (e.g. 'loss aversion', 'base rate neglect', 'recency bias', 'herding')."
+        },
+        counterparty_trigger: {
+            type: "string",
+            description: "The mechanical trigger that caused the counterparty to take the wrong side: 'stop-loss cascade', 'margin call', 'quarter-end rebalance', 'passive fund outflow', 'algo signal', 'panic selling'."
+        },
+        counterparty_best_case: {
+            type: "string",
+            description: "STEELMAN the counterparty: their strongest argument. If you cannot articulate a best case, edge_clarity should be lower (their side may be stronger than you think)."
+        },
+        counterparty_weakness: {
+            type: "string",
+            description: "The specific FALSIFIABLE flaw in the counterparty's reasoning. Must be concrete — a specific fact, data point, or logical gap — not vague."
+        },
+        correction_catalyst: {
+            type: "string",
+            description: "The specific event or time-decay mechanism that FORCES the counterparty to correct: upcoming earnings, FDA decision, options expiry, rebalance deadline, technical level break."
+        },
+        correction_window_days: {
+            type: "integer",
+            description: "How many days until the correction catalyst fires or the counterparty must capitulate."
+        },
+        edge_clarity: {
+            type: "integer",
+            description: "0-100 score of how clearly you can NAME the counterparty error. 0 = you cannot name cohort + mechanism + catalyst concretely. 100 = all three are concrete and falsifiable. Be honest — vague answers must score low."
+        },
+        emit_recommendation: {
+            type: "string",
+            enum: ["emit", "defer", "suppress"],
+            description: "'emit' if edge_clarity ≥ 75; 'defer' if 50-74; 'suppress' if < 50. Suppress means Sentinel cannot name the error — no signal."
+        }
+    },
+    required: ["reasoning", "counterparty_cohort", "counterparty_latency", "counterparty_dominant_bias", "counterparty_trigger", "counterparty_weakness", "correction_catalyst", "correction_window_days", "edge_clarity", "emit_recommendation"]
+};
+
+/**
+ * NARRATIVE_LIFECYCLE_SCHEMA — output for the Narrative Lifecycle agent.
+ * Classifies where the dominant narrative for a ticker sits on the
+ * birth → amplification → saturation → exhaustion → reversal curve.
+ */
+export const NARRATIVE_LIFECYCLE_SCHEMA = {
+    type: "object",
+    properties: {
+        reasoning: {
+            type: "string",
+            description: "Step-by-step: what is the dominant story driving this ticker, how old is it, how many sources are repeating it, and where is it on the lifecycle curve."
+        },
+        dominant_narrative: {
+            type: "string",
+            description: "One-sentence summary of the dominant story currently driving this ticker (e.g. 'AI hyperscaler capex keeps accelerating', 'GLP-1 obesity TAM is larger than consensus')."
+        },
+        lifecycle_phase: {
+            type: "string",
+            enum: ["birth", "early_amplification", "late_amplification", "saturation", "exhaustion", "reversal"],
+            description: "Current phase. birth = just emerged, few sources. early_amplification = widening coverage. late_amplification = most sources covering. saturation = everyone knows, marginal new info near zero. exhaustion = repetition without new info. reversal = narrative is starting to flip."
+        },
+        narrative_age_days: {
+            type: "integer",
+            description: "Approximate days since the narrative first appeared in market coverage. Use mention count + recency as proxy if unknown."
+        },
+        mentions_last_14d: {
+            type: "integer",
+            description: "Count of distinct mentions of this ticker in market events over the last 14 days (provided in the prompt)."
+        },
+        marginal_new_info_rate: {
+            type: "integer",
+            description: "0-100. How much of the most recent coverage contains GENUINELY NEW information vs. pure repetition of the existing narrative. Pure repetition → 0; breaking new details → 100."
+        },
+        saturation_score: {
+            type: "integer",
+            description: "0-100 composite measure of how priced-in the narrative already is. Combines age, mention count, and marginal_new_info_rate."
+        },
+        direction_pressure: {
+            type: "string",
+            enum: ["long_supportive", "short_supportive", "neutral"],
+            description: "Which direction the current narrative phase supports. A birth-phase bullish narrative is long_supportive; an exhausted bullish narrative is short_supportive."
+        },
+        confidence_adjustment: {
+            type: "integer",
+            description: "Signed adjustment to apply to the primary signal confidence. Positive for birth/early_amplification of long signals; negative for saturation/exhaustion/reversal of long signals; inverted for shorts. Bounded -15 to +10."
+        }
+    },
+    required: ["reasoning", "dominant_narrative", "lifecycle_phase", "narrative_age_days", "marginal_new_info_rate", "saturation_score", "direction_pressure", "confidence_adjustment"]
+};
+
+/**
+ * COHORT_SEQUENCE_SCHEMA — output for the Cohort Reaction Sequencer agent.
+ * Predicts the temporal order in which each participant cohort will react to
+ * an event, identifies the primary mispricer, and locates the current market
+ * position within the sequence.
+ */
+export const COHORT_SEQUENCE_SCHEMA = {
+    type: "object",
+    properties: {
+        reasoning: {
+            type: "string",
+            description: "Step-by-step: model the temporal sequence of cohort reactions. Who moves first, who moves wrong, who is forced to correct later."
+        },
+        reaction_sequence: {
+            type: "array",
+            description: "Ordered list of cohort reactions in temporal order. 2-5 entries. Each is a single cohort's expected response to the event.",
+            items: {
+                type: "object",
+                properties: {
+                    cohort: {
+                        type: "string",
+                        enum: [
+                            "retail_yolo", "retail_informed", "quant_factor",
+                            "long_only_pension", "hedge_fund_tactical", "hedge_fund_macro",
+                            "market_maker_dealer", "corporate_insider", "passive_index_flow", "unknown"
+                        ]
+                    },
+                    reaction: {
+                        type: "string",
+                        enum: ["buy_aggressive", "buy_passive", "sell_aggressive", "sell_passive", "hedge", "ignore"]
+                    },
+                    latency: { type: "string", enum: ["minutes", "hours", "days", "weeks"] },
+                    intensity: { type: "string", enum: ["low", "medium", "high", "extreme"] },
+                    is_mispricing: {
+                        type: "boolean",
+                        description: "True if this cohort's reaction is an ERROR that Sentinel could exploit."
+                    }
+                },
+                required: ["cohort", "reaction", "latency", "intensity", "is_mispricing"]
+            }
+        },
+        primary_mispricer: {
+            type: "string",
+            enum: [
+                "retail_yolo", "retail_informed", "quant_factor",
+                "long_only_pension", "hedge_fund_tactical", "hedge_fund_macro",
+                "market_maker_dealer", "corporate_insider", "passive_index_flow", "unknown"
+            ],
+            description: "Which cohort in the sequence is driving the mispricing. Must match a cohort in reaction_sequence where is_mispricing=true."
+        },
+        sequence_stage: {
+            type: "string",
+            enum: ["pre_reaction", "first_wave", "overshoot", "rebalancing", "post_correction"],
+            description: "Where the market CURRENTLY sits in the sequence. pre_reaction = event just happened, nobody has moved yet. first_wave = fastest cohort reacting. overshoot = price has moved past fair value. rebalancing = slower cohorts correcting. post_correction = the opportunity is gone."
+        },
+        correction_catalyst: {
+            type: "string",
+            description: "The specific event or time-decay that resolves the mispricing (earnings report, rebalance date, technical breakout, etc.)."
+        },
+        confidence_in_sequence: {
+            type: "integer",
+            description: "0-100 confidence in this SPECIFIC sequence prediction. If you are uncertain about who moves first, score low."
+        },
+        confidence_adjustment: {
+            type: "integer",
+            description: "Signed adjustment based on sequence_stage. Boost in pre_reaction/first_wave (we're early), neutral in rebalancing, penalty in post_correction (edge is gone). Bounded -10 to +5."
+        }
+    },
+    required: ["reasoning", "reaction_sequence", "primary_mispricer", "sequence_stage", "correction_catalyst", "confidence_in_sequence", "confidence_adjustment"]
+};
