@@ -60,6 +60,9 @@ import { BeneficialPatternDetector, type BeneficialContext } from './beneficialP
 import { DecisionQualityIndex, type DQIInputs } from './decisionQualityIndex';
 import { MarketWideScreener } from './marketWideScreener';
 import { DEFAULT_MIN_CONFIDENCE, DEFAULT_MIN_PRICE_RISE_PCT, CONFIDENCE_GATE_OVERREACTION, CONFIDENCE_GATE_CATALYST, CONFIDENCE_GATE_CONTAGION, CONFIDENCE_GATE_CRITIQUE, CONFIDENCE_FLOOR, CONFIDENCE_CEILING, MAX_CUMULATIVE_PENALTY, MAX_CUMULATIVE_BOOST, SWOT_WEAKNESS_IMBALANCE_PENALTY, SWOT_SEVERE_IMBALANCE_PENALTY, ROTATION_FAVORED_SECTOR_BOOST, ROTATION_DISFAVORED_SECTOR_PENALTY, ROTATION_HEADWIND_PENALTY, SEVERITY_THRESHOLD, DQI_MINIMUM_THRESHOLD, SCREENER_MIN_DOLLAR_VOLUME } from '@/config/constants';
+import { sanitizeUntrustedText } from '@/utils/promptSanitizer';
+import { isDuplicateThesis } from '@/utils/thesisDedup';
+import { runPrimaryWithSelfConsistency, SELF_CONSISTENCY_TEMP } from './selfConsistency';
 import {
     FEAR_GREED_EXTREME_FEAR_THRESHOLD, FEAR_GREED_FEAR_THRESHOLD,
     FEAR_GREED_EXTREME_GREED_THRESHOLD, FEAR_GREED_GREED_THRESHOLD,
@@ -117,6 +120,56 @@ function applyBoundedAdjustment(
 
     const newConfidence = Math.max(CONFIDENCE_FLOOR, Math.min(CONFIDENCE_CEILING, currentConfidence + effectiveAdj));
     return { confidence: newConfidence, cumulativePenalty, cumulativeBoost };
+}
+
+// ---------------------------------------------------------------------------
+// Red Team hard gate
+// ---------------------------------------------------------------------------
+// Today's behavior: Red Team fails a signal only if `passes_sanity_check` is
+// false. That gate is easy for the model to silently bypass when the thesis
+// is ambiguously bad (it just returns passes_sanity_check=true with a middling
+// risk score).
+//
+// New behavior: in addition to passes_sanity_check, we apply a stricter check:
+// if Red Team explicitly returns verdict='block', OR if risk_score is very
+// low (<= 25 on a 0-100 scale where HIGHER is SAFER — see SANITY_CHECK_SCHEMA),
+// we block the signal entirely. This makes Red Team's veto decisive.
+//
+// The verdict field is new; cached responses may not have it. In that case we
+// fall back to risk_score + passes_sanity_check. See SanityCheckResult type.
+// ---------------------------------------------------------------------------
+
+/**
+ * Red Team risk_score at or below this is treated as a hard block.
+ *
+ * Note: the risk_score convention in SANITY_CHECK_SCHEMA is "higher is safer".
+ * 100 = perfectly safe, 0 = catastrophic. scanner.ts already uses `risk_score > 80`
+ * to mean "low risk". A score ≤ 25 therefore indicates a trade the Red Team
+ * considers deeply unsafe — block unconditionally.
+ */
+const RED_TEAM_BLOCK_SAFETY_THRESHOLD = 25;
+
+/**
+ * Decide whether a Red Team result should block signal emission entirely.
+ * Safe to call with null/undefined data — returns allow=false with reason
+ * "no red team data" so callers can treat that as a hard continue.
+ */
+function redTeamGate(
+    sanity: import('@/types/agents').SanityCheckResult | null | undefined,
+): { allow: boolean; reason: string } {
+    if (!sanity) {
+        return { allow: false, reason: 'no red team data' };
+    }
+    // Verdict is authoritative when present.
+    if (sanity.verdict === 'block') {
+        return { allow: false, reason: `verdict=block (safety=${sanity.risk_score})` };
+    }
+    // Risk score fallback — applies even when verdict=allow if the safety score
+    // is catastrophic. Remember: higher risk_score = safer.
+    if (typeof sanity.risk_score === 'number' && sanity.risk_score <= RED_TEAM_BLOCK_SAFETY_THRESHOLD) {
+        return { allow: false, reason: `risk_score=${sanity.risk_score} ≤ ${RED_TEAM_BLOCK_SAFETY_THRESHOLD} (unsafe)` };
+    }
+    return { allow: true, reason: sanity.verdict || `safety=${sanity.risk_score}` };
 }
 
 export class ScannerService {
@@ -686,21 +739,27 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                     }
                 }
 
-                // Build a lookup of article descriptions by ticker for full context
+                // Build a lookup of article descriptions by ticker for full context.
+                // Each article title/description is sanitized before being stored so
+                // that all downstream agent prompts receive prompt-injection-hardened
+                // text (see src/utils/promptSanitizer.ts). Ticker matching still uses
+                // the raw text so tags/HTML inside bodies never hide a ticker mention.
                 const articleContextByTicker: Record<string, string> = {};
                 // ── Item 3: Article age tracking per ticker ──────────────────────────────
                 // Freshness penalty schedule (hours): 0-4 → 0, 4-12 → -5, 12-24 → -10, >24 → skip (unless grounded search corroborates)
                 const articleAgeByTicker: Record<string, number> = {}; // hours
                 const nowMs = Date.now();
                 for (const article of actionableArticles) {
-                    const text = `${article.title || ''}. ${article.description || ''}`;
+                    const rawText = `${article.title || ''}. ${article.description || ''}`;
+                    const safeText = sanitizeUntrustedText(rawText, 800);
                     const fetchedAt = article.fetched_at ? new Date(article.fetched_at).getTime() : nowMs;
                     const ageHours = (nowMs - fetchedAt) / 3600_000;
                     for (const t of tickers) {
-                        if (text.toLowerCase().includes(t.toLowerCase())) {
+                        // Match tickers against the raw body so hidden-in-HTML mentions still match
+                        if (rawText.toLowerCase().includes(t.toLowerCase())) {
                             articleContextByTicker[t] = articleContextByTicker[t]
-                                ? `${articleContextByTicker[t]} | ${text}`
-                                : text;
+                                ? `${articleContextByTicker[t]} | ${safeText}`
+                                : safeText;
                             // Track the OLDEST article for this ticker (worst-case freshness)
                             if (articleAgeByTicker[t] === undefined || ageHours > articleAgeByTicker[t]) {
                                 articleAgeByTicker[t] = ageHours;
@@ -767,9 +826,10 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                     fearGreedRating,
                                 };
 
-                                // Gather real article context for this ticker
+                                // Gather real article context for this ticker. Fall back to the
+                                // sanitized event type + headline when no article context exists.
                                 const eventContext = articleContextByTicker[ev.ticker]
-                                    || `Event: ${ev.event_type} — ${ev.headline}`;
+                                    || `Event: ${sanitizeUntrustedText(ev.event_type, 80)} — ${sanitizeUntrustedText(ev.headline, 200)}`;
 
                                 // Skip ticker if no real price data available
                                 if (!quote?.price) {
@@ -966,20 +1026,31 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                 let signalType: import('@/types/signals').SignalType = 'long_overreaction';
                                 let catalystAgentUsed = false;
 
+                                // Shared base inputs used by both the first primary call and any
+                                // self-consistency re-runs. Capturing them once avoids drift between
+                                // the first sample and the re-samples.
+                                const primaryBaseInput = {
+                                    ticker: ev.ticker,
+                                    eventHeadline: ev.headline,
+                                    eventDesc: eventContext,
+                                    currentPrice: quote.price,
+                                    performanceContext: perfContext,
+                                    marketContext: marketContext,
+                                    taContext: enrichedTaContext,
+                                    historicalContext: historicalCtx,
+                                    regime: regimeResult?.regime,
+                                    sector: tickerSector,
+                                };
+
+                                // Closure that runs the CURRENT primary path at a given temperature.
+                                // Bound after the first call so self-consistency re-uses the same branch.
+                                let rerunPrimary: (() => Promise<import('@/types/agents').AgentResult<import('@/types/agents').OverreactionResult>>) | null = null;
+
                                 if (isPositiveEvent && priceDrop >= DEFAULT_MIN_PRICE_RISE_PCT * -1) {
                                     // Positive catalyst path — check if market under-reacted
                                     const catalystResult = await AgentService.evaluateBullishCatalyst({
-                                        ticker: ev.ticker,
-                                        eventHeadline: ev.headline,
-                                        eventDesc: eventContext,
-                                        currentPrice: quote.price,
+                                        ...primaryBaseInput,
                                         priceChangePct: priceDrop,
-                                        performanceContext: perfContext,
-                                        marketContext: marketContext,
-                                        taContext: enrichedTaContext,
-                                        historicalContext: historicalCtx,
-                                        regime: regimeResult?.regime,
-                                        sector: tickerSector,
                                     });
 
                                     // Normalize catalyst result to overreaction shape for unified downstream processing
@@ -995,39 +1066,77 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                         signalType = 'bullish_catalyst';
                                         catalystAgentUsed = true;
                                         console.log(`[Scanner] Bullish catalyst result for ${ev.ticker}: is_underreaction=true, confidence=${catalystResult.data.confidence_score}, catalyst=${catalystResult.data.catalyst_type}`);
+
+                                        // Re-run closure: same normalization applied so downstream sees
+                                        // a comparable shape across all samples.
+                                        rerunPrimary = async () => {
+                                            const r = await AgentService.evaluateBullishCatalyst({
+                                                ...primaryBaseInput,
+                                                priceChangePct: priceDrop,
+                                                temperature: SELF_CONSISTENCY_TEMP,
+                                            });
+                                            if (r.success && r.data?.is_underreaction) {
+                                                return {
+                                                    ...r,
+                                                    data: {
+                                                        ...r.data,
+                                                        is_overreaction: true,
+                                                        financial_impact_assessment: r.data.catalyst_impact_assessment,
+                                                    }
+                                                } as any;
+                                            }
+                                            // If a re-run disagrees on direction (not an underreaction),
+                                            // synthesize an is_overreaction=false shape so the self-consistency
+                                            // direction check can detect the disagreement.
+                                            return { ...r, data: r.data ? { ...r.data, is_overreaction: false } : null } as any;
+                                        };
                                     } else {
                                         // Catalyst agent didn't fire — fall back to overreaction analysis
                                         console.log(`[Scanner] Bullish catalyst: no underreaction for ${ev.ticker}, falling back to overreaction agent`);
                                         const overreactionInput = {
-                                            ticker: ev.ticker,
-                                            eventHeadline: ev.headline,
-                                            eventDesc: eventContext,
-                                            currentPrice: quote.price,
+                                            ...primaryBaseInput,
                                             priceDropPct: priceDrop,
-                                            performanceContext: perfContext,
-                                            marketContext: marketContext,
-                                            taContext: enrichedTaContext,
-                                            historicalContext: historicalCtx,
-                                            regime: regimeResult?.regime,
-                                            sector: tickerSector,
                                         };
                                         analysis = await AgentService.evaluateOverreaction(overreactionInput);
+                                        rerunPrimary = () => AgentService.evaluateOverreaction({
+                                            ...overreactionInput,
+                                            temperature: SELF_CONSISTENCY_TEMP,
+                                        });
                                     }
                                 } else {
                                     // Negative event path — standard overreaction analysis
-                                    analysis = await AgentService.evaluateOverreaction({
-                                        ticker: ev.ticker,
-                                        eventHeadline: ev.headline,
-                                        eventDesc: eventContext,
-                                        currentPrice: quote.price,
+                                    const overreactionInput = {
+                                        ...primaryBaseInput,
                                         priceDropPct: priceDrop,
-                                        performanceContext: perfContext,
-                                        marketContext: marketContext,
-                                        taContext: enrichedTaContext,
-                                        historicalContext: historicalCtx,
-                                        regime: regimeResult?.regime,
-                                        sector: tickerSector,
+                                    };
+                                    analysis = await AgentService.evaluateOverreaction(overreactionInput);
+                                    rerunPrimary = () => AgentService.evaluateOverreaction({
+                                        ...overreactionInput,
+                                        temperature: SELF_CONSISTENCY_TEMP,
                                     });
+                                }
+
+                                // Conditional self-consistency — only fires if first-sample confidence
+                                // falls in the uncertainty zone [55, 78]. Passthrough otherwise (no cost).
+                                // In SELF_CONSISTENCY_DRY_RUN mode, re-runs happen but outputs are unchanged.
+                                // See src/services/selfConsistency.ts.
+                                if (rerunPrimary) {
+                                    try {
+                                        const consistency = await runPrimaryWithSelfConsistency({
+                                            firstSample: analysis,
+                                            rerun: rerunPrimary,
+                                            extractConfidence: (d: any) => (d?.confidence_score ?? 0),
+                                            extractDirection: (d: any) => (d?.is_overreaction ? 'long' : 'none'),
+                                            tag: `${ev.ticker}/${signalType}`,
+                                        });
+                                        if (consistency.abort) {
+                                            // Directional disagreement — signal is ambiguous, skip entirely.
+                                            continue;
+                                        }
+                                        analysis = consistency.finalSample;
+                                    } catch (scErr: any) {
+                                        console.warn(`[Scanner] Self-consistency failed for ${ev.ticker} (non-fatal):`, scErr?.message || scErr);
+                                    }
                                 }
 
                                 // Validate agent response before acting on it
@@ -1146,13 +1255,23 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
 
                                     // Log sanity check result
                                     if (sanity.success) {
-                                        console.log(`[Scanner] Sanity check for ${ev.ticker}: passes=${sanity.data?.passes_sanity_check}, risk=${sanity.data?.risk_score}`);
+                                        console.log(`[Scanner] Sanity check for ${ev.ticker}: passes=${sanity.data?.passes_sanity_check}, risk=${sanity.data?.risk_score}, verdict=${sanity.data?.verdict ?? 'n/a'}`);
                                     } else {
                                         console.warn(`[Scanner] Sanity check FAILED for ${ev.ticker}: ${sanity.error}`);
                                     }
 
                                     if (sanity.success && sanity.data) {
                                         AgentContextBus.setRedTeam(agentCtx, sanity.data);
+                                    }
+
+                                    // Red Team HARD GATE — block on verdict='block' or catastrophic risk_score.
+                                    // Stricter than passes_sanity_check alone; see redTeamGate() helper above.
+                                    if (sanity.success && sanity.data) {
+                                        const gate = redTeamGate(sanity.data);
+                                        if (!gate.allow) {
+                                            console.warn(`[Scanner] RED TEAM BLOCKED ${ev.ticker}: ${gate.reason}`);
+                                            continue;
+                                        }
                                     }
 
                                     if (sanity.success && sanity.data?.passes_sanity_check) {
@@ -1980,6 +2099,15 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                 console.log(`[Scanner] Weighted ROI for ${ev.ticker}: ${projectedRoi}% (${roiResult.bestHorizon}, sim=${roiResult.avgSimilarity}, n=${similarEventsCount})`);
                                             }
                                         } catch { /* non-fatal */ }
+
+                                        // Thesis deduplication — reject a near-duplicate of any active
+                                        // signal on the same ticker + signal_type from the last 24h.
+                                        // See src/utils/thesisDedup.ts. Errors are non-fatal.
+                                        const dedupCheck = await isDuplicateThesis(ev.ticker, signalType, analysis.data.thesis);
+                                        if (dedupCheck.duplicate) {
+                                            console.log(`[Scanner] Thesis dedup REJECTED ${ev.ticker}: matched ${dedupCheck.matchedSignalId} (${dedupCheck.reason})`);
+                                            continue;
+                                        }
 
                                         const { data: savedSignal, error: signalInsertErr } = await (supabase as any).from('signals').insert({
                                             ticker: ev.ticker,
@@ -2920,7 +3048,18 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                     agentType: 'OVERREACTION_AGENT'
                 });
 
-                if (sanity.success && sanity.data?.passes_sanity_check) {
+                // Red Team HARD GATE — same as primary pipeline. Single-ticker discovery
+                // path is the second-most-common signal source; gate it identically.
+                if (sanity.success && sanity.data) {
+                    const gate = redTeamGate(sanity.data);
+                    if (!gate.allow) {
+                        console.warn(`[Scanner] RED TEAM BLOCKED ${ticker} (single-scan): ${gate.reason}`);
+                        // Fall through to the existing passes_sanity_check branch which will
+                        // skip signal emission; no explicit return needed.
+                    }
+                }
+
+                if (sanity.success && sanity.data?.passes_sanity_check && redTeamGate(sanity.data).allow) {
                     // 7. TA snapshot + self-critique + calibration (matching full scan pipeline)
                     signalsGenerated = 1;
 
@@ -3068,6 +3207,16 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                             });
                         } catch { /* non-fatal */ }
 
+                        // Thesis dedup — same guard as the primary pipeline. Prevents a
+                        // single-ticker re-scan from re-emitting a near-duplicate signal.
+                        const singleDedupCheck = await isDuplicateThesis(ticker, 'long_overreaction', analysis.data.thesis);
+                        if (singleDedupCheck.duplicate) {
+                            console.log(`[Scanner] Thesis dedup REJECTED ${ticker} (single-scan): matched ${singleDedupCheck.matchedSignalId} (${singleDedupCheck.reason})`);
+                            // Fall through — signal is not inserted, but signalsGenerated
+                            // was set earlier. Roll it back so the return value is honest.
+                            signalsGenerated = 0;
+                            // Skip the insert by jumping past it
+                        } else {
                         const { data: savedSignal, error: discSignalErr } = await supabase.from('signals').insert({
                             ticker: ticker,
                             signal_type: 'long_overreaction',
@@ -3130,6 +3279,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                 hit_target: false,
                             });
                         }
+                        } // end thesis-dedup else
                     } // end self-critique else
                 }
             }

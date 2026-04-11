@@ -35,6 +35,7 @@ import {
 } from './schemas';
 import { GEMINI_MODEL, GEMINI_MODEL_LITE, BIAS_DETECTIVE_MAX_PENALTY } from '@/config/constants';
 import type { AgentResult, OverreactionResult, ContagionResult, SanityCheckResult, BullishCatalystResult, BiasDetectiveResult, MacroCausalResult } from '@/types/agents';
+import { safeBlock, sanitizeUntrustedText, UNTRUSTED_CONTENT_INSTRUCTION } from '@/utils/promptSanitizer';
 
 /**
  * Build a compact MARKET CONTEXT block for agent prompts.
@@ -117,10 +118,13 @@ export class AgentService {
         regime?: MarketRegimeType;
         /** Ticker's sector for sector-specific prompt overlay injection. */
         sector?: string;
+        /** Optional temperature override. Used by self-consistency re-runs. */
+        temperature?: number;
     }): Promise<AgentResult<OverreactionResult>> {
         const {
             ticker, eventHeadline, eventDesc, currentPrice, priceDropPct,
-            performanceContext, marketContext, taContext, historicalContext, regime, sector
+            performanceContext, marketContext, taContext, historicalContext, regime, sector,
+            temperature,
         } = input;
         const perfBlock = performanceContext
             ? `\n\n${performanceContext}\n\nUse the performance data above to calibrate your confidence. If this bias type or sector historically underperforms, lower your confidence. If it outperforms, you may raise it slightly.`
@@ -137,8 +141,8 @@ export class AgentService {
         const prompt = `
     TICKER: ${ticker}
     CURRENT PRICE: $${Number(currentPrice).toFixed(2)} (Down ${Number(priceDropPct).toFixed(2)}%)
-    EVENT HEADLINE: ${eventHeadline}
-    EVENT DESCRIPTION: ${eventDesc}
+    EVENT HEADLINE:${safeBlock('headline', eventHeadline, 200)}
+    EVENT DESCRIPTION:${safeBlock('news', eventDesc)}
     ${marketBlock}${taBlock}${histBlock}${perfBlock}
     Evaluate if this drop is an irrational overreaction presenting a mean-reversion buying opportunity.
     Think step-by-step in your reasoning before reaching your verdict.
@@ -147,12 +151,12 @@ export class AgentService {
 
         return GeminiService.generate({
             prompt,
-            systemInstruction: regimeOverlay + sectorOverlay + OVERREACTION_AGENT_PROMPT,
+            systemInstruction: UNTRUSTED_CONTENT_INSTRUCTION + '\n\n' + regimeOverlay + sectorOverlay + OVERREACTION_AGENT_PROMPT,
             // Grounded search is incompatible with responseSchema in the Gemini API.
             // All real-time context (price, TA, market data) is already in the prompt.
             requireGroundedSearch: false,
             responseSchema: OVERREACTION_SCHEMA,
-            temperature: 0.4,
+            temperature: temperature ?? 0.4,
             model: GEMINI_MODEL,
         });
     }
@@ -174,8 +178,8 @@ export class AgentService {
             : '';
 
         const prompt = `
-    MACRO EVENT HEADLINE: ${eventHeadline}
-    EVENT DESCRIPTION: ${eventDesc}
+    MACRO EVENT HEADLINE:${safeBlock('headline', eventHeadline, 200)}
+    EVENT DESCRIPTION:${safeBlock('news', eventDesc)}
     ${marketBlock}
     Perform a strict causal analysis mapping the first-order and second-order impacts of this event.
     Identify any prevailing cognitive biases (e.g. Panic Selling, Base Rate Neglect) mispricing the situation.
@@ -184,7 +188,7 @@ export class AgentService {
 
         return GeminiService.generate({
             prompt,
-            systemInstruction: MACRO_CAUSAL_AGENT_PROMPT,
+            systemInstruction: UNTRUSTED_CONTENT_INSTRUCTION + '\n\n' + MACRO_CAUSAL_AGENT_PROMPT,
             requireGroundedSearch: false, // Or true if we want real-time lookup inside the agent
             responseSchema: MACRO_CAUSAL_SCHEMA,
             temperature: 0.5,
@@ -217,7 +221,7 @@ export class AgentService {
 
         const prompt = `
     EPICENTER TICKER: ${epicenterTicker}
-    EPICENTER NEWS: ${epicenterNews}
+    EPICENTER NEWS:${safeBlock('news', epicenterNews)}
 
     SATELLITE TICKER: ${satelliteTicker}
     SATELLITE DROP: ${Number(satelliteDropPct).toFixed(2)}%
@@ -229,7 +233,7 @@ export class AgentService {
 
         return GeminiService.generate({
             prompt,
-            systemInstruction: CONTAGION_AGENT_PROMPT,
+            systemInstruction: UNTRUSTED_CONTENT_INSTRUCTION + '\n\n' + CONTAGION_AGENT_PROMPT,
             requireGroundedSearch: false,
             responseSchema: CONTAGION_SCHEMA,
             temperature: 0.4,
@@ -269,7 +273,7 @@ export class AgentService {
 
     EPS EXPECTED: ${epsEstimate} | EPS ACTUAL: ${epsActual}
     REV EXPECTED: ${revenueEstimate} | REV ACTUAL: ${revenueActual}
-    FORWARD GUIDANCE CONTEXT: ${guidanceDetails}
+    FORWARD GUIDANCE CONTEXT:${safeBlock('guidance', guidanceDetails)}
     ${marketBlock}${perfBlock}
     Evaluate if this post-earnings drop is a mispricing because forward guidance outweighs the backward-looking miss.
     Think step-by-step in your reasoning before reaching your verdict.
@@ -278,7 +282,7 @@ export class AgentService {
 
         return GeminiService.generate({
             prompt,
-            systemInstruction: EARNINGS_AGENT_PROMPT,
+            systemInstruction: UNTRUSTED_CONTENT_INSTRUCTION + '\n\n' + EARNINGS_AGENT_PROMPT,
             requireGroundedSearch: false,
             responseSchema: EARNINGS_SCHEMA,
             temperature: 0.3,
@@ -317,15 +321,17 @@ export class AgentService {
 
         const taBlock = taContext || '';
 
-        // Cascading context block — structured prior agent output injected into Red Team
+        // Cascading context block — structured prior agent output injected into Red Team.
+        // The reasoning/thesis strings originate from a prior LLM call — treat as
+        // untrusted since they may have been influenced by injected article text.
         const cascadeBlock = priorAgentContext
             ? `\n\nORIGINATING AGENT FULL OUTPUT (${priorAgentContext.agentName}):
     - Confidence: ${priorAgentContext.confidence}/100
     - Conviction Score: ${priorAgentContext.convictionScore ?? 'N/A'}/100
     - Moat Rating: ${priorAgentContext.moatRating ?? 'N/A'}/10
     - Identified Biases: ${priorAgentContext.identifiedBiases?.join(', ') || 'none listed'}
-    - Financial Impact Assessment: ${priorAgentContext.financialImpact || 'not provided'}
-    - Full Reasoning: ${priorAgentContext.reasoning}
+    - Financial Impact Assessment:${safeBlock('prior_agent', priorAgentContext.financialImpact || 'not provided', 400)}
+    - Full Reasoning:${safeBlock('prior_agent', priorAgentContext.reasoning, 1200)}
 
     RED TEAM DIRECTIVE: The above is the originating agent's reasoning. Do NOT simply restate it.
     Attack the SPECIFIC weak points: if bias identification is weak, challenge it. If moat rating seems inflated, push back. If confidence is high but reasoning is thin, flag it as overconfidence.`
@@ -335,13 +341,21 @@ export class AgentService {
     PROPOSED TRADE FOR TICKER: ${ticker}
     ORIGINATING AGENT: ${agentType}
 
-    THESIS: "${originalThesis}"
+    THESIS:${safeBlock('prior_agent', originalThesis, 600)}
     TARGET: $${targetPrice} | STOP LOSS: $${stopLoss}
     ${taBlock}${cascadeBlock}${perfBlock}
     You are the RED TEAM. Tear this thesis apart. Find the fatal flaw.
     Research macro conditions, pending lawsuits, or sector rot.
     Think step-by-step in your reasoning — explore multiple counterarguments.
-    If it's a terrible trade, fail it. Return JSON.
+    If it's a terrible trade, fail it.
+
+    FINAL VERDICT: After your analysis, return a 'verdict' field with one of:
+    - "block": fatal flaw in thesis, DO NOT TRADE — the originating agent is materially wrong
+    - "warn":  significant risk but the thesis is still tradeable with caution
+    - "allow": thesis is sound, no blocking concerns
+    Be decisive. "block" should be reserved for theses with a clear, falsifiable flaw (stale data, contradicted by upcoming known event, ignored macro obstacle, unsupported assumption). "warn" for ambiguous risk. "allow" when you cannot find a real flaw.
+
+    Return JSON.
     `;
 
         // Red Team regime overlay: bull markets get the most aggressive red team
@@ -349,7 +363,7 @@ export class AgentService {
 
         return GeminiService.generate({
             prompt,
-            systemInstruction: regimeOverlay + SANITY_CHECK_AGENT_PROMPT,
+            systemInstruction: UNTRUSTED_CONTENT_INSTRUCTION + '\n\n' + regimeOverlay + SANITY_CHECK_AGENT_PROMPT,
             requireGroundedSearch: false,
             responseSchema: SANITY_CHECK_SCHEMA,
             temperature: 0.5,
@@ -375,10 +389,13 @@ export class AgentService {
         regime?: MarketRegimeType;
         /** Ticker's sector for sector-specific prompt overlay injection. */
         sector?: string;
+        /** Optional temperature override. Used by self-consistency re-runs. */
+        temperature?: number;
     }): Promise<AgentResult<BullishCatalystResult>> {
         const {
             ticker, eventHeadline, eventDesc, currentPrice, priceChangePct,
-            performanceContext, marketContext, taContext, historicalContext, regime, sector
+            performanceContext, marketContext, taContext, historicalContext, regime, sector,
+            temperature,
         } = input;
         const perfBlock = performanceContext
             ? `\n\n${performanceContext}\n\nUse the performance data above to calibrate your confidence.`
@@ -394,8 +411,8 @@ export class AgentService {
         const prompt = `
     TICKER: ${ticker}
     CURRENT PRICE: $${Number(currentPrice).toFixed(2)} (${priceChangePct >= 0 ? 'Up' : 'Down'} ${Math.abs(Number(priceChangePct)).toFixed(2)}%)
-    EVENT HEADLINE: ${eventHeadline}
-    EVENT DESCRIPTION: ${eventDesc}
+    EVENT HEADLINE:${safeBlock('headline', eventHeadline, 200)}
+    EVENT DESCRIPTION:${safeBlock('news', eventDesc)}
     ${marketBlock}${taBlock}${histBlock}${perfBlock}
     Evaluate if this positive catalyst has NOT been fully priced in and there is continued upside.
     Think step-by-step in your reasoning before reaching your verdict.
@@ -404,10 +421,10 @@ export class AgentService {
 
         return GeminiService.generate({
             prompt,
-            systemInstruction: regimeOverlay + sectorOverlay + BULLISH_CATALYST_AGENT_PROMPT,
+            systemInstruction: UNTRUSTED_CONTENT_INSTRUCTION + '\n\n' + regimeOverlay + sectorOverlay + BULLISH_CATALYST_AGENT_PROMPT,
             requireGroundedSearch: false,
             responseSchema: BULLISH_CATALYST_SCHEMA,
-            temperature: 0.4,
+            temperature: temperature ?? 0.4,
             model: GEMINI_MODEL,
         });
     }
@@ -427,7 +444,7 @@ export class AgentService {
         const prompt = `
     EPICENTER TICKER: ${epicenterTicker}
     EPICENTER SECTOR: ${sector}
-    EVENT: ${eventHeadline}
+    EVENT:${safeBlock('headline', eventHeadline, 200)}
 
     WATCHLIST TICKERS (candidates): ${watchlistTickers.join(', ')}
 
@@ -442,7 +459,7 @@ export class AgentService {
 
         return GeminiService.generate({
             prompt,
-            systemInstruction: CONTAGION_AGENT_PROMPT,
+            systemInstruction: UNTRUSTED_CONTENT_INSTRUCTION + '\n\n' + CONTAGION_AGENT_PROMPT,
             requireGroundedSearch: false,
             responseSchema: SATELLITE_DISCOVERY_SCHEMA,
             temperature: 0.4,
@@ -457,12 +474,16 @@ export class AgentService {
      * Uses Flash-Lite (cheap, fast) and temperature 0.1 (deterministic classification).
      */
     static async filterActionableNews(articles: Array<{ id: string; title: string; description: string }>): Promise<AgentResult<{ actionable_ids: string[] }>> {
-        const payload = articles.map(a => `[ID: ${a.id}] ${a.title}\n${a.description}`).join('\n\n');
+        // Each article is sanitized individually so that a single malicious body
+        // cannot corrupt the list. IDs are fixed by us and safe to interpolate raw.
+        const payload = articles
+            .map(a => `[ID: ${a.id}]${safeBlock('article', `${sanitizeUntrustedText(a.title, 200)} — ${sanitizeUntrustedText(a.description, 600)}`, 900)}`)
+            .join('\n');
         const prompt = `
     Review the following news articles:
-    
+
     ${payload}
-    
+
     Identify which articles are potentially actionable for stock traders. Include articles about:
     - Earnings reports (beats, misses, guidance changes)
     - Analyst upgrades, downgrades, or price target changes
@@ -484,7 +505,7 @@ export class AgentService {
 
         return GeminiService.generate({
             prompt,
-            systemInstruction: "You are a pre-filter for a trading scanner. Be inclusive — when in doubt, INCLUDE the article. Return ONLY a JSON object with a single key 'actionable_ids' containing an array of string IDs.",
+            systemInstruction: UNTRUSTED_CONTENT_INSTRUCTION + "\n\nYou are a pre-filter for a trading scanner. Be inclusive — when in doubt, INCLUDE the article. Return ONLY a JSON object with a single key 'actionable_ids' containing an array of string IDs.",
             requireGroundedSearch: false,
             responseSchema: {
                 type: "object",
@@ -532,11 +553,9 @@ export class AgentService {
 ORIGINATING AGENT: ${agentName}
 ORIGINAL CONFIDENCE: ${originalConfidence}/100
 
-THESIS TO AUDIT:
-"${thesis}"
+THESIS TO AUDIT:${safeBlock('prior_agent', thesis, 800)}
 
-REASONING TO AUDIT:
-"${reasoning}"${monetaryContext}
+REASONING TO AUDIT:${safeBlock('prior_agent', reasoning, 1200)}${monetaryContext}
 
 Scan the above thesis and reasoning for cognitive biases using the full 15-bias taxonomy.
 For each bias you find evidence for, record: bias_name, severity (1/2/3), evidence (direct quote), and penalty.
@@ -549,7 +568,7 @@ Return JSON.
 
         return GeminiService.generate({
             prompt,
-            systemInstruction: BIAS_DETECTIVE_AGENT_PROMPT,
+            systemInstruction: UNTRUSTED_CONTENT_INSTRUCTION + '\n\n' + BIAS_DETECTIVE_AGENT_PROMPT,
             requireGroundedSearch: false,
             responseSchema: BIAS_DETECTIVE_SCHEMA,
             temperature: 0.2,
@@ -563,6 +582,7 @@ Return JSON.
      * Uses Flash-Lite (cheap, fast) and temperature 0.1 (factual extraction).
      */
     static async extractEventsFromText(text: string): Promise<AgentResult<any>> {
+        const safeText = safeBlock('text', text, 4000);
         const prompt = `
     Extract notable market events from the following text. Look for:
     - Earnings beats or misses, revenue surprises, guidance changes
@@ -584,13 +604,14 @@ Return JSON.
     - 9-10: Extreme event (earnings disaster, FDA rejection, fraud)
     
     Be inclusive — extract ANY event that could reasonably affect a stock price.
-    
-    TEXT TO ANALYZE:
-    ${text}
+
+    TEXT TO ANALYZE:${safeText}
     `;
 
         return GeminiService.generate({
             prompt,
+            systemInstruction: UNTRUSTED_CONTENT_INSTRUCTION,
+            skipMasterPrompt: true,
             requireGroundedSearch: false,
             responseSchema: {
                 type: "object",
@@ -656,8 +677,8 @@ Return JSON.
         const prompt = `
     TICKER: ${ticker}
     CURRENT PRICE: $${Number(currentPrice).toFixed(2)} (Up ${Number(priceRisePct).toFixed(2)}%)
-    EVENT HEADLINE: ${eventHeadline}
-    EVENT DESCRIPTION: ${eventDesc}
+    EVENT HEADLINE:${safeBlock('headline', eventHeadline, 200)}
+    EVENT DESCRIPTION:${safeBlock('news', eventDesc)}
     ${marketBlock}${taBlock}${histBlock}${perfBlock}
     Evaluate if this rally is an irrational overreaction driven by hype/narrative, presenting a SHORT opportunity as the euphoria deflates.
     Think step-by-step in your reasoning before reaching your verdict.
@@ -666,7 +687,7 @@ Return JSON.
 
         return GeminiService.generate({
             prompt,
-            systemInstruction: regimeOverlay + sectorOverlay + SHORT_OVERREACTION_AGENT_PROMPT,
+            systemInstruction: UNTRUSTED_CONTENT_INSTRUCTION + '\n\n' + regimeOverlay + sectorOverlay + SHORT_OVERREACTION_AGENT_PROMPT,
             requireGroundedSearch: false,
             responseSchema: SHORT_OVERREACTION_SCHEMA,
             temperature: 0.4,
@@ -713,8 +734,8 @@ Return JSON.
         const prompt = `
     TICKER: ${ticker}
     CURRENT PRICE: $${Number(currentPrice).toFixed(2)} (${priceChangePct >= 0 ? 'Up' : 'Down'} ${Math.abs(Number(priceChangePct)).toFixed(2)}%)
-    EVENT HEADLINE: ${eventHeadline}
-    EVENT DESCRIPTION: ${eventDesc}
+    EVENT HEADLINE:${safeBlock('headline', eventHeadline, 200)}
+    EVENT DESCRIPTION:${safeBlock('news', eventDesc)}
     ${marketBlock}${taBlock}${histBlock}${perfBlock}
     Evaluate if this negative catalyst has NOT been fully priced in and there is continued downside ahead.
     Think step-by-step in your reasoning before reaching your verdict.
@@ -723,7 +744,7 @@ Return JSON.
 
         return GeminiService.generate({
             prompt,
-            systemInstruction: regimeOverlay + sectorOverlay + BEARISH_CATALYST_AGENT_PROMPT,
+            systemInstruction: UNTRUSTED_CONTENT_INSTRUCTION + '\n\n' + regimeOverlay + sectorOverlay + BEARISH_CATALYST_AGENT_PROMPT,
             requireGroundedSearch: false,
             responseSchema: BEARISH_CATALYST_SCHEMA,
             temperature: 0.4,

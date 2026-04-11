@@ -105,6 +105,12 @@ export interface SanityCheckResult {
     fatal_flaws: string[];
     macro_obstacles: string;
     counter_thesis: string;
+    /**
+     * Final decisive verdict from the Red Team. Newly added; optional here so
+     * that signals cached before this field existed continue to deserialize.
+     * When absent, scanner falls back to risk_score + passes_sanity_check alone.
+     */
+    verdict?: 'block' | 'warn' | 'allow';
 }
 
 /** Individual bias finding from the Bias Detective agent */

@@ -330,9 +330,14 @@ export const SANITY_CHECK_SCHEMA = {
             description: "Any immediate dealbreakers (e.g., 'Pending FDA rejection tomorrow')."
         },
         macro_obstacles: { type: "string", description: "How the broader market environment hurts this trade." },
-        counter_thesis: { type: "string", description: "The absolute best argument for why this trade will lose money." }
+        counter_thesis: { type: "string", description: "The absolute best argument for why this trade will lose money." },
+        verdict: {
+            type: "string",
+            enum: ["block", "warn", "allow"],
+            description: "Final decisive verdict. 'block' = fatal flaw, do not trade; 'warn' = tradeable with caution; 'allow' = thesis sound. Reserve 'block' for clear falsifiable flaws; use 'warn' for ambiguous risk."
+        }
     },
-    required: ["reasoning", "passes_sanity_check", "risk_score", "fatal_flaws", "counter_thesis"]
+    required: ["reasoning", "passes_sanity_check", "risk_score", "fatal_flaws", "counter_thesis", "verdict"]
 };
 
 // ── Macro Causal Schema (Geopolitics & Systematic Risk) ───────────────────
