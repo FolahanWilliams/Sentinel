@@ -63,6 +63,8 @@ import { DEFAULT_MIN_CONFIDENCE, DEFAULT_MIN_PRICE_RISE_PCT, CONFIDENCE_GATE_OVE
 import { sanitizeUntrustedText } from '@/utils/promptSanitizer';
 import { isDuplicateThesis } from '@/utils/thesisDedup';
 import { runPrimaryWithSelfConsistency, SELF_CONSISTENCY_TEMP } from './selfConsistency';
+import { runBehavioralLayer, type BehavioralLayerResult } from './behavioralLayer';
+import { BEHAVIORAL_MIN_CONFIDENCE_GATE } from '@/config/constants';
 import {
     FEAR_GREED_EXTREME_FEAR_THRESHOLD, FEAR_GREED_FEAR_THRESHOLD,
     FEAR_GREED_EXTREME_GREED_THRESHOLD, FEAR_GREED_GREED_THRESHOLD,
@@ -1280,6 +1282,84 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                         let cumulativePenalty = 0;
                                         let cumulativeBoost = 0;
 
+                                        // ── BEHAVIORAL LAYER (Category-Defining) ─────────────────────────
+                                        // Three new agents that model OTHER market participants:
+                                        //   1. Other-Mind Simulation — names the weak counterparty (HARD gate)
+                                        //   2. Narrative Lifecycle   — phases the dominant story (SOFT adjust)
+                                        //   3. Cohort Sequencer      — predicts temporal reaction order (SOFT adjust)
+                                        // All three fire in parallel via Promise.allSettled.
+                                        // Pre-gated on confidence >= BEHAVIORAL_MIN_CONFIDENCE_GATE to save API
+                                        // spend on signals destined to be filtered downstream anyway.
+                                        // See src/services/behavioralLayer.ts for the orchestrator.
+                                        let behavioralOutput: BehavioralLayerResult | null = null;
+                                        if (analysis.data.confidence_score >= BEHAVIORAL_MIN_CONFIDENCE_GATE) {
+                                            try {
+                                                const bhDirection: 'long' | 'short' = (
+                                                    signalType === 'long_overreaction' ||
+                                                    signalType === 'bullish_catalyst' ||
+                                                    signalType === 'sector_contagion'
+                                                ) ? 'long' : 'short';
+
+                                                behavioralOutput = await runBehavioralLayer({
+                                                    ticker: ev.ticker,
+                                                    signalType,
+                                                    direction: bhDirection,
+                                                    thesis: analysis.data.thesis,
+                                                    reasoning: analysis.data.reasoning || analysis.data.thesis,
+                                                    eventHeadline: ev.headline,
+                                                    eventDesc: eventContext,
+                                                    priceChangePct: priceDrop,
+                                                    taSnapshot: earlyTaSnapshot,
+                                                    marketRegime: regimeResult?.regime,
+                                                    fearGreedScore,
+                                                });
+
+                                                // Hard gate — only Other-Mind can block, and only when NOT in dry-run
+                                                if (behavioralOutput.emitBlock.blocked) {
+                                                    console.warn(`[BehavioralLayer] BLOCKED ${ev.ticker}: ${behavioralOutput.emitBlock.reason}`);
+                                                    continue;
+                                                }
+
+                                                // Soft adjustments — Narrative + Cohort, bounded per-agent
+                                                if (behavioralOutput.totalAdjustment !== 0) {
+                                                    const before = analysis.data.confidence_score;
+                                                    const bounded = applyBoundedAdjustment(
+                                                        before,
+                                                        behavioralOutput.totalAdjustment,
+                                                        cumulativePenalty,
+                                                        cumulativeBoost,
+                                                    );
+                                                    analysis.data.confidence_score = bounded.confidence;
+                                                    cumulativePenalty = bounded.cumulativePenalty;
+                                                    cumulativeBoost = bounded.cumulativeBoost;
+                                                    AgentContextBus.recordAdjustment(
+                                                        agentCtx,
+                                                        'behavioral_layer',
+                                                        before,
+                                                        analysis.data.confidence_score,
+                                                        `narr+cohort adjustment`,
+                                                    );
+                                                    console.log(`[BehavioralLayer] ${ev.ticker}: adjustment=${behavioralOutput.totalAdjustment}, ${before} → ${analysis.data.confidence_score}`);
+                                                }
+
+                                                // Write each sub-agent to the bus independently so downstream
+                                                // agents (Bias Detective, Red Team cascade) can see them.
+                                                if (behavioralOutput.otherMind) {
+                                                    AgentContextBus.setOtherMind(agentCtx, behavioralOutput.otherMind);
+                                                }
+                                                if (behavioralOutput.narrative) {
+                                                    AgentContextBus.setNarrative(agentCtx, behavioralOutput.narrative);
+                                                }
+                                                if (behavioralOutput.cohortSequence) {
+                                                    AgentContextBus.setCohortSequence(agentCtx, behavioralOutput.cohortSequence);
+                                                }
+                                            } catch (blErr) {
+                                                console.warn(`[BehavioralLayer] failed for ${ev.ticker} (non-fatal):`, blErr);
+                                            }
+                                        } else {
+                                            console.log(`[BehavioralLayer] ${ev.ticker}: pre-gated (confidence ${analysis.data.confidence_score} < ${BEHAVIORAL_MIN_CONFIDENCE_GATE})`);
+                                        }
+
                                         // 7.4.5. BIAS DETECTIVE — audit primary agent's reasoning for cognitive biases
                                         let biasDetectiveOutput: import('@/types/agents').BiasDetectiveResult | null = null;
                                         try {
@@ -2274,6 +2354,10 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                 // Decision Intel features
                                                 pre_mortem: preMortemOutput,
                                                 toxic_combination: toxicComboOutput,
+                                                // Behavioral Layer (category-defining)
+                                                other_mind: behavioralOutput?.otherMind ?? null,
+                                                narrative_lifecycle: behavioralOutput?.narrative ?? null,
+                                                cohort_sequence: behavioralOutput?.cohortSequence ?? null,
                                                 rpd_pattern: rpdMatchResult ? {
                                                     matches: rpdMatchResult.matches.length,
                                                     historical_win_rate: rpdMatchResult.historical_win_rate,

@@ -327,6 +327,96 @@ export interface BeneficialPatternResult {
     summary: string;
 }
 
+// ── Behavioral Layer Types (Category-Defining Agents) ──────────────────────
+//
+// Three new agents that model OTHER market participants rather than the market.
+// Together they shift Sentinel from first-order ("is this mispriced?") to
+// second/third-order reasoning ("WHICH cohort is wrong, WHY, and WHEN do they
+// correct?"). See src/services/behavioralLayer.ts for the orchestrator.
+
+/** The market-participant cohort taxonomy used by Other-Mind and Cohort Sequencer. */
+export type MarketParticipantCohort =
+    | 'retail_yolo'           // r/wallstreetbets-style speculative retail
+    | 'retail_informed'       // experienced retail, dividend/value focus
+    | 'quant_factor'          // systematic factor funds (AQR, Two Sigma)
+    | 'long_only_pension'     // pension funds, long-duration allocators
+    | 'hedge_fund_tactical'   // discretionary tactical hedge funds
+    | 'hedge_fund_macro'      // global macro hedge funds
+    | 'market_maker_dealer'   // options dealers, delta-hedging flow
+    | 'corporate_insider'     // insiders, buybacks, stock comp vesting
+    | 'passive_index_flow'    // index funds, forced rebalances
+    | 'unknown';              // escape hatch when the agent cannot classify
+
+/** Other-Mind Simulation agent output — capability #5. */
+export interface OtherMindResult {
+    reasoning: string;
+    counterparty_cohort: MarketParticipantCohort;
+    counterparty_latency: 'minutes' | 'hours' | 'days' | 'weeks' | 'months';
+    counterparty_dominant_bias: string;       // free-text, e.g. "loss aversion"
+    counterparty_trigger: string;             // mechanical trigger that forced their side
+    counterparty_best_case: string;           // strongest argument FOR their side (steelman)
+    counterparty_weakness: string;            // falsifiable flaw in their reasoning
+    correction_catalyst: string;              // what specific event/decay forces correction
+    correction_window_days: number;
+    edge_clarity: number;                     // 0-100 — 0 = can't name error, 100 = unambiguous
+    emit_recommendation: 'emit' | 'defer' | 'suppress';
+}
+
+/** Narrative Lifecycle agent output — capability #3. */
+export type NarrativePhase =
+    | 'birth'
+    | 'early_amplification'
+    | 'late_amplification'
+    | 'saturation'
+    | 'exhaustion'
+    | 'reversal';
+
+export interface NarrativeLifecycleResult {
+    reasoning: string;
+    dominant_narrative: string;               // one-line story summary
+    lifecycle_phase: NarrativePhase;
+    narrative_age_days: number;               // days since first appearance (estimated)
+    mentions_last_14d: number;                // raw count from market_events
+    marginal_new_info_rate: number;           // 0-100; 0=pure repetition
+    saturation_score: number;                 // 0-100 composite
+    direction_pressure: 'long_supportive' | 'short_supportive' | 'neutral';
+    confidence_adjustment: number;            // signed, applied via applyBoundedAdjustment
+}
+
+/** Cohort Reaction Sequencer agent output — capability #1. */
+export type CohortReaction =
+    | 'buy_aggressive'
+    | 'buy_passive'
+    | 'sell_aggressive'
+    | 'sell_passive'
+    | 'hedge'
+    | 'ignore';
+
+export type CohortSequenceStage =
+    | 'pre_reaction'
+    | 'first_wave'
+    | 'overshoot'
+    | 'rebalancing'
+    | 'post_correction';
+
+export interface CohortReactionStep {
+    cohort: MarketParticipantCohort;
+    reaction: CohortReaction;
+    latency: 'minutes' | 'hours' | 'days' | 'weeks';
+    intensity: 'low' | 'medium' | 'high' | 'extreme';
+    is_mispricing: boolean;
+}
+
+export interface CohortSequenceResult {
+    reasoning: string;
+    reaction_sequence: CohortReactionStep[];
+    primary_mispricer: MarketParticipantCohort;
+    sequence_stage: CohortSequenceStage;
+    correction_catalyst: string;
+    confidence_in_sequence: number;           // 0-100
+    confidence_adjustment: number;            // signed
+}
+
 // ── Decision Quality Index (DQI) Types ──────────────────────────────────────
 
 /** Component breakdown of the DQI score */
