@@ -634,7 +634,6 @@ Return JSON.
             },
             temperature: 0.1,
             model: GEMINI_MODEL_LITE,
-            skipMasterPrompt: true,
         });
     }
 

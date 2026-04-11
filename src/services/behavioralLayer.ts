@@ -72,18 +72,11 @@ export interface BehavioralLayerResult {
 // ── Dry-run helpers ────────────────────────────────────────────────────────────
 
 function readEnvFlag(name: string): boolean {
-    // Vite env
     try {
         if (typeof import.meta !== 'undefined' && (import.meta as any).env?.[name] === 'true') {
             return true;
         }
     } catch { /* not in module context */ }
-    // Node env (tests, scripts)
-    try {
-        if (typeof process !== 'undefined' && process?.env?.[name.replace(/^VITE_/, '')] === 'true') {
-            return true;
-        }
-    } catch { /* no process global */ }
     return false;
 }
 

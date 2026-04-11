@@ -82,19 +82,13 @@ export interface SelfConsistencyOutput<T> {
     dryRun: boolean;
 }
 
-/** Cheap env-flag read that works in both Node (tests) and Vite browser builds. */
+/** Cheap env-flag read for Vite browser builds (tests inject via import.meta.env too). */
 function isDryRun(): boolean {
     try {
-        // Vite env
         if (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_SELF_CONSISTENCY_DRY_RUN === 'true') {
             return true;
         }
     } catch { /* not in module context */ }
-    try {
-        if (typeof process !== 'undefined' && process?.env?.SELF_CONSISTENCY_DRY_RUN === 'true') {
-            return true;
-        }
-    } catch { /* no process global */ }
     return false;
 }
 
@@ -103,7 +97,12 @@ function median(values: number[]): number {
     if (values.length === 0) return 0;
     const sorted = [...values].sort((a, b) => a - b);
     const mid = Math.floor(sorted.length / 2);
-    return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+    if (sorted.length % 2 === 0) {
+        const lo = sorted[mid - 1] ?? 0;
+        const hi = sorted[mid] ?? 0;
+        return (lo + hi) / 2;
+    }
+    return sorted[mid] ?? 0;
 }
 
 export async function runPrimaryWithSelfConsistency<T>(
@@ -177,13 +176,14 @@ export async function runPrimaryWithSelfConsistency<T>(
     let bestIdx = 0;
     let bestDelta = Infinity;
     for (let i = 0; i < successfulSamples.length; i++) {
-        const delta = Math.abs(confidences[i] - med);
+        const conf = confidences[i] ?? 0;
+        const delta = Math.abs(conf - med);
         if (delta < bestDelta) {
             bestDelta = delta;
             bestIdx = i;
         }
     }
-    const medianSample = successfulSamples[bestIdx];
+    const medianSample = successfulSamples[bestIdx] ?? firstSample;
 
     const confStr = confidences.map(c => Math.round(c)).join(',');
     if (dryRun) {

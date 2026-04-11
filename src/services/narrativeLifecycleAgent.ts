@@ -126,27 +126,27 @@ Classify the lifecycle phase of the dominant narrative driving this ticker. Use 
 
             const { data, error } = await supabase
                 .from('market_events')
-                .select('headline, created_at')
+                .select('headline, detected_at')
                 .eq('ticker', ticker)
-                .gte('created_at', fourteenDaysAgo)
-                .order('created_at', { ascending: false })
+                .gte('detected_at', fourteenDaysAgo)
+                .order('detected_at', { ascending: false })
                 .limit(20);
 
             if (error || !data) {
                 return { mentions_last_14d: 0, recent_headlines: [], oldest_mention_days: 0 };
             }
 
-            const headlines = (data as Array<{ headline: string | null; created_at: string }>)
+            const rows = data as Array<{ headline: string; detected_at: string }>;
+            const headlines = rows
                 .map(row => row.headline || '')
                 .filter(h => h.length > 0);
 
-            const oldestMs = data.length > 0
-                ? new Date((data[data.length - 1] as any).created_at).getTime()
-                : Date.now();
+            const oldest = rows[rows.length - 1];
+            const oldestMs = oldest ? new Date(oldest.detected_at).getTime() : Date.now();
             const oldestDays = Math.max(0, Math.round((Date.now() - oldestMs) / (24 * 60 * 60 * 1000)));
 
             return {
-                mentions_last_14d: data.length,
+                mentions_last_14d: rows.length,
                 recent_headlines: headlines,
                 oldest_mention_days: oldestDays,
             };
