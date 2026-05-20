@@ -1,52 +1,282 @@
-# CLAUDE.md — Sentinel Project Instructions
+# CLAUDE.md — Sentinel
 
-## Git Workflow
+## What This Project Is
 
-- **Always rebase onto the latest `origin/main` before pushing a feature branch.** This prevents the branch from being both behind and ahead of main, which causes merge issues.
+Sentinel is an autonomous market intelligence engine that runs every signal through a 5-agent AI reasoning pipeline (Overreaction → Contagion → Catalyst → Earnings Guard → Red Team), self-critiques each thesis, and learns from outcomes via isotonic-regression confidence calibration. The deeper purpose: Sentinel is the live, transparent, auditable proving ground for a reasoning-audit framework whose enterprise application lives elsewhere. Trading is the controlled, fast-feedback domain where the mechanism is demonstrated; the engine itself is domain-agnostic.
+
+## Confidentiality Locks (non-negotiable)
+
+- Never reference Decision Intel in any Sentinel commit, code comment, docstring, README, marketing surface, or external communication. The DI GitHub repo is strictly confidential. The cross-validation narrative is an INVESTOR-CONVERSATION asset, not a public asset.
+- The public Sentinel surface is the Sentinel domain only.
+- When the founder mentions "the engine" or "the framework" in context of cross-validation, do not name DI in code/commits — keep the language generic ("reasoning audit framework", "the underlying engine").
+- Audit trail JSON, post-mortem outputs, and signal artefacts must never leak DI-specific vocabulary (DPR, DQI as branded term, R²F, 22-bias taxonomy). Sentinel uses its own vocabulary: Signal Quality Index (SQI), audit trail, bias classification, noise score.
+
+## The 8 META Rules (always read first)
+
+1. **Empathic mode FIRST on public surfaces.** Before any design / copy / pitch decision, write 2-3 sentences from the actual user's POV: who they are, what they just did, what they're trying to learn, what closes the tab, what makes them lean forward. Persona audits are verification, not design input.
+
+2. **Boil the ocean on planned work.** When the founder approves planned / Tier-N work ("proceed with X", "ship the deep version", "implement this list"), default to the category-grade version of every approved item — never the lean cut. No workarounds, no dangling threads, no "good enough." Override anti-scope-creep ONLY when scope is explicitly approved.
+
+3. **Cascade by default on every cut / rename / refactor.** Every cut ships with the deep consumer sweep IN THE SAME COMMIT — chat-coaching prompts, CLAUDE.md prose, edge function callers, type unions, RAG injection, post-mortem schema, dashboard renderers, redirects. Half-shipped cuts force the founder to spot gaps and re-prompt.
+
+4. **Pre-execution discipline check on every todo item.** Audit / brainstorm / recommendation lists are INPUTS, not orders. Before each list item, re-check against the rules codified earlier in the same session. Trigger words that demand a re-check: "named", "public", "marketing", "trading account", "confidential", "DI".
+
+5. **Search canonical before extracting a helper.** Grep `src/utils/` + `src/services/` + `src/config/constants.ts` BEFORE writing any small utility (formatPrice, calculateRR, severityColor, gradeFromScore). Drift in duplicated helpers is a real bug class.
+
+6. **Fire-and-forget exceptions need inline comments.** Silent `.catch(() => null)` / `.catch(() => {})` blocks that ARE legitimate (localStorage / sessionStorage / JSON.parse / cache-cleanup / SSE-malformed / edge-function transient errors) must say so inline. The comment IS the audit trail. Legitimate exception classes: in-memory cache cleanup, schema-drift tolerance (when commented as such), `req.json().catch(() => null)` body parsing, idempotency-check fallback on transient Supabase errors.
+
+7. **Auto-update wrong / stale docs without asking.** When CLAUDE.md, comments, or docs prove incorrect, fix in the same turn — don't ask permission. The founder's leverage is in shipping; doc maintenance shouldn't add a round-trip.
+
+8. **Verify BEHAVIOR, not just structure.** `tsc --noEmit` + "wiring looks right" + green lint proves code is well-formed, never that it runs correctly. On any runtime-critical change (the agent pipeline / calibration math / signal scoring / edge function): exercise the path, or — when you can't — owe a worst-case-runtime trace (grep the critical path for unbounded I/O, retry storms, model fallback chains). Removing a fallback / retry / fake / default / swallowed-error obligates answering "what did this mask, and is it now exposed?" before shipping. Applies to verification tooling itself: prove every new lint/guard fires on the bug AND is silent on correct code — "0 findings" alone is false confidence.
+
+## Working-Style Rules
+
+- **Git Workflow — rebase before push.** Always rebase onto the latest `origin/main` before pushing a feature branch. Prevents the branch from being both behind and ahead of main:
   ```bash
   git fetch origin main
   git rebase origin/main
   ```
-- After rebasing, force-push the feature branch: `git push --force-with-lease`
-- Use descriptive commit messages with conventional prefixes: `feat:`, `fix:`, `docs:`, `chore:`
+  After rebasing, force-push with `git push --force-with-lease` (never bare `--force`). Conventional commit prefixes: `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`.
+- Standing autonomy for `git add` (explicit filenames only) / `git push` / `npx tsc --noEmit` / `node` / `echo`. No per-invocation ask. Gates-green-per-commit. Destructive ops (`git reset --hard`, `git push --force`, `rm -rf`) still need an ask.
+- Prefer `npx tsc --noEmit` over `npm run build` during dev — fast type-check, no full Vite bundle. Full build only as pre-push gate.
+- Never use Bash for file-read ops (`cat`/`head`/`tail`/`grep` on files Claude could use Read/Glob for). Bash for terminal-state operations only.
+- Batch large file writes. If a generation is >800 lines, split into sequential Write/Edit chunks.
+- Stage explicit filenames (`git add path/to/file.ts`), never `git add -A` or `git add -u`. The repo accumulates local dev-tool files (`.claude/`, `.mcp.json`, local notes) that should not be swept in.
+- Lint + Prettier sweeps are holistic — run on whole repo by default, fix pre-existing issues in the same session unless explicitly scoped narrow.
+- No destructive local commands without asking — no `rm -rf node_modules`, no killing dev server mid-debug, no cache wipes on the user's machine.
+- Push back on sub-optimal strategy BEFORE executing, not at the end when asked "what do you truly think." If a request would compromise the cross-validation narrative or the audit trail, flag it before touching code.
+- Choose best for use case, not simplest infrastructure. Quality / iteration speed / skill-reuse FIRST; infrastructure simplicity LAST.
 
-## Project Overview
+## Product / Positioning Context
 
-Sentinel is an AI-powered trading intelligence platform built with:
-- **Frontend:** React 19 + TypeScript + Tailwind CSS + Vite
+- **Sentinel is the proving ground, not the destination.** Every product decision should ask: does this strengthen the audit trail, the live performance record, or the demonstrable mechanism? Polish that doesn't sharpen the proof is lower priority.
+- **The audit trail is the moat.** Every signal must persist: timestamp, ticker, entry, exit, agent reasoning, bias flags + severity, noise score, SQI, projected RR, actual P&L, post-mortem narrative. NEVER ship a code path that drops or compresses any of these fields silently.
+- **Live trading only — never claim backtested results as proof.** The audit trail's value depends on being out-of-sample. Backtests live in the backtesting page; they are NEVER mixed into the live-performance dashboard or narrative claims.
+- **Three-layer narrative discipline** (when writing investor-facing or landing copy):
+  1. The Universal Problem (cognitive failure modes under uncertainty — domain-agnostic)
+  2. The Proof (live trading audit trail with verifiable metrics)
+  3. The Application (the engine deployed in a new domain — KEPT GENERIC on public surfaces)
+- **Calibration honesty.** Confidence scores must be calibrated against observed win rates (isotonic regression). Never expose raw model confidence as "calibrated" on user-facing surfaces. When a calibration bucket has N<5 samples, label it `unlocks_at_N` or `too_few_samples`, never fabricate.
+- **No backtested-result drift into live-claim copy.** Any time a metric appears on a marketing surface, audit it against the actual signal database — never quote a number that hasn't been live-verified.
+
+## Tech Stack
+
+- **Frontend:** React 19 + TypeScript 5+ + Tailwind CSS 4 + Vite 6
+- **State:** Zustand (NOT Redux / Jotai)
 - **Backend:** Supabase (Postgres + Edge Functions + Auth + Realtime)
-- **AI:** Google Gemini (via proxy Edge Function)
-- **State:** Zustand stores
+- **AI:** Google Gemini via `proxy-gemini` edge function (rate-limited, model-switching) — `gemini-3-flash-preview` for analysis, `gemini-2.0-flash` for grounded search
+- **Charts:** TradingView widgets + Lightweight Charts + Recharts
+- **Animations:** Framer Motion
+- **Deployment:** Vercel (frontend) + Supabase Edge (backend)
+- **Email:** Resend
+- **Notifications:** Browser push + email
+- **Sentinel color palette** uses `sentinel-*` Tailwind classes (`sentinel-100` through `sentinel-950`).
 
-## Key Directories
+## Build & Test Commands
 
-- `src/components/shared/` — Reusable UI primitives (Badge, Sparkline, LoadingState, etc.)
-- `src/components/analysis/` — Modular signal analysis components
-- `src/components/sentinel/` — News intelligence UI components
-- `src/components/dashboard/` — Dashboard widgets
-- `src/services/` — Core services (scanner, agents, Gemini, RSS, etc.)
-- `src/hooks/` — React hooks
-- `src/types/` — TypeScript type definitions
-- `supabase/functions/` — Edge Functions (Deno)
-- `supabase/migrations/` — Database schema migrations
+```bash
+npm install
+npm run dev          # Vite dev server on :5173
+npm run build        # tsc --noEmit (implicit via vite) + production build
+npx tsc --noEmit     # Fast type-check (preferred during dev)
+npm run preview      # Preview production build
+supabase functions deploy <name>    # Deploy a single edge function
+supabase functions logs <name>      # Tail edge function logs (manual)
+```
 
-## Build & Deploy
+**Pre-commit discipline:** `npx tsc --noEmit` must be clean. Add lint scripts as ratchets when they earn their keep (silent-catches, count-drift, canonical-imports — see "Lint Ratchets" below).
 
-- Build: `npm run build` (Vite)
-- TypeScript check: `npx tsc --noEmit`
-- Deployed on Vercel — strict TypeScript is enforced at build time
-- Always run `npx tsc --noEmit` before pushing to catch strict null check errors
+**Pre-push discipline:** full `npm run build` must pass. Vercel CI catches frontend build errors; Supabase edge function deploys are independent and must be tested separately (`supabase functions invoke <name>` against local then prod).
 
-## Important Patterns
+## Project Structure (canonical reference)
 
-- All Gemini calls go through `supabase/functions/proxy-gemini/` Edge Function
-- RSS feeds are defined in `src/config/rssFeeds.ts` (42 feeds)
-- Constants and budget defaults in `src/config/constants.ts`
-- Sentinel color palette uses `sentinel-*` Tailwind classes (sentinel-100 through sentinel-950)
+```text
+src/
+├── components/         # UI components (analysis, dashboard, scanner, sentinel, signals, shared)
+├── config/             # constants.ts (all thresholds), rssFeeds.ts (42 feeds), supabase.ts
+├── hooks/              # React hooks
+├── pages/              # 15 route pages
+├── services/           # 48+ specialized services
+├── stores/             # Zustand state
+├── types/              # TypeScript type definitions
+└── utils/              # Formatting, validation, calculations
 
-## Gemini API Constraints
+supabase/
+├── functions/          # 13 edge functions
+└── migrations/         # Database schema
+```
 
-- **Model split:** `gemini-3-flash-preview` for reasoning/analysis, `gemini-2.0-flash` for grounded search calls. The proxy (`proxy-gemini/index.ts`) auto-switches based on `requireGroundedSearch`.
-- **responseSchema + Google Search are incompatible.** The Gemini API rejects requests that combine controlled generation (`responseSchema`) with the Search tool. The proxy skips `responseSchema` when grounded search is enabled.
-- **Supabase Edge Function timeout is ~60s.** The proxy uses a 45s `AbortController` to fail gracefully before the gateway kills the request (which strips CORS headers).
-- **Default model is set in two places:** `src/config/constants.ts` (`GEMINI_MODEL`) and the `model` default in `proxy-gemini/index.ts`. Keep them in sync.
+When adding a new service: put it in `src/services/`, export typed functions, NEVER duplicate logic already in `src/services/` — search first.
+
+## Critical Conventions
+
+### Configuration & Constants
+
+- `src/config/constants.ts` is the SSOT for thresholds, defaults, guardrail parameters, calibration buckets. NEVER hardcode a threshold inline; import from constants. When a threshold changes, edit `constants.ts` only.
+- Edge function secrets vs client env vars are separate planes. `VITE_*` vars ship in the client bundle; secrets live in Supabase Function secrets. Never cross — a Gemini API key in `VITE_*` is a leak.
+- RSS feeds are defined in `src/config/rssFeeds.ts` (42 feeds).
+
+### Database (Supabase / Postgres)
+
+- Always wrap Supabase queries in try-catch; check for transient failures and degrade gracefully (cached value, empty array, null).
+- When mutating tables, prefer `upsert` with idempotency keys (signal_id + timestamp) over insert + dedup logic.
+- **Migration discipline:** any schema change ships with a migration file in `supabase/migrations/`; the file name must include a UTC timestamp prefix and a descriptive slug. Never edit a deployed migration — write a new one.
+- **`@schema-drift-tolerant` comment marker:** when a `.catch(() => null)` or fallback branch is intentionally tolerating schema drift (table not yet migrated, column added in a later migration than the code path), prefix the inline comment with `@schema-drift-tolerant`. Lets future audits grep `rg "@schema-drift-tolerant"` to skip intentionally-silent catches.
+
+### Security
+
+- Never write a local `safeCompare` implementation — use a single canonical timing-safe comparison utility. Drift here is a real bug class (auth bypass).
+- Document encryption (if added): use AES-256-GCM via a key version stamp.
+- Edge functions: validate inputs at the boundary; never trust client payloads for trading-impact decisions.
+
+### Components & Patterns
+
+- Lazy-load heavy chart components with `React.lazy` + `Suspense`.
+- Use `ErrorBoundary` wrapper on every page-level component.
+- Use `createLogger('ContextName')` for structured logging in services and edge functions.
+- Standardized response shapes: every service function returns `{ data, error }` or throws — pick one per module, stay consistent.
+- Unused imports cause Vite build warnings; treat as errors. Clean up imports after refactoring.
+
+### Fire-and-forget error handling (cross-reference META rule #6)
+
+Never swallow errors with `.catch(() => {})` on operations that affect signal delivery, audit trail writes, post-mortem persistence, or learning-feedback adjustments. Use `.catch(err => log.warn('specific context:', err))` at minimum. Silent catches ARE acceptable for: in-memory cache cleanup, schema-drift tolerance (commented), `req.json().catch(() => null)` body parsing.
+
+## AI Pipeline Discipline
+
+- **The 5-agent pipeline is the core IP.** Changes to pipeline ORDER, AGENT PROMPTS, or SCHEMA require:
+  1. A regression run on the last 30 days of historical signals (re-score, diff distribution)
+  2. Founder explicit approval
+  3. A CLAUDE.md session-lock documenting the change + the regression evidence
+- **Adding a new agent is a cascade** — pipeline orchestrator, agent prompts file, schema types (`src/types/`), RAG injection for lessons, post-mortem outputs, dashboard renderer that surfaces the new agent's reasoning. Same commit.
+- **Confidence calibration math** (isotonic regression / PAVA): never silently change buckets, weights, or remapping. Bumping calibration means re-running on the historical sample + persisting the new calibration version alongside scores so old signals stay interpretable.
+- **Methodology versioning:** stamp every signal with the calibration version that produced its confidence score. A future audit asking "which version produced this score?" should resolve from the signal record, not from inferring git history.
+- **The Self-Critique pass is load-bearing** — never bypass it for performance. If latency is a concern, run it async and reconcile, never skip it.
+- **The Red Team agent must not be downgraded to "advisory"** — fatal flaws kill the signal entirely. This is the structural difference between Sentinel and a normal signal generator.
+
+### Gemini API Operational Constraints (hard-won)
+
+- **Model split:** `gemini-3-flash-preview` for reasoning/analysis, `gemini-2.0-flash` for grounded search calls. The proxy ([supabase/functions/proxy-gemini/index.ts](supabase/functions/proxy-gemini/index.ts)) auto-switches based on `requireGroundedSearch`.
+- **`responseSchema` + Google Search are incompatible.** The Gemini API rejects requests that combine controlled generation (`responseSchema`) with the Search tool. The proxy skips `responseSchema` when grounded search is enabled.
+- **Supabase Edge Function timeout is ~60s.** The proxy uses a 45s `AbortController` to fail gracefully before the gateway kills the request (which would strip CORS headers).
+- **Default model is set in two places:** [src/config/constants.ts](src/config/constants.ts) (`GEMINI_MODEL`) and the `model` default in `proxy-gemini/index.ts`. Keep them in sync. (Candidate for the canonical-imports lint ratchet.)
+
+## Audit Trail Discipline (the moat)
+
+Every signal write must persist these fields. Schema and code paths MUST enforce non-null where applicable:
+
+- `signal_id` (UUID), `timestamp_utc`, `ticker`, `signal_type`
+- `entry_price`, `entry_timestamp`
+- `exit_price`, `exit_timestamp` (null until closed)
+- `agent_reasoning_chain` (full text per agent — never truncated for storage)
+- `bias_flags` (array: `{bias, severity, passage_ref}`)
+- `noise_score` (jury variance)
+- `sqi` (Signal Quality Index 0-100)
+- `confidence_raw` (model output), `confidence_calibrated` (post-isotonic)
+- `confidence_calibration_version`
+- `projected_rr`, `actual_rr`
+- `post_mortem_narrative` (null until 1d/5d/10d/30d windows close)
+- `outcome_1d`, `outcome_5d`, `outcome_10d`, `outcome_30d` (P&L at each window)
+
+A migration that drops or compresses any of these fields is a moat-degrading bug. Block it.
+
+## Drift-Prevention Discipline
+
+When a constant or algorithm has a canonical source, every consumer MUST import from it. Re-implementing the same logic in another file IS the drift-class bug — even if it's correct today, it'll diverge silently when one copy gets updated.
+
+**Common drift candidates to watch:**
+
+- Score → grade mappings (e.g., SQI thresholds for High/Med/Low conviction tiers)
+- Calibration bucket boundaries
+- RR calculation formulas
+- ATR / Kelly fraction math
+- Sector exposure limits
+- Confidence threshold for alert dispatch
+- RSS feed list
+- Gemini default model (lives in two places: `constants.ts` and `proxy-gemini/index.ts`)
+
+**Forward-looking rule:** when adding a small utility (`formatPrice`, `scoreToTier`, `riskColor`), grep `src/utils/` + `src/services/` + `src/config/constants.ts` for an existing equivalent before writing a new one.
+
+## Lint Ratchets (build these as the codebase grows)
+
+These are not all required day-1. Add when they earn their keep:
+
+- **Silent-catch ratchet** (`scripts/lint-silent-catches.mjs`): scans for `.catch(arg => null/undefined/{}/[]/false/true/0/'')` and fails when the count exceeds a baseline. Adding a new silent catch requires (a) replacing an existing one, (b) upgrading to `log.warn`, OR (c) bumping baseline with an inline comment naming the exception class.
+- **Count-drift ratchet** (`scripts/lint-counts.mjs`): scans for hardcoded literals matching counts of agents / feeds / pages / bias types — fails when exceeds baseline. Prefer interpolation from canonical exports (e.g., `${AGENTS.length}`).
+- **Canonical-imports lint** (`scripts/lint-canonical-imports.mjs`): blocks new local re-implementations of canonical helpers. Inline `// canonical-exception — <reason>` opt-out.
+- **Doc-sync lint** (`scripts/lint-doc-sync.mjs`): cross-checks prose numbers in CLAUDE.md against lint baselines; tolerance ±2.
+
+Each ratchet bump requires (i) edit the const, (ii) inline comment naming the exception class, (iii) update the trajectory line in CLAUDE.md within the same commit.
+
+## Decision-Making with the Founder
+
+### Default to autonomous
+
+- File refactors that preserve behavior
+- Lint fixes, test additions, docs updates, dead-code removal
+- Adding a new service to `src/services/` that composes existing helpers
+- Frontend polish that doesn't change a metric definition
+
+### Ask before
+
+- Schema changes (add/drop column, change type)
+- Pricing / plan / paywall changes
+- Deleting any route, component, edge function, or service (external links may exist)
+- End-user copy changes on dashboard / signal cards / alerts
+- Agent prompt overhauls
+- Calibration math changes (isotonic regression bucket count, blend ratios)
+- Edge function rate-limit / budget-cap changes
+- RSS feed list changes
+- Any change that touches a confidentiality lock surface (audit trail JSON shape, public-claim copy)
+
+### Proactive-surfacing rule
+
+"Ask first" does NOT mean "default skip." When working on a non-trivial ship, actively scan for high-leverage improvements in the pipeline / calibration / scoring / audit trail that would deepen the build, then PROACTIVELY surface them with: (a) the specific change, (b) why it's high-leverage, (c) cost estimate (LOC + complexity), (d) risk assessment, (e) clear recommendation. The founder decides; you then ship the deep version. Pre-shrinking by silently classifying improvements as "out of scope" burns the founder's leverage.
+
+## Debugging Discipline (the 5 rules)
+
+1. A working fix is not reverted without a NEW failing test that proves it wasn't the cause. "It used to work without this" is a guess, not evidence.
+2. **Bisect before theorize.** `git bisect` against a reproducible failure is faster than any theory.
+3. **Reproduce locally before pushing.** Each Vercel deploy attempt is 5-15 minutes. Local repro in 1-2 minutes beats it every time.
+4. **Commit messages record evidence + uncertainty, not conclusions.** Banned phrasings: "THE actual bug", "definitively the culprit", "real root cause". Use: "tried X, build now fails at Y instead of Z" / "X eliminates the failure — keeping unless disproved."
+5. **Don't accumulate scaffolding without removing on disproof.** When a hypothesis is disproved, delete its scaffolding (env vars, scripts, config flags) in the same commit as the disproof, or document as deliberately-kept-for-X with a date.
+
+## Session Workflow
+
+1. **Read `TODO.md` first.** Known bugs, active priorities, pending tasks. Update as work completes.
+2. **Start small.** One focused task per session beats a mega-batch.
+3. **Build-check before pushing.** `npx tsc --noEmit` is the minimum gate.
+4. **Commit after each logical unit.** Don't batch 12 changes into one commit.
+5. **Don't rediscover — read CLAUDE.md.** Conventions here have been learned the hard way.
+6. **Keep CLAUDE.md current — proactively, not at session end.** Whenever a change introduces a new convention, renames a field, adds a critical file, changes a workflow pattern, or discovers a gotcha that cost time — update CLAUDE.md in the same commit. Don't wait. Don't ask permission.
+
+## Tone and Style
+
+- Output text to communicate with the user. Most tool calls are invisible.
+- Match response to task: simple question gets direct answer, no headers.
+- End-of-turn summary: 1-2 sentences. What changed, what's next.
+- Default to no code comments. Only add when the WHY is non-obvious — a hidden constraint, a subtle invariant, a workaround for a specific bug. If removing the comment wouldn't confuse a future reader, don't write it.
+- Don't narrate internal deliberation. State results and decisions directly.
+- Never reference the current task / fix / PR in code comments ("added for Y flow", "fixes #123") — those belong in commit messages and rot in code.
+- No emojis unless the user explicitly asks.
+- Use markdown links `[filename.ts](src/filename.ts)` for code refs in IDE context.
+
+## Founder Context
+
+- Solo developer. Building Sentinel alongside a separate enterprise product.
+- Multiple Claude Code sessions per day; context between sessions matters.
+- Does NOT run `npm run build` locally for every change — relies on `npx tsc --noEmit` + Vercel CI. Claude is the local build check.
+- Trading via junior ISA (legally registered, real capital). The audit trail starts on day one — never compromise it.
+- No team — every CLAUDE.md update saves a future session's onboarding time.
+
+## Forward-Looking Discipline
+
+- Update this CLAUDE.md in the same commit as the change it documents.
+- Don't ask permission to fix stale prose / wrong dates / outdated counts.
+- When a session lesson costs >30 min to learn, encode it here so the next session starts with it.
+- The 8 META rules at the top are the load-bearing core — when a new pattern emerges that belongs at that level, propose it explicitly so the founder can decide.
+
+**Recommended companion files:**
+
+- `TODO.md` — active priorities, deferred follow-ups, known bugs, recently-completed (capped at ~7 days)
+- `MEMORY.md` (in `~/.claude/projects/<sentinel-path>/memory/`) — auto-loaded; CRITICAL META rules at top, then topic-grouped feedback files
+- `docs/audit-trail-schema.md` — canonical reference for every signal field, source-of-truth when schema changes
