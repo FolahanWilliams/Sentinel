@@ -1,0 +1,15 @@
+{
+    "extends": "../tsconfig.app.json",
+    "compilerOptions": {
+        "moduleResolution": "bundler",
+        "noUnusedLocals": false,
+        "noUnusedParameters": false,
+        "noUncheckedIndexedAccess": false,
+        "types": ["vite/client", "node"],
+        "baseUrl": "..",
+        "paths": {
+            "@/*": ["./src/*"]
+        }
+    },
+    "include": ["./**/*.ts", "../src/vite-env.d.ts"]
+}
