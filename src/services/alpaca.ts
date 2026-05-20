@@ -1,11 +1,12 @@
 /**
- * Sentinel — Alpaca Automated Execution Service
- * 
- * Handles routing of high-conviction paper trades to Alpaca Markets.
- * Uses the Paper Trading API credentials specified in .env.local.
+ * Sentinel — Alpaca Automated Execution Service (client)
+ *
+ * Thin wrapper that routes all Alpaca calls through the `proxy-alpaca`
+ * Edge Function. The API key + secret live as Supabase secrets server-side;
+ * the client never sees credentials.
  */
 
-const ALPACA_API_ENDPOINT = 'https://paper-api.alpaca.markets/v2';
+import { supabase } from '@/config/supabase';
 
 export interface AlpacaOrder {
     symbol: string;
@@ -26,47 +27,38 @@ export interface AlpacaOrder {
     extended_hours?: boolean;
 }
 
-export class AlpacaService {
-    private static getHeaders() {
-        // Fallback checks — usually provided via Vite env or Deno env if run on backend
-        const apiKey = import.meta.env.VITE_ALPACA_API_KEY;
-        const secretKey = import.meta.env.VITE_ALPACA_SECRET_KEY;
+interface ProxyResponse<T> {
+    success: boolean;
+    data?: T;
+    error?: string;
+}
 
-        if (!apiKey || !secretKey) {
-            console.error('[AlpacaService] Missing Alpaca API credentials. Trading is disabled.');
-        }
-
-        return {
-            'APCA-API-KEY-ID': apiKey || '',
-            'APCA-API-SECRET-KEY': secretKey || '',
-            'Content-Type': 'application/json',
-        };
+async function invokeProxy<T>(payload: Record<string, unknown>): Promise<ProxyResponse<T>> {
+    const { data, error } = await supabase.functions.invoke<ProxyResponse<T>>('proxy-alpaca', {
+        body: payload,
+    });
+    if (error) {
+        return { success: false, error: error.message || 'proxy-alpaca invocation failed' };
     }
+    return data || { success: false, error: 'Empty response from proxy-alpaca' };
+}
 
+export class AlpacaService {
     /**
-     * Get account details (Buying power, portfolio value, status)
+     * Get account details (buying power, portfolio value, status).
      */
     static async getAccount() {
-        try {
-            const response = await fetch(`${ALPACA_API_ENDPOINT}/account`, {
-                method: 'GET',
-                headers: this.getHeaders(),
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(`Alpaca API Error (${response.status}): ${errorData.message || response.statusText}`);
-            }
-
-            return await response.json();
-        } catch (error: any) {
-            console.error('[AlpacaService] Failed to fetch account:', error);
+        const res = await invokeProxy<any>({ action: 'account' });
+        if (!res.success) {
+            console.error('[AlpacaService] getAccount failed:', res.error);
             return null;
         }
+        return res.data;
     }
 
     /**
-     * Submit an advanced Bracket Order for automated execution
+     * Submit a bracket order (paper-trading) via the server-side proxy.
+     * Returns the order object on success, null on failure.
      */
     static async submitBracketOrder(
         ticker: string,
@@ -74,56 +66,31 @@ export class AlpacaService {
         side: 'buy' | 'sell',
         limitPrice: number,
         targetPrice: number | null,
-        stopLoss: number | null
+        stopLoss: number | null,
     ) {
-        try {
-            if (shares <= 0 || !ticker) {
-                console.warn(`[AlpacaService] Invalid order params for ${ticker}. Skipping execution.`);
-                return null;
-            }
-
-            const payload: AlpacaOrder = {
-                symbol: ticker,
-                qty: shares,
-                side,
-                type: 'limit',
-                time_in_force: 'gtc',
-                limit_price: Number(limitPrice.toFixed(2)),
-                extended_hours: false,
-            };
-
-            // Upgrade to Bracket order if risk constraints exist
-            if (targetPrice || stopLoss) {
-                payload.order_class = 'bracket';
-                if (targetPrice) {
-                    payload.take_profit = {
-                        limit_price: Number(targetPrice.toFixed(2)),
-                    };
-                }
-                if (stopLoss) {
-                    payload.stop_loss = {
-                        stop_price: Number(stopLoss.toFixed(2)),
-                    };
-                }
-            }
-
-            const response = await fetch(`${ALPACA_API_ENDPOINT}/orders`, {
-                method: 'POST',
-                headers: this.getHeaders(),
-                body: JSON.stringify(payload),
-            });
-
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(`Order Rejection (${response.status}): ${errorData.message || response.statusText}`);
-            }
-
-            const data = await response.json();
-            console.log(`[AlpacaService] Successfully rooted ${payload.order_class} order for ${shares}x ${ticker}`);
-            return data;
-        } catch (error: any) {
-            console.error(`[AlpacaService] Trade execution failed for ${ticker}:`, error);
+        if (shares <= 0 || !ticker) {
+            console.warn(`[AlpacaService] Invalid order params for ${ticker}. Skipping execution.`);
             return null;
         }
+
+        const res = await invokeProxy<any>({
+            action: 'submit_order',
+            payload: {
+                ticker,
+                shares,
+                side,
+                limit_price: limitPrice,
+                target_price: targetPrice,
+                stop_loss: stopLoss,
+            },
+        });
+
+        if (!res.success) {
+            console.error(`[AlpacaService] Trade execution failed for ${ticker}:`, res.error);
+            return null;
+        }
+
+        console.log(`[AlpacaService] Successfully routed bracket order for ${shares}x ${ticker}`);
+        return res.data;
     }
 }
