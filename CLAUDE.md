@@ -92,10 +92,10 @@ supabase functions logs <name>      # Tail edge function logs (manual)
 
 ```text
 src/
-├── components/         # UI components (analysis, dashboard, scanner, sentinel, signals, shared)
+├── components/         # UI components (analysis, dashboard, scanner, sentinel, signals, shared, landing)
 ├── config/             # constants.ts (all thresholds), rssFeeds.ts (42 feeds), supabase.ts
 ├── hooks/              # React hooks
-├── pages/              # 15 route pages
+├── pages/              # 15 route pages (Landing = public home, Showcase = public /about)
 ├── services/           # 48+ specialized services
 ├── stores/             # Zustand state
 ├── types/              # TypeScript type definitions
@@ -107,6 +107,8 @@ supabase/
 ```
 
 When adding a new service: put it in `src/services/`, export typed functions, NEVER duplicate logic already in `src/services/` — search first.
+
+**Public surface (landing / showcase).** The unauthenticated branch of `App.tsx` has its own `BrowserRouter`: `/` → `Landing` (home cover page), `/about` → `Showcase` (the shareable "the build" project page, lazy-loaded). Both render from the SAME shared sections in `src/components/landing/`, and all copy/agent/stat data lives in the canonical `src/components/landing/landingContent.ts` — edit facts there ONCE so the two surfaces can't drift. Visualizations are pure SVG + framer-motion (no chart dep on the landing bundle); every animation has a reduced-motion fallback. Confidentiality holds here: market-intelligence framing only, the "applied elsewhere" angle stays generic (`ApplicationSection`), and no fabricated performance numbers — only architecture/mechanism counts that are verifiable from the codebase.
 
 ## Critical Conventions
 

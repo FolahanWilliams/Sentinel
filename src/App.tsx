@@ -52,6 +52,7 @@ const Positions = lazyWithRetry(() => import('@/pages/Positions'), 'Positions');
 const RiskDashboard = lazyWithRetry(() => import('@/pages/RiskDashboard'), 'RiskDashboard');
 const NotFound = lazyWithRetry(() => import('@/pages/NotFound'), 'NotFound');
 const TrainingDojo = lazyWithRetry(() => import('@/pages/TrainingDojo'), 'default');
+const Showcase = lazyWithRetry(() => import('@/pages/Showcase'), 'Showcase');
 
 /** Minimal loading spinner shown while a lazy chunk loads */
 function RouteLoader() {
@@ -119,9 +120,26 @@ export default function App() {
         );
     }
 
-    // Not authenticated — show landing page (investment vertical) or auth gate
+    // Not authenticated — show the public landing/showcase (investment vertical)
+    // or the auth gate. The public surface gets its own router so /about (the
+    // shareable "the build" showcase) resolves without a session.
     if (!session) {
-        return FEATURE_VERTICAL === 'investment' ? <Landing /> : <AuthGate />;
+        if (FEATURE_VERTICAL !== 'investment') {
+            return <AuthGate />;
+        }
+        return (
+            <ErrorBoundary>
+                <BrowserRouter>
+                    <Suspense fallback={<RouteLoader />}>
+                        <Routes>
+                            <Route path="/" element={<Landing />} />
+                            <Route path="/about" element={<Showcase />} />
+                            <Route path="*" element={<Navigate to="/" replace />} />
+                        </Routes>
+                    </Suspense>
+                </BrowserRouter>
+            </ErrorBoundary>
+        );
     }
 
     return (
