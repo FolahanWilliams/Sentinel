@@ -11,7 +11,9 @@ import { motion } from 'framer-motion';
 import { ArrowRight, ArrowDown } from 'lucide-react';
 import { LandingNav, type NavLink } from '@/components/landing/LandingNav';
 import { ProblemSection } from '@/components/landing/ProblemSection';
+import { PrinciplesSection } from '@/components/landing/PrinciplesSection';
 import { PipelineSection } from '@/components/landing/PipelineSection';
+import { ReasoningStackSection } from '@/components/landing/ReasoningStackSection';
 import { AuditTrailSection } from '@/components/landing/AuditTrailSection';
 import { CalibrationSection } from '@/components/landing/CalibrationSection';
 import { ProvingGroundSection } from '@/components/landing/ProvingGroundSection';
@@ -24,9 +26,9 @@ import { ARCHITECTURE_STATS, BUILDER_STATS } from '@/components/landing/landingC
 import { useGoogleSignIn } from '@/hooks/useGoogleSignIn';
 
 const SHOWCASE_LINKS: NavLink[] = [
+    { label: 'Principles', href: '#principles' },
     { label: 'Pipeline', href: '#pipeline' },
-    { label: 'Audit trail', href: '#audit' },
-    { label: 'Calibration', href: '#calibration' },
+    { label: 'Reasoning stack', href: '#stack' },
     { label: 'Home', href: '/' },
 ];
 
@@ -37,7 +39,9 @@ export function Showcase() {
             <ShowcaseHero />
             <StatsBand stats={ARCHITECTURE_STATS} />
             <ProblemSection />
+            <PrinciplesSection />
             <PipelineSection detailed />
+            <ReasoningStackSection />
             <AuditTrailSection />
             <CalibrationSection />
             <ProvingGroundSection />

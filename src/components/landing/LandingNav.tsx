@@ -15,9 +15,9 @@ export interface NavLink {
 }
 
 const DEFAULT_LINKS: NavLink[] = [
+    { label: 'Principles', href: '#principles' },
     { label: 'Pipeline', href: '#pipeline' },
-    { label: 'Audit trail', href: '#audit' },
-    { label: 'Calibration', href: '#calibration' },
+    { label: 'Reasoning stack', href: '#stack' },
     { label: 'The build', href: '/about' },
 ];
 

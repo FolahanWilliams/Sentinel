@@ -12,7 +12,9 @@
 import { LandingNav } from '@/components/landing/LandingNav';
 import { Hero } from '@/components/landing/Hero';
 import { ProblemSection } from '@/components/landing/ProblemSection';
+import { PrinciplesSection } from '@/components/landing/PrinciplesSection';
 import { PipelineSection } from '@/components/landing/PipelineSection';
+import { ReasoningStackSection } from '@/components/landing/ReasoningStackSection';
 import { AuditTrailSection } from '@/components/landing/AuditTrailSection';
 import { CalibrationSection } from '@/components/landing/CalibrationSection';
 import { StatsBand } from '@/components/landing/StatsBand';
@@ -27,7 +29,9 @@ export function Landing() {
             <LandingNav />
             <Hero />
             <ProblemSection />
+            <PrinciplesSection />
             <PipelineSection />
+            <ReasoningStackSection />
             <AuditTrailSection />
             <CalibrationSection />
             <StatsBand />
