@@ -2,7 +2,7 @@
 
 ## What This Project Is
 
-Sentinel is an autonomous market intelligence engine that runs every signal through a 5-agent AI reasoning pipeline (Overreaction → Contagion → Catalyst → Earnings Guard → Red Team), self-critiques each thesis, and learns from outcomes via isotonic-regression confidence calibration. The deeper purpose: Sentinel is the live, transparent, auditable proving ground for a reasoning-audit framework whose enterprise application lives elsewhere. Trading is the controlled, fast-feedback domain where the mechanism is demonstrated; the engine itself is domain-agnostic.
+Sentinel is an autonomous market intelligence engine that runs every signal through a 5-agent AI reasoning pipeline (Overreaction → Contagion → Catalyst → Earnings Guard → Red Team), self-critiques each thesis, and learns from outcomes via observed-win-rate confidence calibration. The deeper purpose: Sentinel is the live, transparent, auditable proving ground for a reasoning-audit framework whose enterprise application lives elsewhere. Trading is the controlled, fast-feedback domain where the mechanism is demonstrated; the engine itself is domain-agnostic.
 
 ## Confidentiality Locks (non-negotiable)
 
@@ -56,7 +56,7 @@ Sentinel is an autonomous market intelligence engine that runs every signal thro
   1. The Universal Problem (cognitive failure modes under uncertainty — domain-agnostic)
   2. The Proof (live trading audit trail with verifiable metrics)
   3. The Application (the engine deployed in a new domain — KEPT GENERIC on public surfaces)
-- **Calibration honesty.** Confidence scores must be calibrated against observed win rates (isotonic regression). Never expose raw model confidence as "calibrated" on user-facing surfaces. When a calibration bucket has N<5 samples, label it `unlocks_at_N` or `too_few_samples`, never fabricate.
+- **Calibration honesty.** Confidence scores must be calibrated against observed win rates (currently empirical per-bucket reliability; isotonic regression / PAVA is the intended upgrade). Never expose raw model confidence as "calibrated" on user-facing surfaces. When a calibration bucket has too few samples, label it `too_few_samples` / `unlocks_at_N`, never fabricate.
 - **No backtested-result drift into live-claim copy.** Any time a metric appears on a marketing surface, audit it against the actual signal database — never quote a number that hasn't been live-verified.
 
 ## Tech Stack
@@ -150,7 +150,7 @@ Never swallow errors with `.catch(() => {})` on operations that affect signal de
   2. Founder explicit approval
   3. A CLAUDE.md session-lock documenting the change + the regression evidence
 - **Adding a new agent is a cascade** — pipeline orchestrator, agent prompts file, schema types (`src/types/`), RAG injection for lessons, post-mortem outputs, dashboard renderer that surfaces the new agent's reasoning. Same commit.
-- **Confidence calibration math** (isotonic regression / PAVA): never silently change buckets, weights, or remapping. Bumping calibration means re-running on the historical sample + persisting the new calibration version alongside scores so old signals stay interpretable.
+- **Confidence calibration math** (currently empirical per-bucket observed win rates; isotonic regression / PAVA is the intended upgrade): never silently change buckets, weights, or remapping. Bumping calibration means re-running on the historical sample + persisting the new calibration version alongside scores so old signals stay interpretable.
 - **Methodology versioning:** stamp every signal with the calibration version that produced its confidence score. A future audit asking "which version produced this score?" should resolve from the signal record, not from inferring git history.
 - **The Self-Critique pass is load-bearing** — never bypass it for performance. If latency is a concern, run it async and reconcile, never skip it.
 - **The Red Team agent must not be downgraded to "advisory"** — fatal flaws kill the signal entirely. This is the structural difference between Sentinel and a normal signal generator.
@@ -173,7 +173,7 @@ Every signal write must persist these fields. Schema and code paths MUST enforce
 - `bias_flags` (array: `{bias, severity, passage_ref}`)
 - `noise_score` (jury variance)
 - `sqi` (Signal Quality Index 0-100)
-- `confidence_raw` (model output), `confidence_calibrated` (post-isotonic)
+- `confidence_raw` (model output), `confidence_calibrated` (post-calibration)
 - `confidence_calibration_version`
 - `projected_rr`, `actual_rr`
 - `post_mortem_narrative` (null until 1d/5d/10d/30d windows close)
@@ -225,7 +225,7 @@ Each ratchet bump requires (i) edit the const, (ii) inline comment naming the ex
 - Deleting any route, component, edge function, or service (external links may exist)
 - End-user copy changes on dashboard / signal cards / alerts
 - Agent prompt overhauls
-- Calibration math changes (isotonic regression bucket count, blend ratios)
+- Calibration math changes (bucket count, calibration method, blend ratios)
 - Edge function rate-limit / budget-cap changes
 - RSS feed list changes
 - Any change that touches a confidentiality lock surface (audit trail JSON shape, public-claim copy)
