@@ -42,6 +42,8 @@ interface Position {
     notes: string | null;
     signal_id: string | null;
     currency: string | null;
+    stop_loss: number | null;
+    target_price: number | null;
 }
 
 interface LiveQuote {
@@ -63,6 +65,7 @@ export function Positions() {
     const prefillSignalId = searchParams.get('signal_id') || '';
     const prefillStop = searchParams.get('stop') || '';
     const prefillTarget = searchParams.get('target') || '';
+    const prefillShares = searchParams.get('shares') || '';
     const hasPrefill = !!prefillTicker || searchParams.get('prefill') === 'true';
 
     const [positions, setPositions] = useState<Position[]>([]);
@@ -77,8 +80,10 @@ export function Positions() {
     // Form state — initialized from URL params when present
     const [formTicker, setFormTicker] = useState(prefillTicker);
     const [formSide, setFormSide] = useState<'long' | 'short'>(prefillSide);
-    const [formShares, setFormShares] = useState('');
+    const [formShares, setFormShares] = useState(prefillShares);
     const [formEntryPrice, setFormEntryPrice] = useState(prefillEntry);
+    const [formStop, setFormStop] = useState(prefillStop);
+    const [formTarget, setFormTarget] = useState(prefillTarget);
     const [formNotes, setFormNotes] = useState('');
 
     // Close form state
@@ -167,6 +172,8 @@ export function Positions() {
 
         const entryPrice = parseFloat(formEntryPrice) || 0;
         const shares = parseFloat(formShares) || 0;
+        const stopLoss = parseFloat(formStop);
+        const targetPrice = parseFloat(formTarget);
 
         const { error } = await supabase.from('positions').insert({
             ticker,
@@ -178,12 +185,15 @@ export function Positions() {
             status: 'open',
             opened_at: new Date().toISOString(),
             notes: formNotes || null,
+            ...(Number.isFinite(stopLoss) && stopLoss > 0 ? { stop_loss: stopLoss } : {}),
+            ...(Number.isFinite(targetPrice) && targetPrice > 0 ? { target_price: targetPrice } : {}),
             ...(prefillSignalId ? { signal_id: prefillSignalId } : {}),
         });
 
         if (!error) {
             setShowForm(false);
             setFormTicker(''); setFormShares(''); setFormEntryPrice('');
+            setFormStop(''); setFormTarget('');
             setFormNotes('');
             // Clear URL params so refresh doesn't re-open with stale data
             if (hasPrefill) navigate('/positions', { replace: true });
@@ -680,6 +690,31 @@ export function Positions() {
                                             step="any"
                                             className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm font-mono text-sentinel-100 placeholder-sentinel-600 outline-none focus:border-blue-500/50 transition-colors"
                                             required
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs text-sentinel-400 mb-1">Stop Loss</label>
+                                        <input
+                                            value={formStop}
+                                            onChange={e => setFormStop(e.target.value)}
+                                            placeholder="optional"
+                                            type="number"
+                                            step="any"
+                                            className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm font-mono text-sentinel-100 placeholder-sentinel-600 outline-none focus:border-red-500/50 transition-colors"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs text-sentinel-400 mb-1">Target</label>
+                                        <input
+                                            value={formTarget}
+                                            onChange={e => setFormTarget(e.target.value)}
+                                            placeholder="optional"
+                                            type="number"
+                                            step="any"
+                                            className="w-full px-3 py-2 bg-white/5 border border-white/10 rounded-lg text-sm font-mono text-sentinel-100 placeholder-sentinel-600 outline-none focus:border-emerald-500/50 transition-colors"
                                         />
                                     </div>
                                 </div>

@@ -287,55 +287,64 @@ export class ExposureMonitor {
     }
 
     /**
-     * Check open positions against stop/target from linked signals.
+     * Check open positions against their stop/target. Levels are read from the
+     * position itself (side-aware), so manual positions and adjusted stops are
+     * covered; for legacy positions without their own levels we fall back to the
+     * linked signal's.
      */
     private static async checkPriceAlerts(): Promise<void> {
         const { data: positions } = await supabase
             .from('positions')
-            .select('id, ticker, side, signal_id')
-            .eq('status', 'open')
-            .not('signal_id', 'is', null);
+            .select('id, ticker, side, signal_id, stop_loss, target_price')
+            .eq('status', 'open');
 
         if (!positions || positions.length === 0) return;
 
-        const signalIds = positions.map(p => p.signal_id).filter((id): id is string => Boolean(id));
-        const { data: signals } = await supabase
-            .from('signals')
-            .select('id, stop_loss, target_price')
-            .in('id', signalIds);
-
-        if (!signals) return;
-
-        const signalMap = new Map(signals.map(s => [s.id, s]));
+        // Back-compat: positions with no own levels but a linked signal inherit the signal's.
+        const needSignal = positions.filter(
+            p => p.stop_loss == null && p.target_price == null && p.signal_id,
+        );
+        const signalMap = new Map<string, { stop_loss: number | null; target_price: number | null }>();
+        if (needSignal.length > 0) {
+            const ids = needSignal.map(p => p.signal_id).filter((id): id is string => Boolean(id));
+            const { data: signals } = await supabase
+                .from('signals')
+                .select('id, stop_loss, target_price')
+                .in('id', ids);
+            for (const s of signals ?? []) signalMap.set(s.id, s);
+        }
 
         for (const pos of positions) {
-            if (!pos.signal_id) continue;
-            const signal = signalMap.get(pos.signal_id);
-            if (!signal) continue;
+            const ownLevels = pos.stop_loss != null || pos.target_price != null;
+            const levels = ownLevels
+                ? { stop_loss: pos.stop_loss, target_price: pos.target_price }
+                : pos.signal_id ? signalMap.get(pos.signal_id) : null;
+            const stop = typeof levels?.stop_loss === 'number' ? levels.stop_loss : null;
+            const target = typeof levels?.target_price === 'number' ? levels.target_price : null;
+            if (stop == null && target == null) continue;
+
+            const isShort = pos.side === 'short';
 
             try {
                 const quote = await MarketDataService.getQuote(pos.ticker);
                 if (!quote?.price) continue;
-
                 const price = quote.price;
 
-                // Check stop loss
-                if (signal.stop_loss && price <= signal.stop_loss) {
+                // Stop hit — side-aware (short stops are above entry, long stops below).
+                if (stop != null && (isShort ? price >= stop : price <= stop)) {
                     const key = `stop-${pos.ticker}`;
-                    const lastAlert = alertCooldowns.get(key) ?? 0;
-                    if (Date.now() - lastAlert > COOLDOWN_MS) {
+                    if (Date.now() - (alertCooldowns.get(key) ?? 0) > COOLDOWN_MS) {
                         alertCooldowns.set(key, Date.now());
-                        BrowserNotificationService.notifyStopHit(pos.ticker, price, signal.stop_loss).catch(() => {});
+                        BrowserNotificationService.notifyStopHit(pos.ticker, price, stop).catch(() => {});
                     }
                 }
 
-                // Check target
-                if (signal.target_price && price >= signal.target_price) {
+                // Target hit — side-aware.
+                if (target != null && (isShort ? price <= target : price >= target)) {
                     const key = `target-${pos.ticker}`;
-                    const lastAlert = alertCooldowns.get(key) ?? 0;
-                    if (Date.now() - lastAlert > COOLDOWN_MS) {
+                    if (Date.now() - (alertCooldowns.get(key) ?? 0) > COOLDOWN_MS) {
                         alertCooldowns.set(key, Date.now());
-                        BrowserNotificationService.notifyTargetHit(pos.ticker, price, signal.target_price).catch(() => {});
+                        BrowserNotificationService.notifyTargetHit(pos.ticker, price, target).catch(() => {});
                     }
                 }
             } catch { /* non-fatal */ }
