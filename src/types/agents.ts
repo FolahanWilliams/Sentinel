@@ -247,7 +247,7 @@ export interface ScanLogEntry {
     created_at: string;
 }
 
-// ── Pre-Mortem Agent Types (Decision Intel Port) ────────────────────────────
+// ── Pre-Mortem Agent Types ────────────────────────────
 
 /** Single failure scenario from the Pre-Mortem Agent */
 export interface PreMortemScenario {
@@ -266,7 +266,7 @@ export interface PreMortemResult {
     resilience_rating: 'fragile' | 'moderate' | 'resilient';
 }
 
-// ── Toxic Combination Detector Types (Decision Intel Port) ──────────────────
+// ── Toxic Combination Detector Types ──────────────────
 
 /** A detected toxic bias combination pattern */
 export interface ToxicPattern {

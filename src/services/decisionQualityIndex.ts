@@ -2,10 +2,10 @@
  * Sentinel — Decision Quality Index (DQI) Calculator
  *
  * Composite 0-100 score aggregating all quality signals from the pipeline
- * into a single metric. Inspired by Decision Intel's DQI framework.
+ * into a single metric.
  *
  * Key for the ROI showcase — track DQI vs outcomes to prove the
- * Decision Intel engine works under real trading conditions.
+ * reasoning engine works under real trading conditions.
  *
  * Component weights:
  *   Bias audit       20%    Noise convergence  15%

@@ -228,7 +228,7 @@ export const NOISE_JUDGE_DIVERGENCE_PENALTY = 10;
 export const NOISE_JUDGE_CONVERGENCE_BOOST = 3;
 
 // ===========================
-// PRE-MORTEM AGENT (Decision Intel Port)
+// PRE-MORTEM AGENT
 // ===========================
 /** Penalty when avg failure probability > HIGH threshold AND 2+ severe scenarios */
 export const PRE_MORTEM_HIGH_RISK_PENALTY = -8;
@@ -240,7 +240,7 @@ export const PRE_MORTEM_HIGH_RISK_THRESHOLD = 50;
 export const PRE_MORTEM_MODERATE_RISK_THRESHOLD = 40;
 
 // ===========================
-// TOXIC COMBINATION DETECTOR (Decision Intel Port)
+// TOXIC COMBINATION DETECTOR
 // ===========================
 /** Penalty when compound risk > SEVERE threshold (80+) */
 export const TOXIC_COMBO_SEVERE_PENALTY = -10;

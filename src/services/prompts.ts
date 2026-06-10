@@ -415,7 +415,7 @@ Extend your risk framework:
 - TERMINAL RISK: What is the probability of a zero outcome (bankruptcy, regulatory shutdown, fraud)?
 - MONETARY EXPOSURE: Frame all risk in absolute £/$ terms, not just percentages.`;
 
-// ── Pre-Mortem Agent Prompt (Decision Intel Port — Klein Pre-Mortem) ─────────
+// ── Pre-Mortem Agent Prompt (Klein Pre-Mortem) ─────────
 
 export const PRE_MORTEM_AGENT_PROMPT = `You are the PRE-MORTEM AGENT for SENTINEL, a quantitative trading AI.
 

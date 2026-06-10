@@ -1390,7 +1390,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             console.warn(`[Scanner] Bias Detective failed for ${ev.ticker} (non-fatal):`, biasErr);
                                         }
 
-                                        // 7.4.6. TOXIC COMBINATION DETECTOR (Decision Intel) — compound bias risk
+                                        // 7.4.6. TOXIC COMBINATION DETECTOR — compound bias risk
                                         let toxicComboOutput: import('@/types/agents').ToxicCombinationResult | null = null;
                                         try {
                                             if (biasDetectiveOutput && biasDetectiveOutput.findings.length > 0) {
@@ -1456,7 +1456,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             console.warn(`[Scanner] Self-critique failed for ${ev.ticker} (non-fatal):`, critiqueErr);
                                         }
 
-                                        // 7.5.2. PRE-MORTEM AGENT (Decision Intel — Klein technique)
+                                        // 7.5.2. PRE-MORTEM AGENT (Klein technique)
                                         let preMortemOutput: import('@/types/agents').PreMortemResult | null = null;
                                         try {
                                             const preMortemCascadeCtx = AgentContextBus.buildPromptContext(agentCtx, 'pre_mortem');
@@ -1690,7 +1690,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             }
                                         } catch { /* non-fatal */ }
 
-                                        // 7.10b. RPD PATTERN CONFIDENCE ADJUSTMENT (Decision Intel — Klein framework)
+                                        // 7.10b. RPD PATTERN CONFIDENCE ADJUSTMENT (Klein framework)
                                         // Item 1 fix: call RPD here with the real signalType + dominant bias (not hard-coded defaults)
                                         try {
                                             const dominantBias = analysis.data.identified_biases?.[0] ?? 'recency_bias';
@@ -1929,7 +1929,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             }
                                         } catch { /* non-fatal */ }
 
-                                        // 7.16f. BENEFICIAL PATTERN DETECTOR (Decision Intel) — counterbalance over-penalization
+                                        // 7.16f. BENEFICIAL PATTERN DETECTOR — counterbalance over-penalization
                                         let beneficialResult: import('@/types/agents').BeneficialPatternResult | null = null;
                                         try {
                                             const beneficialCtx: BeneficialContext = {
@@ -2058,7 +2058,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             continue;
                                         }
 
-                                        // 7.20. DECISION QUALITY INDEX (Decision Intel) — composite quality score
+                                        // 7.20. DECISION QUALITY INDEX — composite quality score
                                         let dqiResult: import('@/types/agents').DQIResult | null = null;
                                         try {
                                             const dqiInputs: DQIInputs = {
@@ -2351,7 +2351,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                 noise_confidence: noiseConfidenceOutput,
                                                 decision_twin: decisionTwinOutput,
                                                 swot: swotOutput,
-                                                // Decision Intel features
+                                                // Reasoning-audit features
                                                 pre_mortem: preMortemOutput,
                                                 toxic_combination: toxicComboOutput,
                                                 // Behavioral Layer (category-defining)
@@ -2674,7 +2674,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                 void AutoLearningService.checkAndTrigger().catch(e =>
                     console.warn('[Scanner] Auto-learning check failed (non-fatal):', e)
                 );
-                // Decision Intel: pairwise bias interaction + stratified causal analysis
+                // Causal learning: pairwise bias interaction + stratified causal analysis
                 void AutoLearningService.detectPairwiseInteractions().catch(e =>
                     console.warn('[Scanner] Pairwise interaction detection failed (non-fatal):', e)
                 );

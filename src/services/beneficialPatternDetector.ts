@@ -1,9 +1,9 @@
 /**
- * Sentinel — Beneficial Pattern Detector (Decision Intel Port)
+ * Sentinel — Beneficial Pattern Detector
  *
  * Counterbalances Sentinel's 18+ penalty stages by recognizing positive
- * compound patterns that indicate high-quality setups. Inspired by
- * Decision Intel's beneficial-patterns.ts module.
+ * compound patterns that indicate high-quality setups. Recognizes when
+ * aligned positives compound (mirrors the underlying framework's pattern module).
  *
  * When multiple positive signals align, the setup is genuinely stronger
  * than the sum of its parts — this detector awards a capped boost.

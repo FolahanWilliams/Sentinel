@@ -35,7 +35,7 @@ import { DECISION_TWIN_SCHEMA } from './schemas';
 import type { PersonaVerdict, DecisionTwinResult } from '@/types/agents';
 import type { TASnapshot } from '@/types/signals';
 
-// ── Institutional Memory (Decision Intel Port) ──────────────────────────────
+// ── Institutional Memory ──────────────────────────────
 
 interface InstitutionalMemory {
     lessons: Array<{ severity: string; rule: string }>;

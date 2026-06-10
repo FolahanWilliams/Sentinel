@@ -372,7 +372,7 @@ export const MACRO_CAUSAL_SCHEMA = {
     required: ["causal_chain", "exploitable_cognitive_bias", "bias_description", "is_geopolitical_catalyst", "confidence_score", "thesis", "target_price", "stop_loss", "timeframe_days"]
 };
 
-// ── Pre-Mortem Agent Schema (Decision Intel Port) ───────────────────────────
+// ── Pre-Mortem Agent Schema ───────────────────────────
 
 export const PRE_MORTEM_SCHEMA = {
     type: "object",
