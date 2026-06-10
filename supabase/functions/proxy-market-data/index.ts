@@ -1111,6 +1111,81 @@ Deno.serve(async (req) => {
                 )
             }
 
+            // ── EARNINGS endpoint ────────────────────────────────────────────
+            // Real, keyless next-earnings date (Yahoo calendarEvents via crumb
+            // auth), with a Finnhub fallback when FINNHUB_API_KEY is configured.
+        } else if (endpoint === 'earnings') {
+            if (!ticker) {
+                return new Response(
+                    JSON.stringify({ success: false, error: 'Missing ticker for earnings endpoint' }),
+                    { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+                )
+            }
+            const tk = ticker.toUpperCase()
+            let earningsDate: string | null = null
+            let provider = 'none'
+
+            // Source 1: Yahoo quoteSummary calendarEvents (keyless)
+            try {
+                const { crumb, cookie } = await getYahooCrumbAndCookie()
+                const url = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(tk)}?modules=calendarEvents&crumb=${encodeURIComponent(crumb)}`
+                const res = await fetch(url, {
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Cookie': cookie,
+                        'Accept': 'application/json',
+                    },
+                })
+                if (res.ok) {
+                    const j = await res.json()
+                    const dates = j?.quoteSummary?.result?.[0]?.calendarEvents?.earnings?.earningsDate
+                    if (Array.isArray(dates) && dates.length > 0) {
+                        const ts = dates
+                            .map((d: any) => (typeof d?.raw === 'number' ? d.raw * 1000 : Date.parse(d?.fmt)))
+                            .filter((n: number) => !isNaN(n))
+                            .sort((a: number, b: number) => a - b)
+                        // Prefer the earliest date that is today or in the future.
+                        const future = ts.find((t: number) => t >= Date.now() - 86_400_000)
+                        const chosen = future ?? ts[0]
+                        if (chosen) {
+                            earningsDate = new Date(chosen).toISOString().split('T')[0]
+                            provider = 'yahoo-calendar-events'
+                        }
+                    }
+                } else {
+                    _yahooCrumb = null // refresh crumb next call
+                }
+            } catch (e: any) {
+                console.warn(`[proxy-market-data] Yahoo earnings failed for ${tk}:`, e?.message)
+            }
+
+            // Source 2: Finnhub (only if a key is configured server-side)
+            if (!earningsDate) {
+                const finnhubKey = Deno.env.get('FINNHUB_API_KEY')
+                if (finnhubKey) {
+                    try {
+                        const today = new Date().toISOString().split('T')[0]
+                        const to = new Date(Date.now() + 40 * 86_400_000).toISOString().split('T')[0]
+                        const url = `https://finnhub.io/api/v1/calendar/earnings?symbol=${tk}&from=${today}&to=${to}&token=${finnhubKey}`
+                        const res = await fetch(url)
+                        if (res.ok) {
+                            const j = await res.json()
+                            const arr = j?.earningsCalendar
+                            if (Array.isArray(arr) && arr.length > 0) {
+                                const sorted = arr.map((e: any) => e.date).filter(Boolean).sort()
+                                if (sorted[0]) { earningsDate = sorted[0]; provider = 'finnhub' }
+                            }
+                        }
+                    } catch { /* ignore — degrade to null */ }
+                }
+            }
+
+            let daysUntil: number | null = null
+            if (earningsDate) {
+                daysUntil = Math.ceil((Date.parse(earningsDate + 'T00:00:00Z') - Date.now()) / 86_400_000)
+            }
+            responseData = { success: true, data: { ticker: tk, earningsDate, daysUntil, provider } }
+
         } else {
             return new Response(
                 JSON.stringify({ success: false, error: `Unsupported endpoint: ${endpoint}` }),
