@@ -24,7 +24,7 @@ const GROUPS = [
         icon: Cpu,
         color: '#8b5cf6',
         title: 'Reasoning',
-        items: ['5-agent pipeline', 'Self-critique pass', 'Win-rate calibration', 'Rate-limited model proxy'],
+        items: ['5-agent pipeline', 'Self-critique pass', 'Isotonic calibration', 'Rate-limited model proxy'],
     },
     {
         icon: GitBranch,

@@ -1,6 +1,6 @@
 /**
- * CalibrationSection — confidence honesty: calibration remaps raw model
- * confidence to observed win rates, with the self-drawing reliability curve.
+ * CalibrationSection — confidence honesty: isotonic regression remaps raw model
+ * confidence against observed outcomes, with the self-drawing reliability curve.
  */
 
 import { Section, Eyebrow, SectionTitle, Lead } from './SectionPrimitives';
@@ -14,9 +14,9 @@ export function CalibrationSection() {
                     <Eyebrow label="Calibrated confidence" color="#22d3ee" />
                     <SectionTitle className="mt-4 mb-5">A “70%” that actually wins 70%.</SectionTitle>
                     <Lead className="mb-5">
-                        Raw model confidence is almost always overconfident. Sentinel remaps it to the
-                        win rate actually observed in each confidence bucket — per signal type and sector —
-                        so the number you see is grounded in what happened, not what the model felt.
+                        Raw model confidence is almost always overconfident. Sentinel remaps it against
+                        observed win rates using isotonic regression, so the number you see is grounded
+                        in what actually happened — not what the model felt.
                     </Lead>
                     <ul className="space-y-3 text-sm text-sentinel-300">
                         <li className="flex items-start gap-3">

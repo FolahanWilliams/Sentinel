@@ -3,7 +3,7 @@
  *
  * Shows stated confidence (x) against actual win rate (y):
  *  - raw model curve bows BELOW the diagonal (overconfident)
- *  - the win-rate-calibrated curve hugs the diagonal (a stated 70% wins ~70%)
+ *  - the isotonic-calibrated curve hugs the diagonal (a stated 70% wins ~70%)
  * A worked marker shows a raw 74% being pulled down to a measured 61%, matching
  * the confidence_raw → confidence_calibrated pair in the audit-trail sample.
  *
@@ -142,7 +142,7 @@ export function CalibrationCurve() {
             {/* Legend */}
             <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 mt-3 text-[11px]">
                 <LegendItem color="#f59e0b" label="Raw model — overconfident" />
-                <LegendItem color="#22d3ee" label="Win-rate calibrated" />
+                <LegendItem color="#22d3ee" label="Isotonic-calibrated" />
                 <LegendItem color="#64748b" label="Perfect calibration" dashed />
             </div>
         </div>

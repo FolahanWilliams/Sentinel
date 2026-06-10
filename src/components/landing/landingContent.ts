@@ -90,7 +90,7 @@ export const POST_PIPELINE_STAGES = [
     {
         name: 'Calibration',
         detail:
-            'Raw model confidence is remapped to the win rate actually observed in its confidence bucket, so a “70%” means a measured 70%.',
+            'Raw model confidence is remapped against observed win rates via isotonic regression, so a “70%” means a measured 70%.',
         color: '#a855f7',
     },
 ];
@@ -136,7 +136,7 @@ export const BUILDER_STATS: ArchStat[] = [
     { value: 70, suffix: '+', label: 'Specialized services', sub: 'typed, composable' },
     { value: 13, label: 'Edge functions', sub: 'rate-limited AI + data plane' },
     { value: 200, label: 'Trade reference class', sub: 'matched for recognition-primed recall' },
-    { value: 1, label: 'Calibration engine', sub: 'observed win-rate, versioned' },
+    { value: 1, label: 'Calibration engine', sub: 'isotonic regression, versioned' },
 ];
 
 /** Cognitive failure modes — sampled for the problem-section marquee. */
@@ -249,7 +249,7 @@ export const PRINCIPLES: Principle[] = [
         color: '#a855f7',
         principle: 'Calibration',
         lineage: 'Tetlock · superforecasting',
-        mechanism: 'Confidence is remapped to the win rate actually observed in each bucket, per type and sector.',
+        mechanism: 'Confidence is remapped against observed win rates via isotonic regression, with per-type and per-sector curves.',
         output: 'A stated 70% that has historically won ~70% — and is versioned',
     },
 ];
