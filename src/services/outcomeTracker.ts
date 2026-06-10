@@ -7,7 +7,6 @@
  */
 
 import { supabase } from '@/config/supabase';
-import { MarketDataService } from './marketData';
 import { ReflectionAgent } from './reflectionAgent';
 import { DynamicCalibrator } from './dynamicCalibrator';
 import { OutcomeNarrativeGenerator } from './outcomeNarrative';
@@ -16,140 +15,26 @@ import { ConfidenceCalibrator } from './confidenceCalibrator';
 export class OutcomeTracker {
 
     /**
-     * Scans the `signal_outcomes` table for entries that need interval updates.
+     * Trigger outcome measurement. The authoritative, path-aware measurement
+     * runs server-side in the `outcome-tracker` Edge Function (also on a cron),
+     * so the audit trail updates even when no browser tab is open. We invoke it
+     * here for immediacy while the app is open, then trigger learning refits if
+     * anything closed.
      */
     static async updatePendingOutcomes() {
-        console.log('[OutcomeTracker] Checking for pending outcomes...');
-
-        const { data: outcomes, error } = await supabase
-            .from('signal_outcomes')
-            .select('*')
-            .eq('outcome', 'pending');
-
-        if (error || !outcomes) {
-            console.error('[OutcomeTracker] Fetch failed:', error);
+        let updatedCount = 0;
+        try {
+            const { data, error } = await supabase.functions.invoke('outcome-tracker', { body: {} });
+            if (error) {
+                console.warn('[OutcomeTracker] Edge function invoke failed:', error);
+                return;
+            }
+            updatedCount = data && typeof data.updated === 'number' ? data.updated : 0;
+            console.log(`[OutcomeTracker] Server updated ${updatedCount} outcomes (${data?.completed ?? 0} completed, ${data?.overdue ?? 0} overdue).`);
+        } catch (err) {
+            console.warn('[OutcomeTracker] Edge function unreachable:', err);
             return;
         }
-
-        let updatedCount = 0;
-
-        for (const outcome of outcomes) {
-            try {
-                // Fetch current quote — skip this outcome if quote fails
-                let quote;
-                try {
-                    quote = await MarketDataService.getQuote(outcome.ticker);
-                } catch (quoteErr) {
-                    console.warn(`[OutcomeTracker] Quote fetch failed for ${outcome.ticker}, skipping this cycle`, quoteErr);
-                    continue;
-                }
-
-                const currentPrice = quote?.price;
-                if (!currentPrice || currentPrice <= 0 || !outcome.entry_price || outcome.entry_price <= 0) {
-                    console.warn(`[OutcomeTracker] Invalid price data for ${outcome.ticker} (current=${currentPrice}, entry=${outcome.entry_price}), skipping`);
-                    continue;
-                }
-
-                const entryTime = new Date(outcome.tracked_at).getTime();
-                const now = Date.now();
-                const daysElapsed = (now - entryTime) / (1000 * 60 * 60 * 24);
-
-                const updates: Record<string, unknown> = {};
-                let isComplete = false;
-                let finalOutcome = 'pending';
-
-                // Update interval markers if we've passed them
-                if (daysElapsed >= 1 && !outcome.price_at_1d) {
-                    updates.price_at_1d = currentPrice;
-                    updates.return_at_1d = ((currentPrice - outcome.entry_price) / outcome.entry_price) * 100;
-                }
-                if (daysElapsed >= 5 && !outcome.price_at_5d) {
-                    updates.price_at_5d = currentPrice;
-                    updates.return_at_5d = ((currentPrice - outcome.entry_price) / outcome.entry_price) * 100;
-                }
-                if (daysElapsed >= 10 && !outcome.price_at_10d) {
-                    updates.price_at_10d = currentPrice;
-                    updates.return_at_10d = ((currentPrice - outcome.entry_price) / outcome.entry_price) * 100;
-                }
-                if (daysElapsed >= 30 && !outcome.price_at_30d) {
-                    updates.price_at_30d = currentPrice;
-                    updates.return_at_30d = ((currentPrice - outcome.entry_price) / outcome.entry_price) * 100;
-                    isComplete = true; // 30 days is our max tracking window
-                }
-
-                // Also check if we hit max gain / max drawdown
-                const currentReturn = ((currentPrice - outcome.entry_price) / outcome.entry_price) * 100;
-
-                if (outcome.max_gain == null || currentReturn > outcome.max_gain) {
-                    updates.max_gain = currentReturn;
-                }
-                if (outcome.max_drawdown == null || currentReturn < outcome.max_drawdown) {
-                    updates.max_drawdown = currentReturn;
-                }
-
-                // Check against stops and targets (requires fetching the parent signal)
-                const { data: signal } = await supabase
-                    .from('signals')
-                    .select('stop_loss, target_price, signal_type')
-                    .eq('id', outcome.signal_id)
-                    .maybeSingle();
-
-                if (signal) {
-                    const stopLoss = typeof signal.stop_loss === 'number' ? signal.stop_loss : null;
-                    const targetPrice = typeof signal.target_price === 'number' ? signal.target_price : null;
-                    const isShort = typeof signal.signal_type === 'string' && signal.signal_type.includes('short');
-
-                    if (stopLoss !== null && stopLoss > 0) {
-                        const hitStop = isShort ? currentPrice >= stopLoss : currentPrice <= stopLoss;
-                        if (hitStop) {
-                            updates.hit_stop_loss = true;
-                            isComplete = true;
-                            finalOutcome = 'loss';
-                        }
-                    }
-                    if (!isComplete && targetPrice !== null && targetPrice > 0) {
-                        const hitTarget = isShort ? currentPrice <= targetPrice : currentPrice >= targetPrice;
-                        if (hitTarget) {
-                            updates.hit_target = true;
-                            isComplete = true;
-                            finalOutcome = 'win';
-                        }
-                    }
-                }
-
-                // If time expired without hitting stop or target, evaluate PnL
-                if (isComplete && finalOutcome === 'pending') {
-                    finalOutcome = currentReturn >= 0 ? 'win' : 'loss';
-                }
-
-                if (Object.keys(updates).length > 0) {
-                    if (isComplete) {
-                        updates.outcome = finalOutcome;
-                        updates.completed_at = new Date().toISOString();
-                    }
-
-                    await supabase
-                        .from('signal_outcomes')
-                        .update(updates as any)
-                        .eq('id', outcome.id);
-
-                    // Update outcome_status on the parent signal
-                    if (isComplete) {
-                        await supabase
-                            .from('signals')
-                            .update({ outcome_status: 'outcome_logged' })
-                            .eq('id', outcome.signal_id);
-                    }
-
-                    updatedCount++;
-                }
-
-            } catch (err) {
-                console.warn(`[OutcomeTracker] Failed to update outcome for ${outcome.ticker}`, err);
-            }
-        }
-
-        console.log(`[OutcomeTracker] Updated ${updatedCount} outcomes.`);
 
         // Auto-trigger reflection + calibration refit when we have completed outcomes
         // Fire-and-forget: run async to avoid blocking the scan pipeline
