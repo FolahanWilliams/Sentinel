@@ -22,6 +22,7 @@ const UnifiedPortfolioView = lazy(() => import('@/components/dashboard/UnifiedPo
 const WatchlistSection = lazy(() => import('@/components/dashboard/WatchlistSection').then(m => ({ default: m.WatchlistSection })));
 const PerformanceMetrics = lazy(() => import('@/components/dashboard/PerformanceMetrics').then(m => ({ default: m.PerformanceMetrics })));
 const SentinelPanel = lazy(() => import('@/components/sentinel/SentinelPanel').then(m => ({ default: m.SentinelPanel })));
+const MarketTab = lazy(() => import('@/components/dashboard/MarketTab').then(m => ({ default: m.MarketTab })));
 const Alerts = lazy(() => import('@/pages/Alerts').then(m => ({ default: m.Alerts })));
 const SimulatorTab = lazy(() => import('@/components/SimulatorTab').then(m => ({ default: m.SimulatorTab })));
 import {
@@ -36,6 +37,7 @@ import type { DashboardTab } from '@/types/dashboard';
 const TABS: { id: DashboardTab; label: string; icon: typeof Activity }[] = [
     { id: 'signals', label: 'AI Signals', icon: Zap },
     { id: 'intelligence', label: 'Intelligence', icon: Newspaper },
+    { id: 'market', label: 'Market', icon: Activity },
     { id: 'portfolio', label: 'My Portfolio', icon: Briefcase },
     { id: 'watchlist', label: 'Watchlist', icon: Eye },
     { id: 'performance', label: 'Performance', icon: BarChart3 },
@@ -48,7 +50,7 @@ export function UnifiedDashboard() {
     const [searchParams] = useSearchParams();
     const initialTab = (searchParams.get('tab') as DashboardTab) || 'signals';
     const [activeTab, setActiveTab] = useState<DashboardTab>(
-        (['signals', 'intelligence', 'portfolio', 'watchlist', 'performance', 'alerts', 'simulator'] as DashboardTab[]).includes(initialTab)
+        (['signals', 'intelligence', 'market', 'portfolio', 'watchlist', 'performance', 'alerts', 'simulator'] as DashboardTab[]).includes(initialTab)
             ? initialTab
             : 'signals'
     );
@@ -280,6 +282,7 @@ export function UnifiedDashboard() {
                                     <SentinelPanel />
                                 </div>
                             )}
+                            {activeTab === 'market' && <MarketTab />}
                             {activeTab === 'portfolio' && <UnifiedPortfolioView />}
                             {activeTab === 'watchlist' && <WatchlistSection />}
                             {activeTab === 'performance' && <PerformanceMetrics />}
