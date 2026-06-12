@@ -1,12 +1,12 @@
 /**
- * Sentinel — Toxic Combination Detector (Decision Intel Port)
+ * Sentinel — Toxic Combination Detector
  *
- * Ported from Decision Intel's toxic-combinations.ts (Wiz-inspired model).
+ * Ported from the underlying framework's toxic-combinations model (Wiz-inspired).
  * Detects when multiple individual biases combine with contextual risk factors
  * to create compound decision risk. Individual biases are manageable — but
  * certain COMBINATIONS multiply risk non-linearly.
  *
- * 6 trading-specific named patterns adapted from Decision Intel's 9 enterprise patterns.
+ * 6 trading-specific named patterns adapted from nine enterprise-domain patterns.
  * Pure deterministic logic — no Gemini call (fast, free).
  */
 

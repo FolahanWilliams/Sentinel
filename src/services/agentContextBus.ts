@@ -94,7 +94,7 @@ export interface AgentContext {
         summary: string;
     };
 
-    // Pre-Mortem output (Decision Intel — feeds into Noise Panel + Decision Twin)
+    // Pre-Mortem output (feeds into Noise Panel + Decision Twin)
     preMortem?: {
         scenarios: Array<{ description: string; probability: number; severity: string }>;
         avgFailureProbability: number;
@@ -102,7 +102,7 @@ export interface AgentContext {
         confidencePenalty: number;
     };
 
-    // Toxic Combination output (Decision Intel — feeds into Self-Critique + Pre-Mortem)
+    // Toxic Combination output (feeds into Self-Critique + Pre-Mortem)
     toxicCombination?: {
         patternsDetected: Array<{ name: string; biases: string[]; amplifiedRisk: number }>;
         compoundRiskScore: number;
@@ -271,7 +271,7 @@ export class AgentContextBus {
         };
     }
 
-    /** Store Pre-Mortem Agent output (Decision Intel) */
+    /** Store Pre-Mortem Agent output */
     static setPreMortem(ctx: AgentContext, result: import('@/types/agents').PreMortemResult): void {
         ctx.preMortem = {
             scenarios: result.scenarios.map(s => ({
@@ -285,7 +285,7 @@ export class AgentContextBus {
         };
     }
 
-    /** Store Toxic Combination Detector output (Decision Intel) */
+    /** Store Toxic Combination Detector output */
     static setToxicCombination(ctx: AgentContext, result: import('@/types/agents').ToxicCombinationResult): void {
         ctx.toxicCombination = {
             patternsDetected: result.patterns_detected.map(p => ({

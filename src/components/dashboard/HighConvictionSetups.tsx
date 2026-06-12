@@ -20,6 +20,9 @@ interface ConvictionSignal {
     ticker: string;
     signal_type: string;
     confidence_score: number;
+    calibrated_confidence: number | null;
+    dqi_score: number | null;
+    historical_win_rate: number | null;
     conviction_score: number | null;
     why_high_conviction: string | null;
     moat_rating: number | null;
@@ -31,6 +34,39 @@ interface ConvictionSignal {
     created_at: string;
 }
 
+const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
+const normWinRate = (v: number | null) => (v == null ? 0.5 : v > 1 ? clamp01(v / 100) : clamp01(v));
+
+/**
+ * Fused decision score (0-100): geometric mean of calibrated win-probability,
+ * decision-quality (DQI), and historical setup edge. Ranks the flagship surface
+ * by "best trade now" — NOT by the raw LLM conviction self-rating, which bypasses
+ * the entire guardrail pipeline. Geometric mean means a weak component (e.g. poor
+ * historical edge) drags the whole score down.
+ */
+function fusedDecisionScore(sig: ConvictionSignal): number {
+    const conf = clamp01(((sig.calibrated_confidence ?? sig.confidence_score) || 0) / 100);
+    const dqi = clamp01((sig.dqi_score ?? 50) / 100);
+    const edge = normWinRate(sig.historical_win_rate);
+    return Math.round(Math.cbrt(conf * dqi * edge) * 100);
+}
+
+function DecisionScorePill({ score }: { score: number }) {
+    const cls = score >= 70
+        ? 'bg-emerald-500/15 text-emerald-400 ring-emerald-500/30'
+        : score >= 50
+            ? 'bg-amber-500/15 text-amber-400 ring-amber-500/30'
+            : 'bg-sentinel-700/30 text-sentinel-400 ring-sentinel-600/30';
+    return (
+        <span
+            className={`px-1.5 py-0.5 text-[10px] font-bold rounded ring-1 font-mono ${cls}`}
+            title="Decision score — calibrated confidence × decision quality × historical edge (geometric mean). Drives the ranking."
+        >
+            DQ {score}
+        </span>
+    );
+}
+
 export function HighConvictionSetups() {
     const navigate = useNavigate();
     const [signals, setSignals] = useState<ConvictionSignal[]>([]);
@@ -39,16 +75,21 @@ export function HighConvictionSetups() {
     const fetchHighConviction = useCallback(async () => {
         try {
             setLoading(true);
+            // Pool of high-conviction-quality businesses, then RE-RANK by the
+            // fused decision score so we surface the best *trades*, not just the
+            // best companies (raw conviction_score bypasses the guardrails).
             const { data, error } = await supabase
                 .from('signals')
                 .select('*')
                 .eq('status', 'active')
                 .gte('conviction_score', 70)
-                .order('conviction_score', { ascending: false })
-                .limit(5);
+                .order('created_at', { ascending: false })
+                .limit(24);
 
             if (error) throw error;
-            setSignals((data as unknown as ConvictionSignal[]) || []);
+            const pool = (data as unknown as ConvictionSignal[]) || [];
+            pool.sort((a, b) => fusedDecisionScore(b) - fusedDecisionScore(a));
+            setSignals(pool.slice(0, 5));
         } catch (err) {
             console.error('[HighConvictionSetups] Fetch error:', err);
         } finally {
@@ -137,6 +178,7 @@ export function HighConvictionSetups() {
                         </div>
 
                         <div className="flex items-center gap-2 flex-wrap">
+                            <DecisionScorePill score={fusedDecisionScore(sig)} />
                             <ConvictionBadge score={sig.conviction_score} reason={sig.why_high_conviction} />
                             <MoatBadge rating={sig.moat_rating} />
                             <LynchBadge category={sig.lynch_category} />

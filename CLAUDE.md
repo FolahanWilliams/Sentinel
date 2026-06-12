@@ -2,7 +2,7 @@
 
 ## What This Project Is
 
-Sentinel is an autonomous market intelligence engine that runs every signal through a 5-agent AI reasoning pipeline (Overreaction → Contagion → Catalyst → Earnings Guard → Red Team), self-critiques each thesis, and learns from outcomes via isotonic-regression confidence calibration. The deeper purpose: Sentinel is the live, transparent, auditable proving ground for a reasoning-audit framework whose enterprise application lives elsewhere. Trading is the controlled, fast-feedback domain where the mechanism is demonstrated; the engine itself is domain-agnostic.
+Sentinel is an autonomous market intelligence engine that runs every signal through a 5-agent AI reasoning pipeline (Overreaction → Contagion → Catalyst → Earnings Guard → Red Team), self-critiques each thesis, and learns from outcomes via isotonic-regression confidence calibration (PAVA in `dynamicCalibrator.ts` — primary; static empirical buckets in `confidenceCalibrator.ts` — fallback). The deeper purpose: Sentinel is the live, transparent, auditable proving ground for a reasoning-audit framework whose enterprise application lives elsewhere. Trading is the controlled, fast-feedback domain where the mechanism is demonstrated; the engine itself is domain-agnostic.
 
 ## Confidentiality Locks (non-negotiable)
 
@@ -56,7 +56,7 @@ Sentinel is an autonomous market intelligence engine that runs every signal thro
   1. The Universal Problem (cognitive failure modes under uncertainty — domain-agnostic)
   2. The Proof (live trading audit trail with verifiable metrics)
   3. The Application (the engine deployed in a new domain — KEPT GENERIC on public surfaces)
-- **Calibration honesty.** Confidence scores must be calibrated against observed win rates (isotonic regression). Never expose raw model confidence as "calibrated" on user-facing surfaces. When a calibration bucket has N<5 samples, label it `unlocks_at_N` or `too_few_samples`, never fabricate.
+- **Calibration honesty.** Confidence scores must be calibrated against observed win rates (isotonic regression / PAVA via `DynamicCalibrator`, static-bucket fallback). Never expose raw model confidence as "calibrated" on user-facing surfaces. When a calibration bucket has N<5 samples, label it `unlocks_at_N` or `too_few_samples`, never fabricate.
 - **No backtested-result drift into live-claim copy.** Any time a metric appears on a marketing surface, audit it against the actual signal database — never quote a number that hasn't been live-verified.
 
 ## Tech Stack
@@ -92,10 +92,10 @@ supabase functions logs <name>      # Tail edge function logs (manual)
 
 ```text
 src/
-├── components/         # UI components (analysis, dashboard, scanner, sentinel, signals, shared)
+├── components/         # UI components (analysis, dashboard, scanner, sentinel, signals, shared, landing)
 ├── config/             # constants.ts (all thresholds), rssFeeds.ts (42 feeds), supabase.ts
 ├── hooks/              # React hooks
-├── pages/              # 15 route pages
+├── pages/              # 15 route pages (Landing = public home, Showcase = public /about)
 ├── services/           # 48+ specialized services
 ├── stores/             # Zustand state
 ├── types/              # TypeScript type definitions
@@ -107,6 +107,8 @@ supabase/
 ```
 
 When adding a new service: put it in `src/services/`, export typed functions, NEVER duplicate logic already in `src/services/` — search first.
+
+**Public surface (landing / showcase).** The unauthenticated branch of `App.tsx` has its own `BrowserRouter`: `/` → `Landing` (home cover page), `/about` → `Showcase` (the shareable "the build" project page, lazy-loaded). Both render from the SAME shared sections in `src/components/landing/`, and all copy/agent/stat data lives in the canonical `src/components/landing/landingContent.ts` — edit facts there ONCE so the two surfaces can't drift. Stat counts are computed from canonical exports (`BIAS_TYPES`, `RSS_FEEDS`) rather than hardcoded. The page frames Sentinel as an operationalization of decision-science principles (Kahneman/Klein/Tetlock/intel tradecraft) mapped to real mechanisms — keep `PRINCIPLES` claims verifiable against `src/services`. Visualizations are pure SVG + framer-motion (no chart dep on the landing bundle); every animation has a reduced-motion fallback. Confidentiality holds here: market-intelligence framing only, the "applied elsewhere" angle stays generic (`ApplicationSection`), and no fabricated performance numbers — only architecture/mechanism counts that are verifiable from the codebase.
 
 ## Critical Conventions
 
@@ -148,7 +150,7 @@ Never swallow errors with `.catch(() => {})` on operations that affect signal de
   2. Founder explicit approval
   3. A CLAUDE.md session-lock documenting the change + the regression evidence
 - **Adding a new agent is a cascade** — pipeline orchestrator, agent prompts file, schema types (`src/types/`), RAG injection for lessons, post-mortem outputs, dashboard renderer that surfaces the new agent's reasoning. Same commit.
-- **Confidence calibration math** (isotonic regression / PAVA): never silently change buckets, weights, or remapping. Bumping calibration means re-running on the historical sample + persisting the new calibration version alongside scores so old signals stay interpretable.
+- **Confidence calibration math** (isotonic regression / PAVA in `dynamicCalibrator.ts`, static buckets in `confidenceCalibrator.ts` as fallback): never silently change buckets, weights, or remapping. Bumping calibration means re-running on the historical sample + persisting the new calibration version alongside scores so old signals stay interpretable.
 - **Methodology versioning:** stamp every signal with the calibration version that produced its confidence score. A future audit asking "which version produced this score?" should resolve from the signal record, not from inferring git history.
 - **The Self-Critique pass is load-bearing** — never bypass it for performance. If latency is a concern, run it async and reconcile, never skip it.
 - **The Red Team agent must not be downgraded to "advisory"** — fatal flaws kill the signal entirely. This is the structural difference between Sentinel and a normal signal generator.
@@ -223,7 +225,7 @@ Each ratchet bump requires (i) edit the const, (ii) inline comment naming the ex
 - Deleting any route, component, edge function, or service (external links may exist)
 - End-user copy changes on dashboard / signal cards / alerts
 - Agent prompt overhauls
-- Calibration math changes (isotonic regression bucket count, blend ratios)
+- Calibration math changes (isotonic regression fit, bucket count, blend ratios)
 - Edge function rate-limit / budget-cap changes
 - RSS feed list changes
 - Any change that touches a confidentiality lock surface (audit trail JSON shape, public-claim copy)

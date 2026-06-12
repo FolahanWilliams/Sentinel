@@ -379,14 +379,14 @@ Generate weight adjustments for each pipeline step based on both live performanc
         };
     }
 
-    // ── Causal Learning Upgrade (Decision Intel Port) ───────────────────────
+    // ── Causal Learning Upgrade ───────────────────────
 
     /**
      * Detect pairwise bias interactions — which 2-bias combinations
      * correlate with disproportionate failure rates.
      *
      * Uses stratified analysis by signal_type to avoid Simpson's paradox.
-     * Ported from Decision Intel's causal-learning.ts concept.
+     * Ported from the underlying framework's causal-learning concept.
      */
     static async detectPairwiseInteractions(): Promise<void> {
         try {

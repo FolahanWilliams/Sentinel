@@ -321,6 +321,8 @@ export type Database = {
           side: string
           signal_id: string | null
           status: string
+          stop_loss: number | null
+          target_price: number | null
           ticker: string
           user_id: string | null
         }
@@ -341,6 +343,8 @@ export type Database = {
           side?: string
           signal_id?: string | null
           status?: string
+          stop_loss?: number | null
+          target_price?: number | null
           ticker: string
           user_id?: string | null
         }
@@ -361,6 +365,8 @@ export type Database = {
           side?: string
           signal_id?: string | null
           status?: string
+          stop_loss?: number | null
+          target_price?: number | null
           ticker?: string
           user_id?: string | null
         }

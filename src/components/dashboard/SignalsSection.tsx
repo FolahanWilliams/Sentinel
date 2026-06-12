@@ -904,12 +904,22 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
                                                                 const side = signal.signal_type.includes('short') ? 'short' : 'long';
+                                                                // Risk-based recommended shares: risk budget / per-share risk.
+                                                                const entryNum = Number(signal.suggested_entry_low ?? 0);
+                                                                const stopNum = Number(signal.stop_loss ?? 0);
+                                                                const totalCapital = portfolioConfig?.total_capital ?? 10000;
+                                                                const riskPct = portfolioConfig?.risk_per_trade_pct ?? 2;
+                                                                let recShares = 0;
+                                                                if (entryNum > 0 && stopNum > 0 && entryNum !== stopNum) {
+                                                                    recShares = Math.max(0, Math.floor((totalCapital * (riskPct / 100)) / Math.abs(entryNum - stopNum)));
+                                                                }
                                                                 const params = new URLSearchParams({
                                                                     ticker: signal.ticker,
                                                                     side,
                                                                     ...(signal.suggested_entry_low ? { entry: String(signal.suggested_entry_low) } : {}),
                                                                     ...(signal.stop_loss ? { stop: String(signal.stop_loss) } : {}),
                                                                     ...(signal.target_price ? { target: String(signal.target_price) } : {}),
+                                                                    ...(recShares > 0 ? { shares: String(recShares) } : {}),
                                                                     signal_id: signal.id,
                                                                     prefill: 'true',
                                                                 });

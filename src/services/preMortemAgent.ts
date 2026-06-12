@@ -1,5 +1,5 @@
 /**
- * Sentinel — Pre-Mortem Agent (Decision Intel Port)
+ * Sentinel — Pre-Mortem Agent
  *
  * Implements Gary Klein's Pre-Mortem technique for trading signals.
  * Assumes the trade has ALREADY FAILED and works backwards to identify
