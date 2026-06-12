@@ -214,7 +214,7 @@ When a constant or algorithm has a canonical source, every consumer MUST import 
 
 These are not all required day-1. Add when they earn their keep:
 
-- **Silent-catch ratchet** (`scripts/lint-silent-catches.mjs`): scans for `.catch(arg => null/undefined/{}/[]/false/true/0/'')` and fails when the count exceeds a baseline. Adding a new silent catch requires (a) replacing an existing one, (b) upgrading to `log.warn`, OR (c) bumping baseline with an inline comment naming the exception class.
+- **Silent-catch ratchet** (`scripts/lint-silent-catches.mjs`) — **LIVE, baseline 24.** Runs in CI (`ci.yml`) and via `npm run lint:silent-catches`. Scans `src/` + `supabase/functions/` for `.catch(arg => null/undefined/{}/[]/false/true/0/'')` and fails when the count exceeds the baseline. Adding a new silent catch requires (a) replacing an existing one, (b) upgrading to `log.warn`, OR (c) bumping `BASELINE` with an inline comment naming the exception class. Trajectory: ratchet 24 → down (the current 24 are mostly fire-and-forget browser-notification / best-effort client outcome+exposure triggers + 1 `req.json()` body parse).
 - **Count-drift ratchet** (`scripts/lint-counts.mjs`): scans for hardcoded literals matching counts of agents / feeds / pages / bias types — fails when exceeds baseline. Prefer interpolation from canonical exports (e.g., `${AGENTS.length}`).
 - **Canonical-imports lint** (`scripts/lint-canonical-imports.mjs`): blocks new local re-implementations of canonical helpers. Inline `// canonical-exception — <reason>` opt-out.
 - **Doc-sync lint** (`scripts/lint-doc-sync.mjs`): cross-checks prose numbers in CLAUDE.md against lint baselines; tolerance ±2.
