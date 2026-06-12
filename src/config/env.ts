@@ -48,14 +48,15 @@ function validateEnv(): EnvConfig {
     const isProduction = readBoolEnv('PROD', nodeProcess?.env?.NODE_ENV === 'production');
     const isDevelopment = readBoolEnv('DEV', !isProduction);
 
-    // Phase 3 fix (Audit M8): Fail-closed in production when critical env vars are missing
+    // Audit M8 (fail-closed): still fail closed when critical env vars are
+    // missing, but do NOT throw at import time — that white-screens the whole
+    // app with only a console error. config/supabase.ts exposes
+    // isSupabaseConfigured and main.tsx renders a clear config-error screen
+    // instead, which is a better (and still fail-closed) failure mode.
     if (!supabaseUrl || !supabaseAnonKey) {
-        if (isProduction) {
-            throw new Error('[Sentinel] Missing required env vars: VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY');
-        }
-        console.warn(
-            '[Sentinel] Missing Supabase env vars. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env.local'
-        );
+        const msg = '[Sentinel] Missing required env vars: VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY — set them in your hosting provider\'s environment variables.';
+        if (isProduction) console.error(msg);
+        else console.warn(msg + ' For local dev, set them in .env.local.');
     }
 
     return {
