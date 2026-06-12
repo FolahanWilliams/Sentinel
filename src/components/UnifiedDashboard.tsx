@@ -10,9 +10,10 @@ import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
 import { usePortfolio } from '@/hooks/usePortfolio';
+import { useForex } from '@/hooks/useForex';
 import { MarketDataService } from '@/services/marketData';
 import { formatPrice, formatPercent } from '@/utils/formatters';
-import { calcUnrealizedPnl, getPositionPrice } from '@/utils/portfolio';
+import { calcUnrealizedPnlUSD, nativeToUSD, getPositionPrice } from '@/utils/portfolio';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 import { SignalsSection } from '@/components/dashboard/SignalsSection';
 import { OutcomeComplianceBanner } from '@/components/dashboard/OutcomeComplianceBanner';
@@ -57,6 +58,7 @@ export function UnifiedDashboard() {
 
     // Top-bar live data
     const { config, openPositions } = usePortfolio();
+    const { data: forex } = useForex();
     const [portfolioValue, setPortfolioValue] = useState<number | null>(null);
     const [dailyRoi, setDailyRoi] = useState<number | null>(null);
     const [activeSignalCount, setActiveSignalCount] = useState(0);
@@ -127,12 +129,12 @@ export function UnifiedDashboard() {
                 for (const pos of openPositions) {
                     const quote = quotes[pos.ticker];
                     const currentPrice = getPositionPrice(pos, quotes);
-                    unrealizedPnl += calcUnrealizedPnl(pos, currentPrice);
+                    unrealizedPnl += calcUnrealizedPnlUSD(pos, currentPrice, forex);
 
                     // Daily change from quote (sign-correct for shorts)
                     if (quote) {
                         const multiplier = pos.side === 'short' ? -1 : 1;
-                        dailyChange += (quote.change ?? 0) * (pos.shares ?? 0) * multiplier;
+                        dailyChange += nativeToUSD(pos, (quote.change ?? 0) * (pos.shares ?? 0) * multiplier, forex);
                     }
                 }
 
@@ -144,7 +146,7 @@ export function UnifiedDashboard() {
             }
         }
         computeValue();
-    }, [config, openPositions, portfolioRefreshKey]);
+    }, [config, openPositions, portfolioRefreshKey, forex]);
 
     return (
         <ErrorBoundary>

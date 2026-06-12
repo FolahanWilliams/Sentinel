@@ -19,7 +19,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { SkeletonTable } from '@/components/shared/SkeletonPrimitives';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { formatPrice } from '@/utils/formatters';
-import { inferCurrency } from '@/utils/portfolio';
+import { inferCurrency, nativeToUSD, realizedPnlUSD } from '@/utils/portfolio';
+import { useForex } from '@/hooks/useForex';
 import { useSentinel } from '@/hooks/useSentinel';
 import { useQuoteWorker } from '@/hooks/useQuoteWorker';
 import { checkPortfolioNewsDivergence } from '@/services/portfolioNewsDivergence';
@@ -69,6 +70,7 @@ export function Positions() {
     const hasPrefill = !!prefillTicker || searchParams.get('prefill') === 'true';
 
     const [positions, setPositions] = useState<Position[]>([]);
+    const { data: forex } = useForex();
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(hasPrefill);
     const [showCloseModal, setShowCloseModal] = useState<string | null>(null);
@@ -151,19 +153,20 @@ export function Positions() {
         openPositions.forEach(pos => {
             const pnl = calcPnL(pos);
             if (pnl) {
-                totalPnl += pnl.pnlUsd;
-                if (pnl.pnlUsd >= 0) { winnersCount++; biggestWin = Math.max(biggestWin, pnl.pnlUsd); }
-                else { losersCount++; biggestLoss = Math.min(biggestLoss, pnl.pnlUsd); }
+                const usd = nativeToUSD(pos, pnl.pnlUsd, forex);
+                totalPnl += usd;
+                if (usd >= 0) { winnersCount++; biggestWin = Math.max(biggestWin, usd); }
+                else { losersCount++; biggestLoss = Math.min(biggestLoss, usd); }
             }
         });
 
-        // Include realized P&L from closed positions
+        // Include realized P&L from closed positions (normalized to USD)
         const closedPnl = positions
             .filter(p => p.status === 'closed' && p.realized_pnl)
-            .reduce((sum, p) => sum + (p.realized_pnl || 0), 0);
+            .reduce((sum, p) => sum + realizedPnlUSD(p, forex), 0);
 
         return { totalPnl, closedPnl, openCount: openPositions.length, winnersCount, losersCount, biggestWin, biggestLoss };
-    }, [positions, calcPnL]);
+    }, [positions, calcPnL, forex]);
 
     async function handleAddPosition(e: React.FormEvent) {
         e.preventDefault();

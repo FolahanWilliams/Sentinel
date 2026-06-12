@@ -25,7 +25,8 @@ import {
 } from 'lucide-react';
 import { ImportPortfolio } from './ImportPortfolio';
 import { LogTradeModal } from './LogTradeModal';
-import { calcUnrealizedPnl, calcUnrealizedPnlPct, getPositionPrice, getPositionExposure, inferCurrency } from '@/utils/portfolio';
+import { calcUnrealizedPnl, calcUnrealizedPnlPct, calcUnrealizedPnlUSD, getPositionPrice, getPositionExposureUSD, realizedPnlUSD, inferCurrency } from '@/utils/portfolio';
+import { useForex } from '@/hooks/useForex';
 import { AnimatePresence } from 'framer-motion';
 import type { Quote } from '@/types/market';
 import type { PortfolioSummary, SectorAllocation } from '@/types/dashboard';
@@ -53,6 +54,7 @@ export function UnifiedPortfolioView({ className = '' }: UnifiedPortfolioViewPro
     const navigate = useNavigate();
     const { config, openPositions, closedPositions, loading: portfolioLoading, refetch } = usePortfolio();
     const { data: sentinelData } = useSentinel();
+    const { data: forex } = useForex();
     const [sectorMap, setSectorMap] = useState<Record<string, string>>({});
     const [refreshing, setRefreshing] = useState(false);
     const [showTradeModal, setShowTradeModal] = useState(false);
@@ -125,11 +127,11 @@ export function UnifiedPortfolioView({ className = '' }: UnifiedPortfolioViewPro
         let unrealizedPnl = 0;
 
         for (const pos of openPositions) {
-            const size = getPositionExposure(pos);
+            const size = getPositionExposureUSD(pos, forex);
             totalExposure += size;
 
             const currentPrice = getPositionPrice(pos, quotes);
-            unrealizedPnl += calcUnrealizedPnl(pos, currentPrice);
+            unrealizedPnl += calcUnrealizedPnlUSD(pos, currentPrice, forex);
         }
 
         // Closed positions stats
@@ -139,7 +141,7 @@ export function UnifiedPortfolioView({ className = '' }: UnifiedPortfolioViewPro
         let maxDrawdown = 0;
 
         for (const pos of closedPositions) {
-            const pnl = pos.realized_pnl ?? 0;
+            const pnl = realizedPnlUSD(pos, forex);
             realizedPnl += pnl;
             if (pnl > 0) winCount++;
             else if (pnl < 0) lossCount++;
@@ -171,7 +173,7 @@ export function UnifiedPortfolioView({ className = '' }: UnifiedPortfolioViewPro
             closedPositionCount: closedPositions.length,
             riskPct: config ? (totalExposure / totalCapital) * (config.risk_per_trade_pct / 100) * 100 : 0,
         };
-    }, [config, openPositions, closedPositions, quotes]);
+    }, [config, openPositions, closedPositions, quotes, forex]);
 
     // Sector allocation for donut — uses watchlist sector data
     const sectorAllocations = useMemo((): SectorAllocation[] => {
