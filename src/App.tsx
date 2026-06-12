@@ -11,7 +11,6 @@ import { supabase } from '@/config/supabase';
 import { clearUserIdCache } from '@/utils/getUserId';
 import { AuthGate } from '@/components/auth/AuthGate';
 import { Landing } from '@/pages/Landing';
-import { FEATURE_VERTICAL } from '@/config/constants';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { ChatProvider } from '@/contexts/ChatContext';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
@@ -120,13 +119,12 @@ export default function App() {
         );
     }
 
-    // Not authenticated — show the public landing/showcase (investment vertical)
-    // or the auth gate. The public surface gets its own router so /about (the
-    // shareable "the build" showcase) resolves without a session.
+    // Not authenticated — show the public surface. The marketing cover page
+    // (Landing) is the default so signing out lands here; /about is the
+    // shareable showcase and /login is the auth gate (incl. the System Agent
+    // email/password login). The public surface gets its own router so these
+    // routes resolve without a session.
     if (!session) {
-        if (FEATURE_VERTICAL !== 'investment') {
-            return <AuthGate />;
-        }
         return (
             <ErrorBoundary>
                 <BrowserRouter>
@@ -134,6 +132,7 @@ export default function App() {
                         <Routes>
                             <Route path="/" element={<Landing />} />
                             <Route path="/about" element={<Showcase />} />
+                            <Route path="/login" element={<AuthGate />} />
                             <Route path="*" element={<Navigate to="/" replace />} />
                         </Routes>
                     </Suspense>
