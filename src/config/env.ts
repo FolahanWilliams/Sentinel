@@ -24,7 +24,11 @@ const nodeProcess = (globalThis as { process?: { env?: Record<string, string | u
 // replaced and this fallback is dead code.
 function readEnv(key: string): string | undefined {
     try {
-        const fromVite = (import.meta as any)?.env?.[key];
+        // NB: `import.meta.env` (no optional chain before `.env`). Vite only
+        // inlines `import.meta.env`; the optional-chained `import.meta?.env`
+        // form is NOT replaced and returns undefined in production — which left
+        // Supabase unconfigured and white-screened the app.
+        const fromVite = (import.meta as any).env?.[key];
         if (fromVite) return fromVite;
     } catch { /* import.meta.env not available — fall through */ }
     if (nodeProcess?.env?.[key]) {
@@ -35,7 +39,7 @@ function readEnv(key: string): string | undefined {
 
 function readBoolEnv(key: string, fallback: boolean): boolean {
     try {
-        const val = (import.meta as any)?.env?.[key];
+        const val = (import.meta as any).env?.[key];
         if (typeof val === 'boolean') return val;
     } catch { /* fall through */ }
     return fallback;
