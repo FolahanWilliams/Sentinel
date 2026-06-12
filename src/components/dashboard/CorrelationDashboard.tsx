@@ -21,6 +21,8 @@ export function CorrelationDashboard() {
     const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
     const activeTickers = tickers.filter(t => t.is_active).map(t => t.ticker);
+    // Stable primitive key — recompute only when the active ticker set changes by value.
+    const activeTickersKey = activeTickers.join(',');
 
     const fetchCorrelations = useCallback(async () => {
         if (activeTickers.length < 2) return;
@@ -48,7 +50,9 @@ export function CorrelationDashboard() {
         } finally {
             setLoading(false);
         }
-    }, [activeTickers.join(',')]);
+        // activeTickersKey is the stable primitive form of activeTickers (used in the body).
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeTickersKey]);
 
     const getCorrelationColor = (corr: number): string => {
         const abs = Math.abs(corr);

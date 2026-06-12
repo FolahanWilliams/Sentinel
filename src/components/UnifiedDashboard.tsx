@@ -144,7 +144,6 @@ export function UnifiedDashboard() {
             }
         }
         computeValue();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [config, openPositions, portfolioRefreshKey]);
 
     return (

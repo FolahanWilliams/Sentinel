@@ -468,7 +468,6 @@ function AnalystChatInner() {
 
         loadConversation();
         return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen, ticker]);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);

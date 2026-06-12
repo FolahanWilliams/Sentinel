@@ -47,6 +47,7 @@ export function sanitizeUntrustedText(
     s = s.replace(/<[^>]*>/g, ' ');
 
     // 2. Strip C0 / C1 control chars
+    // eslint-disable-next-line no-control-regex -- intentionally matching control characters to strip them (injection-hardening)
     s = s.replace(/[\u0000-\u001F\u007F-\u009F]/g, ' ');
 
     // 3. Strip zero-width chars (invisible injection vector)
