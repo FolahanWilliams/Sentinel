@@ -392,5 +392,5 @@ export const OUTCOME_OVERDUE_GRACE_DAYS = 7; // days after due date before marki
 // ===========================
 export const FEATURE_VERTICAL: string =
     ((typeof import.meta !== 'undefined' && (import.meta as any)?.env?.VITE_FEATURE_VERTICAL) as string | undefined)
-    || (typeof process !== 'undefined' ? process.env?.VITE_FEATURE_VERTICAL : undefined)
+    || (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.VITE_FEATURE_VERTICAL
     || 'general';
