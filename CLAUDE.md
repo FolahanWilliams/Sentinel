@@ -207,8 +207,16 @@ When a constant or algorithm has a canonical source, every consumer MUST import 
 - Confidence threshold for alert dispatch
 - RSS feed list
 - Gemini default model (lives in two places: `constants.ts` and `proxy-gemini/index.ts`)
+- Per-position currency normalization — every cross-position total MUST go through `toUSD`/`nativeToUSD` (see below)
 
 **Forward-looking rule:** when adding a small utility (`formatPrice`, `scoreToTier`, `riskColor`), grep `src/utils/` + `src/services/` + `src/config/constants.ts` for an existing equivalent before writing a new one.
+
+### Currency normalization (money math — two bug classes that have bitten)
+
+The portfolio mixes currencies (GBP via `.L` LSE tickers, USD otherwise).
+
+1. **`.L` prices are pence (GBX) at the source but pounds by the time they reach app logic.** The quote layer — both `MarketDataService` and `quotePoller` — divides `.L` quotes ÷100 to pounds, and entry prices are stored in pounds. So `LSE_QUOTES_IN_PENCE = false` in `portfolio.ts` (no further /100). Add a new quote path → normalize `.L` ÷100 there too, or you reintroduce a 100× error.
+2. **Never sum per-position value/P&L/exposure across positions in native currency** — a `.L` (GBP) amount added to a USD amount is meaningless. Route every per-position amount through the canonical helpers in `src/utils/portfolio.ts` (`toUSD` / `nativeToUSD` / `calcUnrealizedPnlUSD` / `getPositionExposureUSD` / `realizedPnlUSD`) before aggregating. React surfaces get rates from `useForex()`; non-React services from `getForexRates()` (`src/services/forexRates.ts`, base USD, shares the session cache). Per-ROW display stays native (the position's currency symbol); only TOTALS convert to USD.
 
 ## Lint Ratchets (build these as the codebase grows)
 
