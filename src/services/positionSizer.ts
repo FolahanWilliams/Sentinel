@@ -9,6 +9,7 @@
 import { supabase } from '@/config/supabase';
 import type { TASnapshot } from '@/types/signals';
 import { ConfidenceCalibrator } from './confidenceCalibrator';
+import { DynamicCalibrator } from './dynamicCalibrator';
 import { BrowserNotificationService } from './browserNotifications';
 
 export interface PositionSizeResult {
@@ -153,8 +154,19 @@ export class PositionSizer {
         if (actualWinRate !== null) {
             calibratedWinRate = actualWinRate;
         } else {
-            const curve = await ConfidenceCalibrator.getCachedCurve();
-            calibratedWinRate = ConfidenceCalibrator.getCalibratedWinRate(aiConfidence, curve) / 100;
+            // Methodology: prefer the primary PAVA isotonic calibrator
+            // (DynamicCalibrator) when it has a fitted curve; fall back to the
+            // static empirical buckets (ConfidenceCalibrator) only until enough
+            // outcomes exist to fit. Keeps Kelly sizing on the calibrated path
+            // CLAUDE.md documents as primary. A fitted curve always has points
+            // (the fit emits none below MIN_OUTCOMES_FOR_FIT).
+            const pava = await DynamicCalibrator.getCachedCurve();
+            if (pava.points.length > 0) {
+                calibratedWinRate = DynamicCalibrator.getCalibratedProbability(aiConfidence, pava) / 100;
+            } else {
+                const curve = await ConfidenceCalibrator.getCachedCurve();
+                calibratedWinRate = ConfidenceCalibrator.getCalibratedWinRate(aiConfidence, curve) / 100;
+            }
         }
 
         // Cap portfolio exposure at 25% max per position
@@ -174,10 +186,10 @@ export class PositionSizer {
             const wins = outcomes.filter(o => o.outcome === 'win');
             const losses = outcomes.filter(o => o.outcome === 'loss');
             if (wins.length > 0) {
-                avgWinPct = Math.abs(wins.reduce((s, o) => s + (o.return_at_5d || o.return_at_10d || 0), 0) / wins.length) / 100;
+                avgWinPct = Math.abs(wins.reduce((s, o) => s + (o.return_at_5d ?? o.return_at_10d ?? 0), 0) / wins.length) / 100;
             }
             if (losses.length > 0) {
-                avgLossPct = Math.abs(losses.reduce((s, o) => s + (o.return_at_5d || o.return_at_10d || 0), 0) / losses.length) / 100;
+                avgLossPct = Math.abs(losses.reduce((s, o) => s + (o.return_at_5d ?? o.return_at_10d ?? 0), 0) / losses.length) / 100;
             }
         }
 

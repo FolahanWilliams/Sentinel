@@ -390,14 +390,19 @@ serve(async (req) => {
             }
         }
 
-        // 3. Phase 2 fix (Audit m22): Only select 'link' instead of '*'
+        // 3. Existing-link lookup, chunked. A single .in() with hundreds of long
+        //    URLs overflows the request URL and 400s — which silently bypassed
+        //    dedup and re-sent every article to Gemini. Batch it.
         const links = dedupedArticles.map(a => a.link)
-        const { data: cachedRows } = await supabase
-            .from('sentinel_articles')
-            .select('link')
-            .in('link', links)
-
-        const cachedLinks = new Set(cachedRows?.map(r => r.link) || [])
+        const cachedLinks = new Set<string>()
+        const LINK_CHUNK = 50
+        for (let i = 0; i < links.length; i += LINK_CHUNK) {
+            const { data: rows } = await supabase
+                .from('sentinel_articles')
+                .select('link')
+                .in('link', links.slice(i, i + LINK_CHUNK))
+            for (const r of (rows || [])) cachedLinks.add(r.link as string)
+        }
 
         const newArticles = dedupedArticles.filter(a => !cachedLinks.has(a.link)).slice(0, 25)
 

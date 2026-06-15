@@ -230,10 +230,15 @@ export function Positions() {
         if (!error) {
             // Record signal outcome if position was linked to a signal
             if (pos.signal_id) {
-                const hitTarget = pos.side === 'long'
-                    ? realizedPnlPct > 0 && closeReason !== 'stop_loss'
-                    : realizedPnlPct > 0 && closeReason !== 'stop_loss';
-                const hitStop = closeReason === 'stop_loss';
+                // Side-aware and price-based: hit_target/hit_stop must reflect the
+                // exit actually reaching the level (this feeds the outcome/learning
+                // loop), not merely the sign of P&L.
+                const hitStop = closeReason === 'stop_loss' || (pos.stop_loss != null && (
+                    pos.side === 'long' ? exitPrice <= pos.stop_loss : exitPrice >= pos.stop_loss
+                ));
+                const hitTarget = !hitStop && (closeReason === 'target_hit' || (pos.target_price != null && (
+                    pos.side === 'long' ? exitPrice >= pos.target_price : exitPrice <= pos.target_price
+                )));
                 const outcome = hitTarget ? 'target_hit' : hitStop ? 'stop_hit' : realizedPnl >= 0 ? 'profit' : 'loss';
 
                 void supabase.from('signal_outcomes').upsert({
