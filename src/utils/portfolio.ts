@@ -63,10 +63,12 @@ export interface ForexRatesLike {
     rates: { code: string; inverseRate: number }[];
 }
 
-// LSE (.L) equities are quoted in PENCE (GBX), not pounds — divide by 100 to get
-// the major unit (GBP). If your data feed already returns pounds for .L, flip
-// this to false. VERIFY against your real positions before trusting the totals.
-export const LSE_QUOTES_IN_PENCE = true;
+// LSE (.L) prices arrive in pence (GBX), but the quote layer (MarketDataService
+// and quotePoller) already normalizes them ÷100 to pounds to match the
+// pound-denominated entry prices stored on import. So by the time amounts reach
+// these helpers they're already in pounds — no further pence division. Set true
+// only if a code path starts feeding raw pence through here.
+export const LSE_QUOTES_IN_PENCE = false;
 
 /** Divisor that turns a native quote price into its major currency unit (pence→£). */
 export function majorUnitFactor(ticker: string): number {

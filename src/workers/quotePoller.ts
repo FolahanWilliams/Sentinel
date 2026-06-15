@@ -41,59 +41,52 @@ async function fetchQuotes() {
 
     try {
         const results: Record<string, QuoteData> = {};
+        const headers = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${state.accessToken}`,
+            'apikey': state.supabaseAnonKey,
+        };
+        // Yahoo returns LSE (.L) prices in GBX (pence); normalize to pounds so they
+        // match the pound-denominated entry prices (mirrors MarketDataService).
+        const toQuote = (ticker: string, q: any): QuoteData | null => {
+            if (!q || q.price == null) return null;
+            const factor = ticker.toUpperCase().endsWith('.L') ? 100 : 1;
+            return {
+                price: q.price / factor,
+                changePercent: q.changePercent ?? 0,
+                volume: q.volume,
+                timestamp: Date.now(),
+            };
+        };
 
-        // Use bulk endpoint if available, otherwise fetch individually
+        // Bulk endpoint — proxy expects `bulk_quote` and returns { success, data: Record<TICKER, Quote> }.
         const response = await fetch(`${state.supabaseUrl}/functions/v1/proxy-market-data`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${state.accessToken}`,
-                'apikey': state.supabaseAnonKey,
-            },
-            body: JSON.stringify({
-                endpoint: 'bulk-quotes',
-                tickers: state.tickers,
-            }),
+            headers,
+            body: JSON.stringify({ endpoint: 'bulk_quote', tickers: state.tickers.map(t => t.toUpperCase()) }),
         });
 
         if (response.ok) {
             const data = await response.json();
-            if (data?.quotes) {
-                for (const [ticker, quote] of Object.entries(data.quotes as Record<string, any>)) {
-                    if (quote?.price) {
-                        results[ticker] = {
-                            price: quote.price,
-                            changePercent: quote.changePercent ?? 0,
-                            volume: quote.volume,
-                            timestamp: Date.now(),
-                        };
-                    }
+            if (data?.success && data?.data) {
+                for (const [ticker, quote] of Object.entries(data.data as Record<string, any>)) {
+                    const norm = toQuote(ticker, quote);
+                    if (norm) results[ticker.toUpperCase()] = norm;
                 }
             }
         } else {
-            // Fallback: fetch individually with staggered timing
+            // Fallback: fetch individually — proxy returns { success, data: Quote }.
             for (const ticker of state.tickers) {
                 try {
                     const res = await fetch(`${state.supabaseUrl}/functions/v1/proxy-market-data`, {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${state.accessToken}`,
-                            'apikey': state.supabaseAnonKey,
-                        },
-                        body: JSON.stringify({ endpoint: 'quote', ticker }),
+                        headers,
+                        body: JSON.stringify({ endpoint: 'quote', ticker: ticker.toUpperCase() }),
                     });
-
                     if (res.ok) {
                         const data = await res.json();
-                        if (data?.quote?.price) {
-                            results[ticker] = {
-                                price: data.quote.price,
-                                changePercent: data.quote.changePercent ?? 0,
-                                volume: data.quote.volume,
-                                timestamp: Date.now(),
-                            };
-                        }
+                        const norm = data?.success ? toQuote(ticker, data.data) : null;
+                        if (norm) results[ticker.toUpperCase()] = norm;
                     }
                 } catch { /* skip individual failures */ }
             }
