@@ -180,7 +180,7 @@ export function UnifiedPortfolioView({ className = '' }: UnifiedPortfolioViewPro
         const sectors: Record<string, number> = {};
         for (const pos of openPositions) {
             const sector = sectorMap[pos.ticker] || sectorMap[pos.ticker.replace('.L', '')] || 'Other';
-            const size = pos.position_size_usd ?? ((pos.entry_price ?? 0) * (pos.shares ?? 0));
+            const size = getPositionExposureUSD(pos, forex);
             sectors[sector] = (sectors[sector] ?? 0) + size;
         }
         return Object.entries(sectors).map(([sector, value]) => ({
@@ -188,7 +188,7 @@ export function UnifiedPortfolioView({ className = '' }: UnifiedPortfolioViewPro
             value,
             color: SECTOR_COLORS[sector] ?? SECTOR_COLORS['Other'] ?? '#6b7280',
         }));
-    }, [openPositions, sectorMap]);
+    }, [openPositions, sectorMap, forex]);
 
     // Portfolio-news sentiment divergence detection (must be before early returns to satisfy Rules of Hooks)
     const divergences = useMemo(() => {

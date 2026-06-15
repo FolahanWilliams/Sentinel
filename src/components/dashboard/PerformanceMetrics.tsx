@@ -9,6 +9,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/config/supabase';
 import { DEFAULT_STARTING_CAPITAL, DEFAULT_RISK_PER_TRADE_PCT } from '@/config/constants';
 import { usePortfolio } from '@/hooks/usePortfolio';
+import { useForex } from '@/hooks/useForex';
+import { toUSD, inferCurrency } from '@/utils/portfolio';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { DonutChart } from '@/components/shared/DonutChart';
@@ -45,6 +47,7 @@ const CATEGORY_COLORS: Record<string, string> = {
 
 export function PerformanceMetrics({ className = '' }: PerformanceMetricsProps) {
     const { config, closedPositions } = usePortfolio();
+    const { data: forex } = useForex();
     const [outcomes, setOutcomes] = useState<OutcomeWithSignal[]>([]);
     const [loading, setLoading] = useState(true);
     const [runningReflection, setRunningReflection] = useState(false);
@@ -92,7 +95,7 @@ export function PerformanceMetrics({ className = '' }: PerformanceMetricsProps) 
 
             let cumulative = startingCapital;
             return sorted.map(p => {
-                cumulative += (p.realized_pnl ?? 0);
+                cumulative += toUSD(p.realized_pnl ?? 0, p.currency || inferCurrency(p.ticker), forex);
                 return {
                     date: new Date(p.closed_at!).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
                     value: Math.round(cumulative),
@@ -115,7 +118,7 @@ export function PerformanceMetrics({ className = '' }: PerformanceMetricsProps) 
                 value: Math.round(cumulative),
             };
         });
-    }, [outcomes, config, closedPositions]);
+    }, [outcomes, config, closedPositions, forex]);
 
     // Win rate by category
     const categoryStats = useMemo((): CategoryWinRate[] => {
