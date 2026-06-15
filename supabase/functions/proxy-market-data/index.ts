@@ -554,7 +554,7 @@ Deno.serve(async (req) => {
             await supabaseAdmin.from('api_usage').insert({
                 provider: 'yahoo-finance-v7',
                 endpoint: 'bulk_quote',
-                ticker: bulkTickers.join(',').substring(0, 50),
+                ticker: 'BULK',
                 latency_ms: durationMs,
                 success: true,
                 estimated_cost_usd: 0
