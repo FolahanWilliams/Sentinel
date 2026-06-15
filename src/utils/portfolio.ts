@@ -51,3 +51,56 @@ export function inferCurrency(ticker: string): string {
     if (ticker.endsWith('.AX')) return 'AUD';
     return 'USD';
 }
+
+// ── Currency normalization ──────────────────────────────────────────────────
+// Portfolio totals must be summed in ONE currency. Position prices/P&L are
+// stored in their native quote units, so a GBP (.L) position and a USD position
+// can't be added directly. These helpers normalize everything to USD (the
+// display base), via the proxy-forex feed (base USD; inverseRate = USD per unit).
+
+/** Minimal shape of the useForex() payload needed for conversion. */
+export interface ForexRatesLike {
+    rates: { code: string; inverseRate: number }[];
+}
+
+// LSE (.L) equities are quoted in PENCE (GBX), not pounds — divide by 100 to get
+// the major unit (GBP). If your data feed already returns pounds for .L, flip
+// this to false. VERIFY against your real positions before trusting the totals.
+export const LSE_QUOTES_IN_PENCE = true;
+
+/** Divisor that turns a native quote price into its major currency unit (pence→£). */
+export function majorUnitFactor(ticker: string): number {
+    if (LSE_QUOTES_IN_PENCE && ticker.endsWith('.L')) return 100;
+    return 1;
+}
+
+/** Convert a major-unit `amount` in `currency` to USD. Degrades to no-op when
+ *  the currency is USD/unknown or forex is unavailable (never throws/NaNs). */
+export function toUSD(amount: number, currency: string | null | undefined, forex: ForexRatesLike | null | undefined): number {
+    const code = (currency || 'USD').toUpperCase();
+    if (code === 'USD') return amount;
+    const rate = forex?.rates.find(r => r.code === code)?.inverseRate;
+    if (!rate || !isFinite(rate)) return amount; // no rate → leave native (better than fabricating)
+    return amount * rate;
+}
+
+/** A position's native amount (price/P&L/exposure in quote units) → USD. */
+export function nativeToUSD(pos: PositionLike, nativeAmount: number, forex: ForexRatesLike | null | undefined): number {
+    const major = nativeAmount / majorUnitFactor(pos.ticker);
+    return toUSD(major, pos.currency || inferCurrency(pos.ticker), forex);
+}
+
+/** Unrealized P&L for a position, normalized to USD. */
+export function calcUnrealizedPnlUSD(pos: PositionLike, currentPrice: number, forex: ForexRatesLike | null | undefined): number {
+    return nativeToUSD(pos, calcUnrealizedPnl(pos, currentPrice), forex);
+}
+
+/** Position cost-basis exposure, normalized to USD. */
+export function getPositionExposureUSD(pos: PositionLike, forex: ForexRatesLike | null | undefined): number {
+    return nativeToUSD(pos, getPositionExposure(pos), forex);
+}
+
+/** Stored realized P&L (native) for a closed position, normalized to USD. */
+export function realizedPnlUSD(pos: PositionLike, forex: ForexRatesLike | null | undefined): number {
+    return nativeToUSD(pos, pos.realized_pnl ?? 0, forex);
+}

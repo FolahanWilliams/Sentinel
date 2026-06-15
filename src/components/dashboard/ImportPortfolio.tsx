@@ -53,7 +53,6 @@ export function ImportPortfolio({ onClose, existingTickers = [], existingPositio
     const [holdings, setHoldings] = useState<ParsedHolding[]>([]);
     const [parseErrors, setParseErrors] = useState<string[]>([]);
     const [importResult, setImportResult] = useState<{ success: number; failed: number; replaced: number; capitalUpdated: number | null; closed: number }>({ success: 0, failed: 0, replaced: 0, capitalUpdated: null, closed: 0 });
-    const [replaceExisting, setReplaceExisting] = useState(false);
     const [autoCloseEnabled, setAutoCloseEnabled] = useState(true);
     const [accountSummary, setAccountSummary] = useState<AccountSummary | null>(null);
     const [exchangeRate, setExchangeRate] = useState<number | null>(null);
@@ -181,14 +180,6 @@ export function ImportPortfolio({ onClose, existingTickers = [], existingPositio
         setHoldings(prev => prev.map(h => ({ ...h, selected: !allSelected })));
     };
 
-    const toggleReplaceDuplicates = () => {
-        const next = !replaceExisting;
-        setReplaceExisting(next);
-        if (next) {
-            setHoldings(prev => prev.map(h => h.isDuplicate ? { ...h, selected: true } : h));
-        }
-    };
-
     const toggleSuffix = (idx: number) => {
         setHoldings(prev => prev.map((h, i) => {
             if (i !== idx) return h;
@@ -217,36 +208,42 @@ export function ImportPortfolio({ onClose, existingTickers = [], existingPositio
         let failed = 0;
         let replaced = 0;
 
-        // If replacing duplicates, delete existing open positions for those tickers first
-        if (replaceExisting) {
-            const dupTickers = selected.filter(h => h.isDuplicate).map(h => h.ticker.toUpperCase());
-            const allVariants = dupTickers.flatMap(t => t.endsWith('.L') ? [t, t.replace('.L', '')] : [t, `${t}.L`]);
+        // Reconcile, don't stack. A portfolio export is the source of truth, so
+        // replace any existing OPEN position for every ticker being imported
+        // (all suffix variants) before inserting — re-importing the same export
+        // is then idempotent instead of piling up duplicate positions.
+        const importedTickers = [...new Set(selected.map(h => h.ticker.toUpperCase()))];
+        const allVariants = [...new Set(importedTickers.flatMap(t => t.endsWith('.L') ? [t, t.replace('.L', '')] : [t, `${t}.L`]))];
+        if (allVariants.length > 0) {
+            const { error: delErr, count: delCount } = await supabase
+                .from('positions')
+                .delete({ count: 'exact' })
+                .eq('status', 'open')
+                .in('ticker', allVariants);
+            if (delErr) console.error('[ImportPortfolio] Failed to replace existing positions:', delErr);
+            else replaced = delCount ?? 0;
+        }
 
-            if (allVariants.length > 0) {
-                const { error: delErr } = await supabase
-                    .from('positions')
-                    .delete()
-                    .eq('status', 'open')
-                    .in('ticker', allVariants);
-
-                if (delErr) {
-                    console.error('[ImportPortfolio] Failed to delete existing positions:', delErr);
-                } else {
-                    replaced = dupTickers.length;
-                }
-            }
+        // Collapse same-ticker rows (e.g. one holding spread across accounts) into
+        // a single position: sum shares, share-weighted average entry price.
+        const agg = new Map<string, { ticker: string; name: string; shares: number; cost: number }>();
+        for (const h of selected) {
+            const key = h.ticker.toUpperCase();
+            const prev = agg.get(key);
+            if (prev) { prev.shares += h.quantity; prev.cost += h.cost; }
+            else { agg.set(key, { ticker: key, name: h.name, shares: h.quantity, cost: h.cost }); }
         }
 
         const brokerageLabel = BROKERAGE_LABELS[brokerage] || brokerage;
-        const rows = selected.map(h => ({
-            ticker: h.ticker.toUpperCase(),
+        const rows = [...agg.values()].map(a => ({
+            ticker: a.ticker,
             side: 'long' as const,
-            entry_price: Math.round(h.price * 10000) / 10000,
-            shares: h.quantity,
-            position_size_usd: Math.round(h.cost * 100) / 100,
-            currency: inferCurrency(h.ticker),
+            entry_price: a.shares > 0 ? Math.round((a.cost / a.shares) * 10000) / 10000 : 0,
+            shares: a.shares,
+            position_size_usd: Math.round(a.cost * 100) / 100,
+            currency: inferCurrency(a.ticker),
             status: 'open',
-            notes: `Imported from ${brokerageLabel} — ${h.name}`,
+            notes: `Imported from ${brokerageLabel} — ${a.name}`,
             opened_at: new Date().toISOString(),
         }));
 
@@ -295,7 +292,7 @@ export function ImportPortfolio({ onClose, existingTickers = [], existingPositio
 
         // Auto-close positions missing from the import (sold)
         let closed = 0;
-        const deletedTickers = new Set(selected.filter(h => h.isDuplicate).map(h => h.ticker.toUpperCase()));
+        const deletedTickers = new Set(importedTickers);
         const toAutoClose = missingPositions.filter(p => !deletedTickers.has(p.ticker.toUpperCase()));
         if (autoCloseEnabled && toAutoClose.length > 0) {
             for (const pos of toAutoClose) {
@@ -552,17 +549,10 @@ export function ImportPortfolio({ onClose, existingTickers = [], existingPositio
                                         </p>
                                     ))}
                                     {holdings.some(h => h.isDuplicate) && (
-                                        <button
-                                            onClick={toggleReplaceDuplicates}
-                                            className={`mt-1 px-2.5 py-1 text-[11px] font-medium rounded-md border-none cursor-pointer transition-colors flex items-center gap-1.5 ${
-                                                replaceExisting
-                                                    ? 'bg-amber-500/20 text-amber-300 ring-1 ring-amber-500/40'
-                                                    : 'bg-sentinel-800/50 text-sentinel-400 hover:text-sentinel-300 hover:bg-sentinel-800'
-                                            }`}
-                                        >
-                                            <RefreshCw className="w-3 h-3" />
-                                            {replaceExisting ? 'Will replace duplicates' : 'Replace existing positions'}
-                                        </button>
+                                        <p className="mt-1 text-[11px] text-sentinel-400 flex items-center gap-1.5">
+                                            <RefreshCw className="w-3 h-3 shrink-0" />
+                                            Holdings you already track will be replaced with these values — no duplicates.
+                                        </p>
                                     )}
                                 </div>
                             )}
