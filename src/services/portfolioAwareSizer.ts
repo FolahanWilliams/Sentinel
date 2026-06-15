@@ -10,6 +10,8 @@
 
 import { supabase } from '@/config/supabase';
 import { PositionSizer, type PositionSizeResult } from './positionSizer';
+import { getForexRates } from './forexRates';
+import { toUSD, inferCurrency } from '@/utils/portfolio';
 import type { TASnapshot } from '@/types/signals';
 import {
     DEFAULT_MAX_EXPOSURE_PCT,
@@ -55,9 +57,11 @@ export class PortfolioAwareSizer {
 
         const positions = openPositions || [];
 
-        // Calculate total open exposure
+        // Calculate total open exposure, normalized to USD so GBP (.L) and USD
+        // positions sum coherently.
+        const forex = await getForexRates();
         const openExposureUsd = positions.reduce(
-            (sum, p) => sum + (p.shares || 0) * (p.entry_price || 0),
+            (sum, p) => sum + toUSD((p.shares || 0) * (p.entry_price || 0), inferCurrency(p.ticker), forex),
             0
         );
         const openExposurePct = totalCapital > 0
@@ -88,7 +92,7 @@ export class PortfolioAwareSizer {
             const sectorUsd: Record<string, number> = {};
             for (const p of positions) {
                 const sector = tickerSectorMap[p.ticker] || 'Unknown';
-                const positionValue = (p.shares || 0) * (p.entry_price || 0);
+                const positionValue = toUSD((p.shares || 0) * (p.entry_price || 0), inferCurrency(p.ticker), forex);
                 sectorUsd[sector] = (sectorUsd[sector] || 0) + positionValue;
             }
 

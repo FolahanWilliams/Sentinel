@@ -11,6 +11,8 @@
 import { supabase } from '@/config/supabase';
 import { MarketDataService } from './marketData';
 import { BrowserNotificationService } from './browserNotifications';
+import { getForexRates } from './forexRates';
+import { toUSD, inferCurrency } from '@/utils/portfolio';
 import {
     DEFAULT_MAX_EXPOSURE_PCT,
     DEFAULT_MAX_SECTOR_PCT,
@@ -137,13 +139,15 @@ export class ExposureMonitor {
             );
         }
 
-        // Calculate exposure using live prices (fallback to entry price)
+        // Calculate exposure using live prices (fallback to entry price),
+        // normalized to USD so GBP (.L) and USD positions sum coherently.
+        const forex = await getForexRates();
         const sectorBreakdown: Record<string, { pct: number; usd: number; tickers: string[] }> = {};
         let totalExposureUsd = 0;
 
         for (const pos of positions) {
             const price = liveQuotes[pos.ticker] || pos.entry_price || 0;
-            const positionValue = (pos.shares || 0) * price;
+            const positionValue = toUSD((pos.shares || 0) * price, inferCurrency(pos.ticker), forex);
             totalExposureUsd += positionValue;
 
             const sector = sectorMap[pos.ticker] || 'Unknown';
@@ -200,7 +204,8 @@ export class ExposureMonitor {
         }
 
         // Calculate drawdown
-        const totalPortfolioValue = totalCapital + (totalExposureUsd - positions.reduce((s, p) => s + ((p.shares || 0) * (p.entry_price || 0)), 0));
+        const totalCostBasisUsd = positions.reduce((s, p) => s + toUSD((p.shares || 0) * (p.entry_price || 0), inferCurrency(p.ticker), forex), 0);
+        const totalPortfolioValue = totalCapital + (totalExposureUsd - totalCostBasisUsd);
         const drawdownPct = this.computeDrawdown(totalPortfolioValue);
 
         return {

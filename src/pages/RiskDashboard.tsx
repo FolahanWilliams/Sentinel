@@ -9,7 +9,9 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
 import { usePortfolio } from '@/hooks/usePortfolio';
+import { useForex } from '@/hooks/useForex';
 import { MarketDataService } from '@/services/marketData';
+import { toUSD, inferCurrency } from '@/utils/portfolio';
 import {
     Shield, AlertTriangle, TrendingDown, PieChart,
     Activity, Loader2, Flame, Target,
@@ -58,6 +60,7 @@ const SECTOR_COLORS: Record<string, string> = {
 
 export function RiskDashboard() {
     const { config, openPositions, closedPositions, loading: portfolioLoading } = usePortfolio();
+    const { data: forex } = useForex();
     const navigate = useNavigate();
     const [sectorMap, setSectorMap] = useState<Record<string, string>>({});
     const [liveQuotes, setLiveQuotes] = useState<Record<string, number>>({});
@@ -117,7 +120,9 @@ export function RiskDashboard() {
         return openPositions.map(p => {
             const entry = p.entry_price ?? 0;
             const current = liveQuotes[p.ticker] ?? entry;
-            const sizeUsd = p.position_size_usd ?? (entry * (p.shares ?? 0));
+            // Normalize each position's size to USD so GBP (.L) + USD positions
+            // aggregate coherently into portfolio heat / exposure.
+            const sizeUsd = toUSD(p.position_size_usd ?? (entry * (p.shares ?? 0)), p.currency || inferCurrency(p.ticker), forex);
             const isShort = p.side === 'short';
             const pnlPct = entry > 0 ? ((current - entry) / entry) * (isShort ? -1 : 1) : 0;
             const pnl = sizeUsd * pnlPct;
@@ -134,7 +139,7 @@ export function RiskDashboard() {
                 sector: sectorMap[p.ticker] || 'Other',
             };
         }).sort((a, b) => a.unrealizedPnlPct - b.unrealizedPnlPct);
-    }, [openPositions, liveQuotes, sectorMap, totalCapital]);
+    }, [openPositions, liveQuotes, sectorMap, totalCapital, forex]);
 
     // Sector exposure breakdown
     const sectorExposures: SectorExposure[] = useMemo(() => {
