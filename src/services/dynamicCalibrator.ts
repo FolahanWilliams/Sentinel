@@ -207,6 +207,7 @@ export class DynamicCalibrator {
           .from('app_settings')
           .select('value')
           .eq('key', APP_SETTINGS_KEY)
+          .limit(1)
           .maybeSingle();
 
         if (error || !data?.value) {
