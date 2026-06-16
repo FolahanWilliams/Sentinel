@@ -185,7 +185,7 @@ export function CommandPalette() {
                 description: `Run AI scan on ${cleanQuery}`,
                 icon: <Radar className="w-4 h-4 text-purple-400" />,
                 group: 'Tickers',
-                action: () => navigate(`/?tab=intelligence&scan=${cleanQuery}`),
+                action: () => navigate(`/analysis/${cleanQuery}`),
             },
             {
                 id: `ticker-position-${cleanQuery}`,

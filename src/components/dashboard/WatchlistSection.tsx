@@ -41,7 +41,7 @@ export function WatchlistSection({ className = '' }: WatchlistSectionProps) {
                 .from('watchlist')
                 .select('*')
                 .eq('is_active', true)
-                .order('created_at', { ascending: false });
+                .order('added_at', { ascending: false });
 
             if (!error && data) {
                 setTickers(data);
