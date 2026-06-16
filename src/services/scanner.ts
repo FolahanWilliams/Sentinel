@@ -418,6 +418,15 @@ export class ScannerService {
             if (scanType === 'screener') {
                 const anomalies = await MarketWideScreener.runScreener();
                 if (anomalies.length === 0) {
+                    // Terminal-state the scan_log before the early return, else the row is
+                    // stuck at status='running' forever (mirrors the budget-gate exit above).
+                    if (scanLog) {
+                        await supabase.from('scan_logs').update({
+                            status: 'completed',
+                            error_message: 'Completed: No anomalies found',
+                            duration_ms: Date.now() - startTime,
+                        }).eq('id', scanLog.id);
+                    }
                     return { success: true, summary: 'Scan completed: No anomalies found.' };
                 }
                 tickers = anomalies.map(a => a.ticker);
