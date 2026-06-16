@@ -8,6 +8,7 @@
         "build": "tsc -b && vite build",
         "lint": "eslint .",
         "lint:silent-catches": "node scripts/lint-silent-catches.mjs",
+        "lint:live-outcomes": "node scripts/lint-live-outcomes.mjs",
         "preview": "vite preview"
     },
     "dependencies": {

@@ -60,6 +60,7 @@ export function PerformanceMetrics({ className = '' }: PerformanceMetricsProps) 
                 .from('signal_outcomes')
                 .select('*, signals!inner(signal_type, bias_type, thesis, ticker)')
                 .neq('outcome', 'pending')
+                .eq('is_simulated', false)
                 .order('completed_at', { ascending: false })
                 .limit(200);
 

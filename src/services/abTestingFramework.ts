@@ -132,7 +132,8 @@ export class ABTestingFramework {
             const { data: outcomes } = await supabase
                 .from('signal_outcomes')
                 .select('outcome, return_at_5d, return_at_10d, signals!inner(agent_outputs)')
-                .neq('outcome', 'pending');
+                .neq('outcome', 'pending')
+                .eq('is_simulated', false);
 
             if (!outcomes || outcomes.length === 0) return null;
 

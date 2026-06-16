@@ -137,6 +137,15 @@ When adding a new service: put it in `src/services/`, export typed functions, NE
 - **Migration discipline:** any schema change ships with a migration file in `supabase/migrations/`; the file name must include a UTC timestamp prefix and a descriptive slug. Never edit a deployed migration — write a new one.
 - **`@schema-drift-tolerant` comment marker:** when a `.catch(() => null)` or fallback branch is intentionally tolerating schema drift (table not yet migrated, column added in a later migration than the code path), prefix the inline comment with `@schema-drift-tolerant`. Lets future audits grep `rg "@schema-drift-tolerant"` to skip intentionally-silent catches.
 
+### Backtest / simulation quarantine (live-data integrity — the moat)
+
+Non-live rows live in the SAME `signals` / `signal_outcomes` tables as real out-of-sample outcomes, tagged with the canonical `is_simulated` boolean (`true` = strategy backtest OR Training Dojo simulation; `false` = live). One predicate: `is_simulated = false` means live.
+
+- **Every live calibration / performance / learning READ of `signal_outcomes` MUST filter `.eq('is_simulated', false)`.** Omitting it re-poisons the confidence calibration curve and the live performance record — backtest/sim contaminating live is a direct moat-integrity bug. The `lint:live-outcomes` ratchet enforces this.
+- **Every non-live WRITER must set `is_simulated: true`** (`strategyOutcomeWriter` for backtests, `historicalSimulation` for Training Dojo). Live writers leave the default `false`.
+- **`BacktestValidator` is the ONE intentional consumer of backtest rows** (it validates live signals against TA-only history) and is on the ratchet ALLOWLIST. `Backtest.tsx` / `TrainingDojo.tsx` are the inverse display surfaces (they render non-live data) and are also exempt.
+- Per-signal reads (`.eq('signal_id', …)`) need no filter — they target a single signal, not an aggregate.
+
 ### Security
 
 - Never write a local `safeCompare` implementation — use a single canonical timing-safe comparison utility. Drift here is a real bug class (auth bypass).
@@ -223,6 +232,7 @@ The portfolio mixes currencies (GBP via `.L` LSE tickers, USD otherwise).
 These are not all required day-1. Add when they earn their keep:
 
 - **Silent-catch ratchet** (`scripts/lint-silent-catches.mjs`) — **LIVE, baseline 24.** Runs in CI (`ci.yml`) and via `npm run lint:silent-catches`. Scans `src/` + `supabase/functions/` for `.catch(arg => null/undefined/{}/[]/false/true/0/'')` and fails when the count exceeds the baseline. Adding a new silent catch requires (a) replacing an existing one, (b) upgrading to `log.warn`, OR (c) bumping `BASELINE` with an inline comment naming the exception class. Trajectory: ratchet 24 → down (the current 24 are mostly fire-and-forget browser-notification / best-effort client outcome+exposure triggers + 1 `req.json()` body parse).
+- **Live-outcomes ratchet** (`scripts/lint-live-outcomes.mjs`) — **LIVE.** Runs in CI (`ci.yml`) and via `npm run lint:live-outcomes`. Fails when any `signal_outcomes` READ lacks `.eq('is_simulated', false)` (the live-only filter), so backtest/simulation data can't re-contaminate the calibration curve or live performance record. Exempt: writes, per-signal reads (`.eq('signal_id', …)`), and the non-live surfaces in the script's `ALLOWLIST` (`backtestValidator`, `Backtest.tsx`, `TrainingDojo.tsx`). A new live aggregate read over outcomes → add the filter or CI fails.
 - **Count-drift ratchet** (`scripts/lint-counts.mjs`): scans for hardcoded literals matching counts of agents / feeds / pages / bias types — fails when exceeds baseline. Prefer interpolation from canonical exports (e.g., `${AGENTS.length}`).
 - **Canonical-imports lint** (`scripts/lint-canonical-imports.mjs`): blocks new local re-implementations of canonical helpers. Inline `// canonical-exception — <reason>` opt-out.
 - **Doc-sync lint** (`scripts/lint-doc-sync.mjs`): cross-checks prose numbers in CLAUDE.md against lint baselines; tolerance ±2.

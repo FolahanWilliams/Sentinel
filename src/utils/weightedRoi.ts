@@ -62,6 +62,7 @@ export async function calculateWeightedRoi(
                 .from('signal_outcomes')
                 .select('outcome, return_at_5d, return_at_10d, return_at_30d, signals!inner(signal_type, bias_type, confidence_score, ta_alignment, confluence_level)')
                 .neq('outcome', 'pending')
+                .eq('is_simulated', false)
                 .limit(200);
 
             cachedOutcomes = (data as unknown as HistoricalOutcome[]) || [];

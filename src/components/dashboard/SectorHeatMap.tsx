@@ -38,6 +38,7 @@ export function SectorHeatMap() {
                             return_at_5d
                         )
                     `)
+                    .eq('is_simulated', false)
                     .order('created_at', { ascending: false })
                     .limit(200);
 

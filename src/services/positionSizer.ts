@@ -138,6 +138,7 @@ export class PositionSizer {
                 .from('signal_outcomes')
                 .select('outcome, signals!inner(signal_type)')
                 .neq('outcome', 'pending')
+                .eq('is_simulated', false)
                 .limit(100);
 
             if (typeOutcomes && typeOutcomes.length >= 5) {
@@ -179,6 +180,7 @@ export class PositionSizer {
             .from('signal_outcomes')
             .select('outcome, return_at_5d, return_at_10d')
             .neq('outcome', 'pending')
+            .eq('is_simulated', false)
             .limit(100);
 
         let avgWinPct = 0.10; // default 10%

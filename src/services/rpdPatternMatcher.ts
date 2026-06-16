@@ -41,6 +41,7 @@ export class RPDPatternMatcher {
                 .from('signal_outcomes')
                 .select('signal_id, outcome, return_at_5d, return_at_10d, return_at_30d, signals!inner(ticker, signal_type, bias_type, confidence_score, thesis, created_at)')
                 .neq('outcome', 'pending')
+                .eq('is_simulated', false)
                 .order('tracked_at', { ascending: false })
                 .limit(200);
 

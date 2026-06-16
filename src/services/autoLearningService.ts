@@ -82,7 +82,8 @@ export class AutoLearningService {
             const { count: currentCount } = await supabase
                 .from('signal_outcomes')
                 .select('*', { count: 'exact', head: true })
-                .neq('outcome', 'pending');
+                .neq('outcome', 'pending')
+                .eq('is_simulated', false);
 
             const completedCount = currentCount ?? 0;
 
@@ -151,6 +152,7 @@ export class AutoLearningService {
             .from('signal_outcomes')
             .select('*, signals!inner(ticker, signal_type, confidence_score, agent_outputs, ta_alignment, confluence_level)')
             .neq('outcome', 'pending')
+            .eq('is_simulated', false)
             .order('completed_at', { ascending: false })
             .limit(100);
 
@@ -394,6 +396,7 @@ Generate weight adjustments for each pipeline step based on both live performanc
                 .from('signal_outcomes')
                 .select('outcome, signals!inner(signal_type, bias_type, secondary_biases, agent_outputs)')
                 .neq('outcome', 'pending')
+                .eq('is_simulated', false)
                 .limit(200);
 
             if (!outcomes || outcomes.length < 20) {
@@ -541,6 +544,7 @@ Generate weight adjustments for each pipeline step based on both live performanc
                 .from('signal_outcomes')
                 .select('outcome, signals!inner(agent_outputs)')
                 .neq('outcome', 'pending')
+                .eq('is_simulated', false)
                 .limit(300);
 
             if (!outcomes || outcomes.length < 15) {
@@ -655,6 +659,7 @@ Generate weight adjustments for each pipeline step based on both live performanc
                 .from('signal_outcomes')
                 .select('outcome, signals!inner(signal_type, agent_outputs)')
                 .neq('outcome', 'pending')
+                .eq('is_simulated', false)
                 .limit(200);
 
             if (!outcomes || outcomes.length < 20) return;

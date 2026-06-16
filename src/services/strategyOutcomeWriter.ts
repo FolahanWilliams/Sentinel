@@ -84,6 +84,7 @@ export class StrategyOutcomeWriter {
                         confluence_score: sig.confluence,
                         confluence_level: sig.confluenceLevel,
                         data_quality: 'full',
+                        is_simulated: true,
                     })
                     .select('id')
                     .single();
@@ -111,6 +112,7 @@ export class StrategyOutcomeWriter {
                         return_at_5d: sig.barsHeld >= 5 ? sig.pnlPct * (5 / sig.barsHeld) : null,
                         return_at_10d: sig.barsHeld >= 10 ? sig.pnlPct * (10 / sig.barsHeld) : null,
                         return_at_30d: sig.pnlPct,
+                        is_simulated: true,
                         completed_at: sig.exitDate ? new Date(sig.exitDate).toISOString() : new Date().toISOString(),
                     });
 

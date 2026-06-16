@@ -70,6 +70,7 @@ export class ReflectionAgent {
             .from('signal_outcomes')
             .select('*, signals!inner(ticker, signal_type, bias_type, confidence_score, thesis, risk_level)')
             .not('return_at_1d', 'is', null) // Only completed outcomes
+            .eq('is_simulated', false)
             .order('tracked_at', { ascending: false })
             .limit(200); // Cap at 200 for context window
 

@@ -38,7 +38,8 @@ export class BiasCostCalculator {
         const { data: outcomes } = await supabase
             .from('signal_outcomes')
             .select('*, signals!inner(bias_type, secondary_biases, agent_outputs, monetary_value, confidence_score)')
-            .neq('outcome', 'pending');
+            .neq('outcome', 'pending')
+            .eq('is_simulated', false);
 
         if (!outcomes || outcomes.length === 0) {
             return {

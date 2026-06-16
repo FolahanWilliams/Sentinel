@@ -51,7 +51,8 @@ export class ConfidenceCalibrator {
         const { data: outcomes, error } = await supabase
             .from('signal_outcomes')
             .select('outcome, signals!inner(confidence_score, signal_type, ticker)')
-            .neq('outcome', 'pending');
+            .neq('outcome', 'pending')
+            .eq('is_simulated', false);
 
         if (error || !outcomes || outcomes.length === 0) {
             return this.emptyCurve();

@@ -201,7 +201,8 @@ export class SignalDecayEngine {
                 const { data: outcomeStats } = await supabase
                     .from('signal_outcomes')
                     .select('signals!inner(signal_type), outcome')
-                    .neq('outcome', 'pending');
+                    .neq('outcome', 'pending')
+                    .eq('is_simulated', false);
                 if (outcomeStats && outcomeStats.length > 0) {
                     const typeCounts: Record<string, { wins: number; total: number }> = {};
                     for (const o of outcomeStats) {
