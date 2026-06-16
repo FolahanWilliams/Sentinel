@@ -241,6 +241,8 @@ Each ratchet bump requires (i) edit the const, (ii) inline comment naming the ex
 
 ## Decision-Making with the Founder
 
+**Standing directive (founder preference): bias hard toward proactive + autonomous.** Default to ACTING, not asking. When the founder hands a set of issues ("proceed with the most important ones", "fix the bugs"), pick the highest-leverage items, ship the deep version, and report after — don't present menus or ask which to start. Fold in adjacent low-risk fixes in the same area rather than deferring them. Only stop to ask when genuinely blocked on a founder-only decision — the explicit "Ask before" list below (schema deploys, pricing, agent-prompt/calibration-math changes, confidentiality-lock surfaces, deleting routes/services). Writing a migration FILE on a feature branch is autonomous (it only deploys on merge-to-main, which the founder controls); irreversibly applying one is not. Surface deferred work as a short "next" line, not a blocking question.
+
 ### Default to autonomous
 
 - File refactors that preserve behavior
