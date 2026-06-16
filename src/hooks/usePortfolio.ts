@@ -1,41 +1,16 @@
 /**
- * usePortfolio — fetches portfolio_config (singleton) + positions (open/closed)
- * with realtime subscriptions for live updates.
+ * usePortfolio — thin selector over the shared portfolioStore.
+ *
+ * The store holds ONE fetch + ONE realtime subscription for the whole app (see
+ * src/stores/portfolioStore.ts); this hook just selects from it and derives the
+ * open/closed splits. The return shape is unchanged, so all consumers are
+ * untouched — they simply stop each opening their own channel + fetch.
  */
+import { useEffect, useMemo } from 'react';
+import { usePortfolioStore } from '@/stores/portfolioStore';
+import type { PortfolioConfig, Position } from '@/stores/portfolioStore';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
-import { supabase } from '@/config/supabase';
-
-export interface PortfolioConfig {
-    id: string;
-    total_capital: number;
-    max_position_pct: number;
-    max_total_exposure_pct: number;
-    max_sector_exposure_pct: number;
-    max_concurrent_positions: number;
-    risk_per_trade_pct: number;
-    kelly_fraction: number;
-}
-
-export interface Position {
-    id: string;
-    signal_id: string | null;
-    ticker: string;
-    status: string;
-    side: string;
-    entry_price: number | null;
-    exit_price: number | null;
-    shares: number | null;
-    position_size_usd: number | null;
-    position_pct: number | null;
-    realized_pnl: number | null;
-    realized_pnl_pct: number | null;
-    opened_at: string | null;
-    closed_at: string | null;
-    close_reason: string | null;
-    notes: string | null;
-    currency: string;
-}
+export type { PortfolioConfig, Position } from '@/stores/portfolioStore';
 
 export interface PortfolioData {
     config: PortfolioConfig | null;
@@ -47,75 +22,19 @@ export interface PortfolioData {
     refetch: () => Promise<void>;
 }
 
-const DEFAULT_CONFIG: PortfolioConfig = {
-    id: '',
-    total_capital: 10000,
-    max_position_pct: 10,
-    max_total_exposure_pct: 50,
-    max_sector_exposure_pct: 25,
-    max_concurrent_positions: 5,
-    risk_per_trade_pct: 2,
-    kelly_fraction: 0.25,
-};
-
 export function usePortfolio(): PortfolioData {
-    const [config, setConfig] = useState<PortfolioConfig | null>(null);
-    const [positions, setPositions] = useState<Position[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-
-    const fetchAll = useCallback(async () => {
-        try {
-            // Fetch config (singleton)
-            const { data: cfgData } = await supabase
-                .from('portfolio_config')
-                .select('*')
-                .limit(1)
-                .maybeSingle();
-
-            setConfig(cfgData ? {
-                id: cfgData.id,
-                total_capital: Number(cfgData.total_capital),
-                max_position_pct: Number(cfgData.max_position_pct),
-                max_total_exposure_pct: Number(cfgData.max_total_exposure_pct),
-                max_sector_exposure_pct: Number(cfgData.max_sector_exposure_pct),
-                max_concurrent_positions: cfgData.max_concurrent_positions,
-                risk_per_trade_pct: Number(cfgData.risk_per_trade_pct),
-                kelly_fraction: Number(cfgData.kelly_fraction),
-            } : DEFAULT_CONFIG);
-
-            // Fetch all positions
-            const { data: posData, error: posErr } = await supabase
-                .from('positions')
-                .select('*')
-                .order('opened_at', { ascending: false });
-
-            if (posErr) throw posErr;
-            setPositions((posData || []) as Position[]);
-
-        } catch (err: any) {
-            console.error('[usePortfolio]', err);
-            setError(err.message);
-            // Use defaults if config doesn't exist yet
-            setConfig(prev => prev ?? DEFAULT_CONFIG);
-        } finally {
-            setLoading(false);
-        }
-    }, []);
+    const config = usePortfolioStore((s) => s.config);
+    const positions = usePortfolioStore((s) => s.positions);
+    const loading = usePortfolioStore((s) => s.loading);
+    const error = usePortfolioStore((s) => s.error);
+    const refetch = usePortfolioStore((s) => s.fetchAll);
 
     useEffect(() => {
-        fetchAll();
+        usePortfolioStore.getState().ensureInitialized();
+    }, []);
 
-        const ch = supabase.channel(`portfolio_live_${Math.random().toString(36).slice(2)}`)
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'positions' }, () => fetchAll())
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'portfolio_config' }, () => fetchAll())
-            .subscribe();
+    const openPositions = useMemo(() => positions.filter((p) => p.status === 'open'), [positions]);
+    const closedPositions = useMemo(() => positions.filter((p) => p.status === 'closed'), [positions]);
 
-        return () => { supabase.removeChannel(ch); };
-    }, [fetchAll]);
-
-    const openPositions = useMemo(() => positions.filter(p => p.status === 'open'), [positions]);
-    const closedPositions = useMemo(() => positions.filter(p => p.status === 'closed'), [positions]);
-
-    return { config, positions, openPositions, closedPositions, loading, error, refetch: fetchAll };
+    return { config, positions, openPositions, closedPositions, loading, error, refetch };
 }
