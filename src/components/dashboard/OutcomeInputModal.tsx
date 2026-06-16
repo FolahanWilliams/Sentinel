@@ -51,6 +51,10 @@ export function OutcomeInputModal({ signal, outcome, onClose, onSaved }: Outcome
             if (outcome) {
                 await supabase.from('signal_outcomes').update({
                     user_reported_result: result,
+                    // Also set the canonical win/loss label the calibrators count
+                    // (breakeven is a non-win), so the user's ground truth reaches
+                    // the learning loop — not just the reflection fields.
+                    outcome: result === 'win' ? 'win' : 'loss',
                     user_outcome_notes: notes || null,
                     confirmed_biases: confirmedBiases.length > 0 ? confirmedBiases : null,
                     lessons_learned: lessons || null,
