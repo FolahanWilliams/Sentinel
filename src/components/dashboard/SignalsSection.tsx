@@ -28,6 +28,8 @@ import {
 } from '@/components/shared/SignalBadges';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePortfolio } from '@/hooks/usePortfolio';
+import { useForex } from '@/hooks/useForex';
+import { toUSD, inferCurrency } from '@/utils/portfolio';
 import type { Signal } from '@/types/signals';
 import type { Quote } from '@/types/market';
 
@@ -42,6 +44,7 @@ type LynchFilter = 'all' | 'fast_grower' | 'stalwart' | 'turnaround' | 'asset_pl
 export function SignalsSection({ className = '' }: SignalsSectionProps) {
     const navigate = useNavigate();
     const { config: portfolioConfig, openPositions } = usePortfolio();
+    const { data: forex } = useForex();
     const [signals, setSignals] = useState<Signal[]>([]);
     const [quotes, setQuotes] = useState<Record<string, Quote>>({});
     const [loading, setLoading] = useState(true);
@@ -288,14 +291,14 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
         const totalCapital = portfolioConfig?.total_capital ?? 10000;
         const riskPct = portfolioConfig?.risk_per_trade_pct ?? 2;
         const positionSize = totalCapital * (riskPct / 100);
-        const currentExposure = openPositions.reduce((sum, p) => sum + (p.position_size_usd ?? 0), 0);
+        const currentExposure = openPositions.reduce((sum, p) => sum + toUSD(p.position_size_usd ?? 0, inferCurrency(p.ticker), forex), 0);
         const newExposurePct = ((currentExposure + positionSize) / totalCapital) * 100;
 
         // Check for sector overlap (same ticker already open)
         const hasDuplicate = openPositions.some(p => p.ticker === signal.ticker);
 
         return { positionSize, newExposurePct, hasDuplicate };
-    }, [portfolioConfig, openPositions]);
+    }, [portfolioConfig, openPositions, forex]);
 
     return (
         <ErrorBoundary>

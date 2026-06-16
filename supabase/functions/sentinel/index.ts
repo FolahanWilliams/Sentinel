@@ -547,7 +547,7 @@ serve(async (req) => {
                 articlesRaw: allRawArticles.length,
                 articlesDeduplicated: dedupedArticles.length,
                 articlesNew: newArticles.length,
-                articlesCached: cachedRows?.length || 0,
+                articlesCached: cachedLinks.size,
                 processingTimeMs: durationMs
             }
         }

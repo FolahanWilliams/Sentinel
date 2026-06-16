@@ -10,6 +10,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/config/supabase';
 import { DEFAULT_STARTING_CAPITAL } from '@/config/constants';
 import { MarketDataService } from '@/services/marketData';
+import { useForex } from '@/hooks/useForex';
+import { toUSD, inferCurrency } from '@/utils/portfolio';
 import { Briefcase, Loader2, RefreshCw } from 'lucide-react';
 
 interface Position {
@@ -43,6 +45,7 @@ export function PortfolioSimulator() {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [portfolioConfig, setPortfolioConfig] = useState<{ total_capital: number } | null>(null);
+    const { data: forex } = useForex();
 
     useEffect(() => {
         fetchData();
@@ -105,15 +108,16 @@ export function PortfolioSimulator() {
         const sectorExposure: Record<string, number> = {};
 
         for (const pos of openPositions) {
-            const size = pos.position_size_usd || 0;
+            const cur = inferCurrency(pos.ticker);
+            const size = toUSD(pos.position_size_usd || 0, cur, forex);
             totalExposure += size;
 
             const quote = quotes[pos.ticker];
             if (quote && pos.entry_price && pos.shares) {
                 const currentValue = quote.price * pos.shares;
                 const entryValue = pos.entry_price * pos.shares;
-                const pnl = pos.side === 'long' ? currentValue - entryValue : entryValue - currentValue;
-                unrealizedPnl += pnl;
+                const pnlNative = pos.side === 'long' ? currentValue - entryValue : entryValue - currentValue;
+                unrealizedPnl += toUSD(pnlNative, cur, forex);
             }
 
             const sector = sectorMap[pos.ticker] || sectorMap[pos.ticker.replace('.L', '')] || 'Other';
@@ -126,7 +130,7 @@ export function PortfolioSimulator() {
         let losses = 0;
         for (const pos of closedPositions) {
             const pnl = pos.realized_pnl || 0;
-            totalRealizedPnl += pnl;
+            totalRealizedPnl += toUSD(pnl, inferCurrency(pos.ticker), forex);
             if (pnl > 0) wins++;
             else if (pnl < 0) losses++;
         }
@@ -146,7 +150,7 @@ export function PortfolioSimulator() {
             wins,
             losses,
         };
-    }, [openPositions, closedPositions, quotes, portfolioConfig, sectorMap]);
+    }, [openPositions, closedPositions, quotes, portfolioConfig, sectorMap, forex]);
 
     if (loading) {
         return (

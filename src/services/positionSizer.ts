@@ -10,6 +10,8 @@ import { supabase } from '@/config/supabase';
 import type { TASnapshot } from '@/types/signals';
 import { ConfidenceCalibrator } from './confidenceCalibrator';
 import { DynamicCalibrator } from './dynamicCalibrator';
+import { getForexRates } from './forexRates';
+import { toUSD, inferCurrency } from '@/utils/portfolio';
 import { BrowserNotificationService } from './browserNotifications';
 
 export interface PositionSizeResult {
@@ -262,15 +264,16 @@ export class PositionSizer {
         try {
             const { data: closedPositions } = await supabase
                 .from('positions')
-                .select('realized_pnl')
+                .select('ticker, currency, realized_pnl')
                 .eq('status', 'closed')
                 .not('realized_pnl', 'is', null)
                 .order('closed_at', { ascending: false })
                 .limit(20);
 
             if (closedPositions && closedPositions.length > 0) {
-                const totalRealizedPnl = (closedPositions as { realized_pnl: number }[]).reduce(
-                    (sum, p) => sum + (p.realized_pnl || 0), 0
+                const forex = await getForexRates();
+                const totalRealizedPnl = (closedPositions as { ticker: string; currency: string | null; realized_pnl: number }[]).reduce(
+                    (sum, p) => sum + toUSD(p.realized_pnl || 0, p.currency || inferCurrency(p.ticker), forex), 0
                 );
 
                 if (totalRealizedPnl < 0) {

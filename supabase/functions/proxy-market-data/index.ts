@@ -1093,6 +1093,20 @@ Deno.serve(async (req) => {
                 if (histResult) break
             }
 
+            // Normalize LSE (.L) bars from pence (GBX) to pounds, mirroring the
+            // quote path: outcome measurement compares these against pound-stored
+            // stop/target levels, and charts render them with a £ sign. Without
+            // this, every .L stop reads as instantly hit and every target never —
+            // silently corrupting the outcome labels the calibrator trains on.
+            if (histResult && (resolvedTicker.endsWith('.L') || tickerUpper.endsWith('.L'))) {
+                for (const b of histResult.bars) {
+                    if (b.open != null) b.open /= 100
+                    if (b.high != null) b.high /= 100
+                    if (b.low != null) b.low /= 100
+                    if (b.close != null) b.close /= 100
+                }
+            }
+
             if (histResult) {
                 responseData = { success: true, data: histResult.bars }
                 const durationMs = Date.now() - startTime
