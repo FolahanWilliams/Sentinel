@@ -16,6 +16,8 @@ import { formatPrice, formatPercent } from '@/utils/formatters';
 import { calcUnrealizedPnlUSD, nativeToUSD, getPositionPrice } from '@/utils/portfolio';
 import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 import { SignalsSection } from '@/components/dashboard/SignalsSection';
+import { HighConvictionSetups } from '@/components/dashboard/HighConvictionSetups';
+import { DashboardConvergence } from '@/components/dashboard/DashboardConvergence';
 import { OutcomeComplianceBanner } from '@/components/dashboard/OutcomeComplianceBanner';
 
 // Lazy-load tab components — only one tab is visible at a time
@@ -277,7 +279,13 @@ export function UnifiedDashboard() {
                         aria-label={TABS.find(t => t.id === activeTab)?.label}
                     >
                         <Suspense fallback={<div className="flex items-center justify-center py-16"><div className="w-6 h-6 border-2 border-sentinel-600 border-t-sentinel-300 rounded-full animate-spin" /></div>}>
-                            {activeTab === 'signals' && <SignalsSection />}
+                            {activeTab === 'signals' && (
+                                <div className="space-y-6">
+                                    <DashboardConvergence />
+                                    <HighConvictionSetups />
+                                    <SignalsSection />
+                                </div>
+                            )}
                             {activeTab === 'intelligence' && (
                                 <div className="h-[calc(100vh-16rem)] overflow-hidden">
                                     <SentinelPanel />

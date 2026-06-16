@@ -168,6 +168,14 @@ function validateArticlePayload(article: any): any {
     } else {
         article.signals = []
     }
+    // Populate affected_tickers from the validated signal tickers so the
+    // news-based thesis-invalidation check (and ticker-scoped reads that filter
+    // on affected_tickers) can actually match articles to a position.
+    article.affected_tickers = [...new Set(
+        (article.signals || [])
+            .map((s: any) => (typeof s.ticker === 'string' ? s.ticker.toUpperCase() : null))
+            .filter((t: string | null): t is string => !!t)
+    )]
     return article
 }
 
@@ -496,7 +504,8 @@ serve(async (req) => {
                         sentiment_score: 0,
                         impact: 'low',
                         signals: [],
-                        entities: []
+                        entities: [],
+                        affected_tickers: []
                     }))
                 }
             }

@@ -239,7 +239,11 @@ export function Positions() {
                 const hitTarget = !hitStop && (closeReason === 'target_hit' || (pos.target_price != null && (
                     pos.side === 'long' ? exitPrice >= pos.target_price : exitPrice <= pos.target_price
                 )));
-                const outcome = hitTarget ? 'target_hit' : hitStop ? 'stop_hit' : realizedPnl >= 0 ? 'profit' : 'loss';
+                // `outcome` is the canonical win/loss label every calibrator and
+                // stat counts (outcome === 'win'); the target-vs-stop distinction
+                // lives in the hit_target/hit_stop booleans. Writing 'profit'/
+                // 'target_hit' here would be counted as a NON-win everywhere.
+                const outcome = realizedPnl >= 0 ? 'win' : 'loss';
 
                 void supabase.from('signal_outcomes').upsert({
                     signal_id: pos.signal_id,
