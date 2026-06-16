@@ -30,6 +30,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { usePortfolio } from '@/hooks/usePortfolio';
 import { useForex } from '@/hooks/useForex';
 import { toUSD, inferCurrency } from '@/utils/portfolio';
+import { useActiveSignals } from '@/hooks/useActiveSignals';
+import { useSignalsStore } from '@/stores/signalsStore';
 import type { Signal } from '@/types/signals';
 import type { Quote } from '@/types/market';
 
@@ -45,9 +47,8 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
     const navigate = useNavigate();
     const { config: portfolioConfig, openPositions } = usePortfolio();
     const { data: forex } = useForex();
-    const [signals, setSignals] = useState<Signal[]>([]);
+    const { signals, loading, refetch } = useActiveSignals();
     const [quotes, setQuotes] = useState<Record<string, Quote>>({});
-    const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [scanning, setScanning] = useState(false);
     const [scanStatus, setScanStatus] = useState<string | null>(null);
@@ -70,60 +71,23 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
     const [proactiveOnly, setProactiveOnly] = useState(false);
     const [sortBy, setSortBy] = useState<SortField>('created_at');
 
-    // Fetch signals from Supabase
-    const fetchSignals = useCallback(async () => {
-        const { data, error } = await supabase
-            .from('signals')
-            .select('*')
-            .eq('status', 'active')
-            .order('created_at', { ascending: false });
-
-        if (!error && data) {
-            setSignals(data as unknown as Signal[]);
-
-            // Fetch live quotes for unique tickers
-            const tickers = [...new Set(data.map(s => s.ticker))];
-            if (tickers.length > 0) {
-                try {
-                    const q = await MarketDataService.getQuotesBulk(tickers);
-                    setQuotes(q);
-                } catch (err) {
-                    console.warn('[SignalsSection] Failed to fetch bulk quotes:', err);
-                }
-            }
-        }
-        setLoading(false);
-    }, []);
-
+    // Live quotes for the active signals' tickers. Signals now come from the
+    // shared active-signals store (one fetch + one realtime subscription); this
+    // keeps the per-ticker quotes in sync as that set changes.
     useEffect(() => {
-        fetchSignals();
-
-        // Realtime subscription for new signals
-        const channel = supabase.channel(`unified_signals_${Math.random().toString(36).slice(2)}`)
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'signals' }, (payload) => {
-                const newSignal = payload.new as Signal;
-                if (newSignal.status === 'active') {
-                    setSignals(prev => [newSignal, ...prev]);
-                }
-            })
-            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'signals' }, (payload) => {
-                const updated = payload.new as Signal;
-                if (updated.status === 'active') {
-                    // Update existing or add back if it was removed
-                    setSignals(prev => {
-                        const exists = prev.some(s => s.id === updated.id);
-                        if (exists) return prev.map(s => s.id === updated.id ? updated : s);
-                        return [updated, ...prev];
-                    });
-                } else {
-                    // Signal was closed/expired/triggered — remove from active list
-                    setSignals(prev => prev.filter(s => s.id !== updated.id));
-                }
-            })
-            .subscribe();
-
-        return () => { supabase.removeChannel(channel); };
-    }, [fetchSignals]);
+        const tickers = [...new Set(signals.map(s => s.ticker))];
+        if (tickers.length === 0) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const q = await MarketDataService.getQuotesBulk(tickers);
+                if (!cancelled) setQuotes(q);
+            } catch (err) {
+                console.warn('[SignalsSection] Failed to fetch bulk quotes:', err);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [signals]);
 
     // Apply filters and sorting
     const filteredSignals = useMemo(() => {
@@ -208,9 +172,9 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
     // Refresh handler
     const handleRefresh = useCallback(async () => {
         setRefreshing(true);
-        await fetchSignals();
+        await refetch();
         setRefreshing(false);
-    }, [fetchSignals]);
+    }, [refetch]);
 
     // Run discovery scan
     const handleScan = useCallback(async () => {
@@ -225,7 +189,7 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                 setScanStatus(`Scanned ${result.scanned} tickers, generated ${result.signalsGenerated} signals.`);
             }
             setTimeout(() => setScanStatus(null), 6000);
-            await fetchSignals();
+            await refetch();
         } catch (err: unknown) {
             const message = err instanceof Error ? err.message : 'Unknown error';
             setScanStatus(`Scan failed: ${message}`);
@@ -233,14 +197,14 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
         } finally {
             setScanning(false);
         }
-    }, [scanning, fetchSignals]);
+    }, [scanning, refetch]);
 
     const handleCloseSignal = useCallback(async (signalId: string) => {
         setClosingId(signalId);
         try {
             const { error } = await supabase.from('signals').update({ status: 'manually_closed' }).eq('id', signalId);
             if (error) throw error;
-            setSignals(prev => prev.filter(s => s.id !== signalId));
+            useSignalsStore.getState().removeLocal(signalId);
             setExpandedId(null);
         } catch (err) {
             console.error('[SignalsSection] Failed to close signal:', err);
@@ -254,7 +218,7 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
         try {
             const { error } = await supabase.from('signals').update({ user_notes: notesText }).eq('id', signalId);
             if (error) throw error;
-            setSignals(prev => prev.map(s => s.id === signalId ? { ...s, user_notes: notesText } : s));
+            useSignalsStore.getState().patchLocal(signalId, { user_notes: notesText });
             setNotesId(null);
         } catch (err) {
             console.error('[SignalsSection] Failed to save notes:', err);
@@ -278,7 +242,7 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                 outcome_status: 'pending_outcome',
             }).eq('id', signalId);
             if (error) throw error;
-            setSignals(prev => prev.map(s => s.id === signalId ? { ...s, status: 'triggered' as const } : s));
+            useSignalsStore.getState().patchLocal(signalId, { status: 'triggered' });
             setOutcomePickerSignalId(null);
         } catch (err) {
             console.error('[SignalsSection] Failed to mark signal triggered:', err);
