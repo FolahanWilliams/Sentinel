@@ -250,10 +250,14 @@ export function Positions() {
                 // (real ISA trades never recorded a win/loss). The scanner seeds a pending row
                 // at signal creation, so this is normally an UPDATE; fall back to INSERT when no
                 // seed exists. Avoids depending on a DB constraint that isn't there.
+                const sigId = pos.signal_id;
+                const entryPx = pos.entry_price;
+                const trackedAt = pos.opened_at || new Date().toISOString();
                 void (async () => {
+                    if (!sigId || entryPx == null) return; // signal_id required; entry_price is NOT NULL
                     const fields = {
                         ticker: pos.ticker,
-                        entry_price: pos.entry_price,
+                        entry_price: entryPx,
                         outcome,
                         hit_target: hitTarget,
                         hit_stop_loss: hitStop,
@@ -262,13 +266,13 @@ export function Positions() {
                     const { data: updated, error: updErr } = await supabase
                         .from('signal_outcomes')
                         .update(fields)
-                        .eq('signal_id', pos.signal_id)
+                        .eq('signal_id', sigId)
                         .select('id');
                     if (updErr) { console.warn('[Positions] Signal outcome update failed:', updErr); return; }
                     if (!updated || updated.length === 0) {
                         const { error: insErr } = await supabase.from('signal_outcomes').insert({
-                            signal_id: pos.signal_id,
-                            tracked_at: pos.opened_at || new Date().toISOString(),
+                            signal_id: sigId,
+                            tracked_at: trackedAt,
                             ...fields,
                         });
                         if (insErr) console.warn('[Positions] Signal outcome insert failed:', insErr);
