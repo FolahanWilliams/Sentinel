@@ -102,7 +102,7 @@ src/
 └── utils/              # Formatting, validation, calculations
 
 supabase/
-├── functions/          # 13 edge functions
+├── functions/          # 14 edge functions
 └── migrations/         # Database schema
 ```
 

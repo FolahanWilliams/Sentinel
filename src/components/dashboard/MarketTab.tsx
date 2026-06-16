@@ -14,6 +14,7 @@ import { UpcomingEvents } from '@/components/dashboard/UpcomingEvents';
 import { FearGreedPanel } from '@/components/dashboard/FearGreedPanel';
 import { SectorHeatMap } from '@/components/dashboard/SectorHeatMap';
 import { WeeklyDigest } from '@/components/dashboard/WeeklyDigest';
+import { IndexRebalanceWatch } from '@/components/dashboard/IndexRebalanceWatch';
 
 function Cell({ children }: { children: ReactNode }) {
     return <ErrorBoundary>{children}</ErrorBoundary>;
@@ -22,6 +23,7 @@ function Cell({ children }: { children: ReactNode }) {
 export function MarketTab() {
     return (
         <div className="space-y-6">
+            <Cell><IndexRebalanceWatch /></Cell>
             <div className="grid lg:grid-cols-2 gap-6">
                 <Cell><MarketTrends /></Cell>
                 <Cell><UpcomingEvents /></Cell>
