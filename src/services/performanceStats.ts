@@ -169,7 +169,8 @@ export class PerformanceStats {
     async getTopPerformingPatterns(limit = 5): Promise<PerformingPattern[]> {
         const { data: signals } = await supabase
             .from('signals')
-            .select('id, ticker, bias_type');
+            .select('id, ticker, bias_type')
+            .eq('is_simulated', false);
 
         if (!signals || signals.length === 0) return [];
 
@@ -379,7 +380,8 @@ export class PerformanceStats {
         const { data: weekSignals } = await supabase
             .from('signals')
             .select('id, ticker, bias_type, confidence_score')
-            .gte('created_at', oneWeekAgo);
+            .gte('created_at', oneWeekAgo)
+            .eq('is_simulated', false); // signalsGenerated count must exclude backtest/sim rows
 
         const signalsGenerated = weekSignals?.length || 0;
 

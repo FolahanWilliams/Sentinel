@@ -36,6 +36,7 @@ export function useNotifications() {
         const { data } = await supabase
             .from('signals')
             .select('id, ticker, signal_type, thesis, created_at')
+            .eq('is_simulated', false) // don't surface backtest/sim signals as live notifications
             .order('created_at', { ascending: false })
             .limit(20);
 

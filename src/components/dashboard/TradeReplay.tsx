@@ -89,6 +89,7 @@ export function TradeReplay() {
                     .from('signals')
                     .select('id, ticker, signal_type, bias_type, status, suggested_entry_low, suggested_entry_high, stop_loss, target_price, created_at, updated_at')
                     .in('status', CLOSED_STATUSES)
+                    .eq('is_simulated', false) // live-only: replay real trades, not backtest/sim signals
                     .order('updated_at', { ascending: false })
                     .limit(50);
 

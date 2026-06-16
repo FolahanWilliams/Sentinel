@@ -78,7 +78,8 @@ export function Leaderboard() {
             let query = supabase
                 .from('signals')
                 .select('id, ticker, signal_type, confidence_score, sources, created_at')
-                .not('sources', 'is', null);
+                .not('sources', 'is', null)
+                .eq('is_simulated', false); // live-only: keep backtest/sim sources off the leaderboard
 
             if (dateFilter) {
                 query = query.gte('created_at', dateFilter);
