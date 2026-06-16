@@ -174,6 +174,20 @@ function redTeamGate(
     return { allow: true, reason: sanity.verdict || `safety=${sanity.risk_score}` };
 }
 
+/**
+ * Per-ticker result of a discovery scan. `verdict` says whether the ticker
+ * produced a signal, was rejected by a gauntlet stage, lacked data, or errored;
+ * `stage` + `reason` make the rejection auditable in the UI (the moat, made visible).
+ */
+export interface ScanOutcome {
+    ticker: string;
+    catalyst?: string;
+    verdict: 'signal' | 'rejected' | 'no_data' | 'error';
+    stage: string | null;
+    reason: string;
+    signals: number;
+}
+
 export class ScannerService {
 
     /**
@@ -3069,7 +3083,14 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                         duration_ms: Date.now() - startTime,
                     }).eq('id', scanLog.id);
                 }
-                return { success: false, summary: `No live quote available for ${ticker}. Skipping to avoid fabricated signals.`, signalsGenerated: 0 };
+                return {
+                    success: false,
+                    verdict: 'no_data' as const,
+                    stage: 'Live Quote',
+                    reason: 'No live quote available — skipped to avoid a fabricated signal.',
+                    summary: `No live quote available for ${ticker}. Skipping to avoid fabricated signals.`,
+                    signalsGenerated: 0,
+                };
             }
 
             const currentPrice = quote.price;
@@ -3121,6 +3142,10 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
             });
 
             let signalsGenerated = 0;
+            // Captures which gauntlet stage rejected the ticker (null = a signal was emitted).
+            // Surfaced to the discovery ledger so the pipeline's rigor is visible, not silent.
+            let rejectionStage: string | null = null;
+            let rejectionReason: string | null = null;
 
             if (analysis.success && analysis.data?.is_overreaction && analysis.data.confidence_score > DEFAULT_MIN_CONFIDENCE) {
                 // 6. Run Sanity Check
@@ -3237,7 +3262,25 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                         }
                         if (singleDecisionTwinOutput.skip_count === 3) {
                             console.warn(`[Scanner] Decision Twin suppressed single-ticker ${ticker}: all 3 personas voted SKIP`);
-                            return { success: false, error: 'Decision Twin: all personas voted SKIP' };
+                            signalsGenerated = 0;
+                            const twinDurationMs = Date.now() - startTime;
+                            if (scanLog) {
+                                await supabase.from('scan_logs').update({
+                                    status: 'completed',
+                                    tickers_scanned: 1,
+                                    events_detected: 1,
+                                    signals_generated: 0,
+                                    duration_ms: twinDurationMs,
+                                }).eq('id', scanLog.id);
+                            }
+                            return {
+                                success: true,
+                                verdict: 'rejected' as const,
+                                stage: 'Decision Twin',
+                                reason: 'All three investor personas voted SKIP on the thesis.',
+                                summary: `${ticker}: rejected by Decision Twin — all 3 personas voted SKIP.`,
+                                signalsGenerated: 0,
+                            };
                         }
                     } catch { /* non-fatal */ }
 
@@ -3257,8 +3300,16 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                     // Drop if self-critique pushed below threshold
                     if (singleConfidence < CONFIDENCE_GATE_CRITIQUE) {
                         console.log(`[Scanner] Single-ticker ${ticker} dropped by self-critique: ${analysis.data.confidence_score}→${singleConfidence}`);
+                        // signalsGenerated was set to 1 at gate entry; roll it back so the
+                        // count + return stay honest (this branch emits no signal).
+                        signalsGenerated = 0;
+                        rejectionStage = 'Self-Critique';
+                        rejectionReason = `Confidence fell to ${singleConfidence}% after self-critique — below the ${CONFIDENCE_GATE_CRITIQUE}% conviction gate.`;
                     } else if (!singleMosCheck.passed) {
                         console.log(`[Scanner] Single-ticker ${ticker} dropped by margin-of-safety gate`);
+                        signalsGenerated = 0;
+                        rejectionStage = 'Margin of Safety';
+                        rejectionReason = singleMosCheck.reason || 'Entry leaves insufficient margin of safety below the 52-week high.';
                     } else {
                         // 7c. Calibrated confidence
                         let calibratedConf = singleConfidence;
@@ -3299,6 +3350,8 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                             // Fall through — signal is not inserted, but signalsGenerated
                             // was set earlier. Roll it back so the return value is honest.
                             signalsGenerated = 0;
+                            rejectionStage = 'Thesis Dedup';
+                            rejectionReason = 'Near-duplicate of an already-active thesis on this ticker.';
                             // Skip the insert by jumping past it
                         } else {
                         const { data: savedSignal, error: discSignalErr } = await supabase.from('signals').insert({
@@ -3345,6 +3398,9 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
 
                         if (discSignalErr) {
                             console.error(`[Scanner] Failed to save discovery signal for ${ticker}:`, discSignalErr.message);
+                            signalsGenerated = 0;
+                            rejectionStage = 'Persist';
+                            rejectionReason = `Cleared the gauntlet but failed to persist: ${discSignalErr.message}`;
                         }
 
                         if (savedSignal) {
@@ -3365,6 +3421,27 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                         }
                         } // end thesis-dedup else
                     } // end self-critique else
+                } else {
+                    // Sanity / Red Team rejection — the thesis did not clear the adversarial gate.
+                    const rtGate = sanity.success && sanity.data ? redTeamGate(sanity.data) : { allow: false, reason: '' };
+                    rejectionStage = 'Red Team';
+                    if (sanity.success && sanity.data && !rtGate.allow) {
+                        rejectionReason = rtGate.reason || 'Red Team flagged a fatal flaw in the thesis.';
+                    } else if (sanity.success && sanity.data && !sanity.data.passes_sanity_check) {
+                        rejectionReason = 'Failed the sanity check — the counter-thesis was too strong to ignore.';
+                    } else {
+                        rejectionReason = 'Did not clear the Red Team / sanity gate.';
+                    }
+                }
+            } else {
+                // Overreaction rejection — no exploitable mispricing at the entry threshold.
+                rejectionStage = 'Overreaction';
+                if (!analysis.success) {
+                    rejectionReason = 'The Overreaction agent could not complete its evaluation.';
+                } else if (!analysis.data?.is_overreaction) {
+                    rejectionReason = 'No mispriced overreaction — the move looks rational, not an exploitable dislocation.';
+                } else {
+                    rejectionReason = `Conviction ${analysis.data.confidence_score}% sits below the ${DEFAULT_MIN_CONFIDENCE}% entry floor.`;
                 }
             }
 
@@ -3380,10 +3457,18 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                 }).eq('id', scanLog.id);
             }
 
+            const passed = signalsGenerated > 0;
             return {
                 success: true,
-                summary: `Manual scan complete for ${ticker}: ${signalsGenerated} signals generated.`,
-                signalsGenerated
+                verdict: (passed ? 'signal' : 'rejected') as 'signal' | 'rejected',
+                stage: passed ? null : rejectionStage,
+                reason: passed
+                    ? 'Cleared every stage of the 5-agent gauntlet.'
+                    : (rejectionReason || 'Did not clear the analysis gauntlet.'),
+                summary: passed
+                    ? `${ticker}: signal generated — cleared the full gauntlet.`
+                    : `${ticker}: no signal — rejected at ${rejectionStage ?? 'gauntlet'}${rejectionReason ? ` (${rejectionReason})` : ''}.`,
+                signalsGenerated,
             };
 
         } catch (e: any) {
@@ -3394,7 +3479,14 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                 .update({ status: 'failed', error_message: (e as Error).message })
                 .eq('status', 'running');
 
-            return { success: false, error: e.message };
+            return {
+                success: false,
+                verdict: 'error' as const,
+                stage: 'Pipeline Error',
+                reason: e.message,
+                error: e.message,
+                signalsGenerated: 0,
+            };
         }
     }
 
@@ -3502,7 +3594,7 @@ You MUST respond with ONLY a JSON object — no markdown, no commentary, no code
     static async runDiscoveryScan(
         count: number = 5,
         onProgress?: (status: string) => void
-    ): Promise<{ discovered: number; scanned: number; signalsGenerated: number; tickers: string[] }> {
+    ): Promise<{ discovered: number; scanned: number; signalsGenerated: number; tickers: string[]; outcomes: ScanOutcome[] }> {
         const startTime = Date.now();
 
         // 1. Discover trending tickers via AI
@@ -3511,7 +3603,7 @@ You MUST respond with ONLY a JSON object — no markdown, no commentary, no code
 
         if (discovered.length === 0) {
             onProgress?.('No trending tickers found. Market may be quiet.');
-            return { discovered: 0, scanned: 0, signalsGenerated: 0, tickers: [] };
+            return { discovered: 0, scanned: 0, signalsGenerated: 0, tickers: [], outcomes: [] };
         }
 
         // 2. Log the discovery scan
@@ -3531,6 +3623,7 @@ You MUST respond with ONLY a JSON object — no markdown, no commentary, no code
 
         let totalSignals = 0;
         const scannedTickers: string[] = [];
+        const outcomes: ScanOutcome[] = [];
 
         // 3. Run agent pipeline on each discovered ticker
         for (let i = 0; i < discovered.length; i++) {
@@ -3569,11 +3662,35 @@ You MUST respond with ONLY a JSON object — no markdown, no commentary, no code
                 const result = await this.runSingleTickerScan(ticker);
                 scannedTickers.push(ticker);
 
-                if (result.success && result.signalsGenerated && result.signalsGenerated > 0) {
-                    totalSignals += result.signalsGenerated;
+                // Capture WHY each ticker passed or was rejected so the discovery
+                // ledger can surface the pipeline's rigor instead of dropping it.
+                const r = result as {
+                    success: boolean; signalsGenerated?: number; summary?: string;
+                    error?: string; verdict?: ScanOutcome['verdict']; stage?: string | null; reason?: string;
+                };
+                const signals = r.signalsGenerated ?? 0;
+                outcomes.push({
+                    ticker,
+                    catalyst,
+                    verdict: r.verdict ?? (r.success ? (signals > 0 ? 'signal' : 'rejected') : 'error'),
+                    stage: r.stage ?? null,
+                    reason: r.reason ?? r.summary ?? r.error ?? '',
+                    signals,
+                });
+
+                if (result.success && signals > 0) {
+                    totalSignals += signals;
                 }
             } catch (e: any) {
                 console.warn(`[Scanner] Discovery scan failed for ${ticker}:`, e.message);
+                outcomes.push({
+                    ticker,
+                    catalyst,
+                    verdict: 'error',
+                    stage: 'Pipeline Error',
+                    reason: e?.message || 'Scan failed unexpectedly.',
+                    signals: 0,
+                });
             }
         }
 
@@ -3599,6 +3716,7 @@ You MUST respond with ONLY a JSON object — no markdown, no commentary, no code
             scanned: scannedTickers.length,
             signalsGenerated: totalSignals,
             tickers: scannedTickers,
+            outcomes,
         };
     }
 }

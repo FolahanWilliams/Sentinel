@@ -10,7 +10,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/config/supabase';
 import { MarketDataService } from '@/services/marketData';
-import { ScannerService } from '@/services/scanner';
+import { ScannerService, type ScanOutcome } from '@/services/scanner';
 import { formatPrice, formatPercent, timeAgo } from '@/utils/formatters';
 import { TABadge } from '@/components/shared/TABadge';
 import { SignalQualityBadge } from '@/components/shared/SignalQualityBadge';
@@ -21,6 +21,7 @@ import {
     Activity, BookOpen, Clock, Filter, Loader2, RefreshCw,
     TrendingUp, ChevronDown, ChevronUp, X, Calculator, Shield,
     XCircle, MessageSquare, CheckCircle2, BarChart3, Newspaper, Radar,
+    Ban, ShieldX,
 } from 'lucide-react';
 import {
     ConfluenceBadge, ConvictionBadge, LynchBadge, MoatBadge, RoiBadge,
@@ -43,6 +44,14 @@ type SortField = 'created_at' | 'projected_roi' | 'confidence_score' | 'confluen
 type DirectionFilter = 'all' | 'long' | 'short';
 type LynchFilter = 'all' | 'fast_grower' | 'stalwart' | 'turnaround' | 'asset_play' | 'cyclical' | 'slow_grower';
 
+/** Visual treatment for each gauntlet verdict in the discovery ledger. */
+const VERDICT_STYLE: Record<ScanOutcome['verdict'], { label: string; pill: string; Icon: typeof CheckCircle2 }> = {
+    signal: { label: 'SIGNAL', pill: 'bg-emerald-500/15 text-emerald-400 ring-emerald-500/30', Icon: CheckCircle2 },
+    rejected: { label: 'REJECTED', pill: 'bg-amber-500/15 text-amber-400 ring-amber-500/30', Icon: ShieldX },
+    no_data: { label: 'NO DATA', pill: 'bg-sentinel-700/40 text-sentinel-300 ring-sentinel-600/40', Icon: Ban },
+    error: { label: 'ERROR', pill: 'bg-red-500/15 text-red-400 ring-red-500/30', Icon: XCircle },
+};
+
 export function SignalsSection({ className = '' }: SignalsSectionProps) {
     const navigate = useNavigate();
     const { config: portfolioConfig, openPositions } = usePortfolio();
@@ -52,6 +61,9 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
     const [refreshing, setRefreshing] = useState(false);
     const [scanning, setScanning] = useState(false);
     const [scanStatus, setScanStatus] = useState<string | null>(null);
+    // Persistent gauntlet ledger from the last discovery scan — makes the
+    // pipeline's rejections visible instead of vanishing with a transient toast.
+    const [scanResult, setScanResult] = useState<{ outcomes: ScanOutcome[]; scanned: number } | null>(null);
     const [expandedId, setExpandedId] = useState<string | null>(null);
     const [notesId, setNotesId] = useState<string | null>(null);
     const [notesText, setNotesText] = useState('');
@@ -180,15 +192,18 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
     const handleScan = useCallback(async () => {
         if (scanning) return;
         setScanning(true);
+        setScanResult(null);
         setScanStatus('Discovering trending tickers via AI...');
         try {
             const result = await ScannerService.runDiscoveryScan(5, (status) => setScanStatus(status));
+            setScanStatus(null);
             if (result.discovered === 0) {
-                setScanStatus('No trending tickers found right now.');
+                setScanStatus('No trending tickers found right now. The market may be quiet.');
+                setTimeout(() => setScanStatus(null), 6000);
             } else {
-                setScanStatus(`Scanned ${result.scanned} tickers, generated ${result.signalsGenerated} signals.`);
+                // Persist the per-ticker ledger so the gauntlet's verdicts stay on screen.
+                setScanResult({ outcomes: result.outcomes, scanned: result.scanned });
             }
-            setTimeout(() => setScanStatus(null), 6000);
             await refetch();
         } catch (err: unknown) {
             const message = err instanceof Error ? err.message : 'Unknown error';
@@ -352,6 +367,76 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                     )}
                 </AnimatePresence>
 
+                {/* Gauntlet ledger — persistent per-ticker verdicts from the last discovery scan.
+                    Rejections are the product working: only setups that survive every agent become signals. */}
+                <AnimatePresence>
+                    {scanResult && !scanning && (() => {
+                        const passed = scanResult.outcomes.filter(o => o.verdict === 'signal').length;
+                        return (
+                            <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: 'auto' }}
+                                exit={{ opacity: 0, height: 0 }}
+                                className="mb-4 bg-sentinel-900/60 border border-sentinel-700/50 rounded-xl overflow-hidden backdrop-blur-sm"
+                            >
+                                <div className="flex items-center gap-2.5 px-4 py-3 border-b border-sentinel-800/60">
+                                    <Radar className="w-4 h-4 text-indigo-400 flex-shrink-0" />
+                                    <div className="flex-1 min-w-0">
+                                        <span className="text-sm font-semibold text-white">Gauntlet results</span>
+                                        <span className="text-xs text-sentinel-400 ml-2 font-mono">
+                                            {passed} signal{passed === 1 ? '' : 's'} from {scanResult.scanned} scanned
+                                        </span>
+                                    </div>
+                                    <button
+                                        onClick={() => setScanResult(null)}
+                                        className="p-1 rounded-md text-sentinel-500 hover:text-white hover:bg-sentinel-800 transition-colors border-none cursor-pointer bg-transparent"
+                                        aria-label="Dismiss scan results"
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </button>
+                                </div>
+                                <p className="px-4 py-2 text-[11px] text-sentinel-500 leading-relaxed border-b border-sentinel-800/40">
+                                    Every ticker runs the full 5-agent gauntlet. A rejection is the system working —
+                                    only setups that clear every stage become signals.
+                                </p>
+                                <div className="divide-y divide-sentinel-800/40">
+                                    {scanResult.outcomes.map((o) => {
+                                        const style = VERDICT_STYLE[o.verdict];
+                                        const Icon = style.Icon;
+                                        return (
+                                            <div key={o.ticker} className="flex items-start gap-3 px-4 py-2.5">
+                                                <Icon className={`w-4 h-4 mt-0.5 flex-shrink-0 ${
+                                                    o.verdict === 'signal' ? 'text-emerald-400'
+                                                        : o.verdict === 'rejected' ? 'text-amber-400'
+                                                            : o.verdict === 'error' ? 'text-red-400' : 'text-sentinel-400'
+                                                }`} />
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        <span className="px-1.5 py-0.5 bg-sentinel-800 text-sentinel-100 text-xs font-bold font-mono rounded ring-1 ring-sentinel-700">
+                                                            {o.ticker}
+                                                        </span>
+                                                        <span className={`px-1.5 py-0.5 text-[9px] font-bold rounded ring-1 ${style.pill}`}>
+                                                            {style.label}
+                                                        </span>
+                                                        {o.stage && o.verdict !== 'signal' && (
+                                                            <span className="text-[10px] text-sentinel-500 font-mono">
+                                                                at {o.stage}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    {o.reason && (
+                                                        <p className="text-[11px] text-sentinel-400 mt-1 leading-relaxed">{o.reason}</p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </motion.div>
+                        );
+                    })()}
+                </AnimatePresence>
+
                 {/* Filter panel */}
                 <AnimatePresence>
                     {showFilters && (
@@ -491,9 +576,13 @@ export function SignalsSection({ className = '' }: SignalsSectionProps) {
                 ) : filteredSignals.length === 0 ? (
                     <EmptyState
                         icon={<Activity className="w-8 h-8 text-blue-400" />}
-                        title={signals.length === 0 ? 'No signals yet' : 'No matching signals'}
+                        title={signals.length === 0
+                            ? (scanResult ? 'No setups cleared the gauntlet' : 'No signals yet')
+                            : 'No matching signals'}
                         description={signals.length === 0
-                            ? 'Run a discovery scan to generate AI trading signals.'
+                            ? (scanResult
+                                ? `The last scan ran ${scanResult.scanned} ticker${scanResult.scanned === 1 ? '' : 's'} through the full 5-agent gauntlet and none survived every stage — the verdicts above show where each was rejected. A signal appears here only when a setup clears them all.`
+                                : 'Run a discovery scan to generate AI trading signals.')
                             : 'Try adjusting your filters to see more results.'
                         }
                         action={signals.length === 0 ? (
