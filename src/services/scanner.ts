@@ -2156,8 +2156,8 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                     analysis.data.confidence_score,
                                                     tickerSector || 'Unknown'
                                                 );
-                                            } catch { /* non-fatal fallback to raw */
-                                                calibratedConfidence = analysis.data.confidence_score;
+                                            } catch { /* non-fatal — leave calibrated null; never store raw confidence as calibrated */
+                                                calibratedConfidence = null;
                                             }
                                         }
 
@@ -2605,7 +2605,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                                         const curve = await ConfidenceCalibrator.getCachedCurve();
                                                                         const score = contagion.data?.confidence_score ?? 0;
                                                                         return ConfidenceCalibrator.getCalibratedWinRate(score, curve);
-                                                                    } catch { return contagion.data?.confidence_score ?? 0; }
+                                                                    } catch { return null; /* never store raw confidence as calibrated */ }
                                                                 })(),
                                                                 margin_of_safety_pct: contagionMarginPct,
                                                                 conviction_score: typeof contagion.data?.conviction_score === 'number'
@@ -3311,12 +3311,13 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                         rejectionStage = 'Margin of Safety';
                         rejectionReason = singleMosCheck.reason || 'Entry leaves insufficient margin of safety below the 52-week high.';
                     } else {
-                        // 7c. Calibrated confidence
-                        let calibratedConf = singleConfidence;
+                        // 7c. Calibrated confidence — null (not raw) when calibration is
+                        // unavailable, so a fabricated number never masquerades as a calibrated win rate.
+                        let calibratedConf: number | null = null;
                         try {
                             const curve = await ConfidenceCalibrator.getCachedCurve();
                             calibratedConf = ConfidenceCalibrator.getCalibratedWinRate(singleConfidence, curve);
-                        } catch { /* non-fatal */ }
+                        } catch { /* non-fatal — leave calibrated null */ }
 
                         // 7d. Confluence with TA
                         const discConfluence = TechnicalAnalysisService.computeConfluence(
