@@ -245,18 +245,35 @@ export function Positions() {
                 // 'target_hit' here would be counted as a NON-win everywhere.
                 const outcome = realizedPnl >= 0 ? 'win' : 'loss';
 
-                void supabase.from('signal_outcomes').upsert({
-                    signal_id: pos.signal_id,
-                    ticker: pos.ticker,
-                    entry_price: pos.entry_price,
-                    outcome,
-                    hit_target: hitTarget,
-                    hit_stop_loss: hitStop,
-                    completed_at: new Date().toISOString(),
-                    tracked_at: pos.opened_at || new Date().toISOString(),
-                }, { onConflict: 'signal_id' }).then(({ error: outcomeErr }) => {
-                    if (outcomeErr) console.warn('[Positions] Signal outcome tracking failed:', outcomeErr);
-                });
+                // signal_outcomes has no UNIQUE on signal_id, so `onConflict:'signal_id'`
+                // raised Postgres 42P10 and the close silently failed to record the outcome
+                // (real ISA trades never recorded a win/loss). The scanner seeds a pending row
+                // at signal creation, so this is normally an UPDATE; fall back to INSERT when no
+                // seed exists. Avoids depending on a DB constraint that isn't there.
+                void (async () => {
+                    const fields = {
+                        ticker: pos.ticker,
+                        entry_price: pos.entry_price,
+                        outcome,
+                        hit_target: hitTarget,
+                        hit_stop_loss: hitStop,
+                        completed_at: new Date().toISOString(),
+                    };
+                    const { data: updated, error: updErr } = await supabase
+                        .from('signal_outcomes')
+                        .update(fields)
+                        .eq('signal_id', pos.signal_id)
+                        .select('id');
+                    if (updErr) { console.warn('[Positions] Signal outcome update failed:', updErr); return; }
+                    if (!updated || updated.length === 0) {
+                        const { error: insErr } = await supabase.from('signal_outcomes').insert({
+                            signal_id: pos.signal_id,
+                            tracked_at: pos.opened_at || new Date().toISOString(),
+                            ...fields,
+                        });
+                        if (insErr) console.warn('[Positions] Signal outcome insert failed:', insErr);
+                    }
+                })();
             }
 
             setShowCloseModal(null);

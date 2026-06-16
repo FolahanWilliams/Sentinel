@@ -2103,9 +2103,8 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             console.warn(`[Scanner] DQI computation failed for ${ev.ticker} (non-fatal):`, dqiErr);
                                         }
 
-                                        // 8. WINNER! WE HAVE A SIGNAL.
-                                        signalsGenerated++;
-
+                                        // 8. Candidate cleared every gate. (Counted only after a
+                                        // confirmed persist below — see the savedSignal block.)
                                         const entryPrice = quote.price;
 
                                         // TA Confluence scoring — computed early for dynamic stop sizing
@@ -2425,8 +2424,13 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             console.error(`[Scanner] Failed to save signal for ${ev.ticker}:`, signalInsertErr.message);
                                         }
 
-                                        // 8b. Seed outcome tracking row so OutcomeTracker can follow this signal
+                                        // 8b. Seed outcome tracking row so OutcomeTracker can follow this
+                                        // signal. Count the signal only after a confirmed persist — it was
+                                        // previously incremented before the dedup gate + a failable insert,
+                                        // over-counting dropped/failed signals in scan_logs.signals_generated.
                                         if (savedSignal) {
+                                            signalsGenerated++;
+
                                             // Invalidate correlation + conflict caches
                                             CorrelationGuard.invalidateCache();
                                             ConflictDetector.invalidateCache();
@@ -2435,7 +2439,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             // Dispatch alert rules
                                             NotificationService.checkAndDispatchAlerts(savedSignal);
 
-                                            await supabase.from('signal_outcomes').insert({
+                                            const { error: seedErr } = await supabase.from('signal_outcomes').insert({
                                                 signal_id: savedSignal.id,
                                                 ticker: ev.ticker,
                                                 entry_price: entryPrice,
@@ -2443,6 +2447,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                 hit_stop_loss: false,
                                                 hit_target: false,
                                             });
+                                            if (seedErr) console.warn(`[Scanner] Outcome seed failed for ${ev.ticker} (${savedSignal.id}):`, seedErr.message);
                                         }
 
                                         // 9. Position sizing recommendation (portfolio-aware V2 with dynamic stops)
@@ -2571,8 +2576,6 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                                 ? Math.round((((satQuote as any).fiftyTwoWeekHigh - satQuote.price) / (satQuote as any).fiftyTwoWeekHigh) * 1000) / 10
                                                                 : null;
 
-                                                            signalsGenerated++;
-
                                                             // Confluence for contagion signal
                                                             const satSnapshot = await TechnicalAnalysisService.getSnapshot(sat.ticker);
                                                             const contagionConfluence = TechnicalAnalysisService.computeConfluence(
@@ -2628,14 +2631,15 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                                 console.error(`[Scanner] Failed to save contagion signal for ${sat.ticker}:`, contagionInsertErr.message);
                                                             }
 
-                                                            // Seed outcome tracking
+                                                            // Seed outcome tracking — count only after a confirmed persist.
                                                             if (savedContagionSignal) {
+                                                                signalsGenerated++;
                                                                 ConflictDetector.invalidateCache();
                                                                 CorrelationGuard.invalidateCache();
                                                                 PriceCorrelationMatrix.invalidateCache();
                                                                 NotificationService.checkAndDispatchAlerts(savedContagionSignal);
 
-                                                                await supabase.from('signal_outcomes').insert({
+                                                                const { error: contagionSeedErr } = await supabase.from('signal_outcomes').insert({
                                                                     signal_id: savedContagionSignal.id,
                                                                     ticker: sat.ticker,
                                                                     entry_price: satQuote.price,
@@ -2643,6 +2647,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                                     hit_stop_loss: false,
                                                                     hit_target: false,
                                                                 });
+                                                                if (contagionSeedErr) console.warn(`[Scanner] Contagion outcome seed failed for ${sat.ticker}:`, contagionSeedErr.message);
                                                             }
 
                                                             console.log(`[Scanner] Contagion signal: ${sat.ticker} (sympathy drop from ${ev.ticker})`);
@@ -2872,7 +2877,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                             }
 
                             // Save proactive thesis as a fully enriched signal
-                            await supabase.from('signals').insert({
+                            const { data: savedProactiveSignal, error: proactiveInsertErr } = await supabase.from('signals').insert({
                                 ticker: thesis.ticker,
                                 signal_type: thesis.direction === 'short' ? 'short_overreaction' : 'long_overreaction',
                                 status: 'active',
@@ -2913,9 +2918,32 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                 } as any,
                                 data_quality: 'full',
                                 is_paper: false,
-                            });
-                            signalsGenerated++;
-                            console.log(`[Scanner] Proactive signal saved: ${thesis.ticker} (${thesis.catalyst}, ${thesis.urgency}, conf=${thesis.confidence})`);
+                            }).select().single();
+
+                            if (proactiveInsertErr) {
+                                console.warn(`[Scanner] Failed to save proactive signal for ${thesis.ticker}:`, proactiveInsertErr.message);
+                            }
+                            // Count + seed outcome tracking only after a confirmed persist. Without the
+                            // seed row OutcomeTracker can never close these signals — they were previously
+                            // orphaned (live signals with no trackable outcome, invisible to calibration).
+                            if (savedProactiveSignal) {
+                                signalsGenerated++;
+                                const proactiveEntry = thesis.suggested_entry_high ?? thesis.suggested_entry_low;
+                                if (proactiveEntry != null) {
+                                    const { error: proactiveSeedErr } = await supabase.from('signal_outcomes').insert({
+                                        signal_id: savedProactiveSignal.id,
+                                        ticker: thesis.ticker,
+                                        entry_price: proactiveEntry,
+                                        outcome: 'pending',
+                                        hit_stop_loss: false,
+                                        hit_target: false,
+                                    });
+                                    if (proactiveSeedErr) console.warn(`[Scanner] Proactive outcome seed failed for ${thesis.ticker}:`, proactiveSeedErr.message);
+                                } else {
+                                    console.warn(`[Scanner] Proactive signal ${thesis.ticker} has no suggested entry — outcome seed skipped`);
+                                }
+                                console.log(`[Scanner] Proactive signal saved: ${thesis.ticker} (${thesis.catalyst}, ${thesis.urgency}, conf=${thesis.confidence})`);
+                            }
                         } catch (saveErr) {
                             console.warn(`[Scanner] Failed to save proactive thesis for ${thesis.ticker}:`, saveErr);
                         }
@@ -2954,7 +2982,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
 
                             if (eaSig.confidence < adaptiveMinConfidence) continue;
 
-                            await supabase.from('signals').insert({
+                            const { data: savedEaSignal, error: eaInsertErr } = await supabase.from('signals').insert({
                                 ticker: eaSig.ticker,
                                 signal_type: eaSig.direction === 'short' ? 'short_overreaction' : 'long_overreaction',
                                 status: 'active',
@@ -2983,9 +3011,31 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                 } as any,
                                 data_quality: 'partial',
                                 is_paper: false,
-                            });
-                            signalsGenerated++;
-                            console.log(`[Scanner] Earnings anticipation signal saved: ${eaSig.ticker} (${eaSig.setupType}, ${eaSig.daysUntilEarnings}d to earnings, conf=${eaSig.confidence})`);
+                            }).select().single();
+
+                            if (eaInsertErr) {
+                                console.warn(`[Scanner] Failed to save earnings anticipation signal for ${eaSig.ticker}:`, eaInsertErr.message);
+                            }
+                            // Count + seed outcome tracking only after a confirmed persist (EA signals
+                            // were previously orphaned — no outcome row meant they could never close).
+                            if (savedEaSignal) {
+                                signalsGenerated++;
+                                const eaEntry = eaSig.suggested_entry_high ?? eaSig.suggested_entry_low;
+                                if (eaEntry != null) {
+                                    const { error: eaSeedErr } = await supabase.from('signal_outcomes').insert({
+                                        signal_id: savedEaSignal.id,
+                                        ticker: eaSig.ticker,
+                                        entry_price: eaEntry,
+                                        outcome: 'pending',
+                                        hit_stop_loss: false,
+                                        hit_target: false,
+                                    });
+                                    if (eaSeedErr) console.warn(`[Scanner] EA outcome seed failed for ${eaSig.ticker}:`, eaSeedErr.message);
+                                } else {
+                                    console.warn(`[Scanner] EA signal ${eaSig.ticker} has no suggested entry — outcome seed skipped`);
+                                }
+                                console.log(`[Scanner] Earnings anticipation signal saved: ${eaSig.ticker} (${eaSig.setupType}, ${eaSig.daysUntilEarnings}d to earnings, conf=${eaSig.confidence})`);
+                            }
                         } catch (saveErr) {
                             console.warn(`[Scanner] Failed to save earnings anticipation for ${eaSig.ticker}:`, saveErr);
                         }
