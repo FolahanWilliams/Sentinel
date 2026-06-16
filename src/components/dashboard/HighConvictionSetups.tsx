@@ -3,9 +3,9 @@
  * with key intelligence badges (quality tier, market regime, earnings proximity).
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '@/config/supabase';
+import { useActiveSignals } from '@/hooks/useActiveSignals';
 import { TrendingUp, Crown, ChevronRight, RefreshCw, Calculator } from 'lucide-react';
 import { SignalQualityBadge } from '@/components/shared/SignalQualityBadge';
 import { TickerLink } from '@/components/shared/TickerLink';
@@ -69,35 +69,17 @@ function DecisionScorePill({ score }: { score: number }) {
 
 export function HighConvictionSetups() {
     const navigate = useNavigate();
-    const [signals, setSignals] = useState<ConvictionSignal[]>([]);
-    const [loading, setLoading] = useState(true);
+    const { signals: allActive, loading, refetch } = useActiveSignals();
 
-    const fetchHighConviction = useCallback(async () => {
-        try {
-            setLoading(true);
-            // Pool of high-conviction-quality businesses, then RE-RANK by the
-            // fused decision score so we surface the best *trades*, not just the
-            // best companies (raw conviction_score bypasses the guardrails).
-            const { data, error } = await supabase
-                .from('signals')
-                .select('*')
-                .eq('status', 'active')
-                .gte('conviction_score', 70)
-                .order('created_at', { ascending: false })
-                .limit(24);
-
-            if (error) throw error;
-            const pool = (data as unknown as ConvictionSignal[]) || [];
-            pool.sort((a, b) => fusedDecisionScore(b) - fusedDecisionScore(a));
-            setSignals(pool.slice(0, 5));
-        } catch (err) {
-            console.error('[HighConvictionSetups] Fetch error:', err);
-        } finally {
-            setLoading(false);
-        }
-    }, []);
-
-    useEffect(() => { fetchHighConviction(); }, [fetchHighConviction]);
+    // Pool of high-conviction-quality businesses, then RE-RANK by the fused
+    // decision score so we surface the best *trades*, not just the best companies
+    // (raw conviction_score bypasses the guardrails). Derived from the shared
+    // active-signals store — no separate fetch/subscription.
+    const signals = useMemo(() => {
+        const pool = (allActive as unknown as ConvictionSignal[]).filter((s) => (s.conviction_score ?? 0) >= 70);
+        pool.sort((a, b) => fusedDecisionScore(b) - fusedDecisionScore(a));
+        return pool.slice(0, 5);
+    }, [allActive]);
 
     if (loading) {
         return (
@@ -124,7 +106,7 @@ export function HighConvictionSetups() {
                     <span className="text-xs text-sentinel-500 font-mono">{signals.length}</span>
                 </div>
                 <button
-                    onClick={fetchHighConviction}
+                    onClick={() => refetch()}
                     className="text-sentinel-500 hover:text-sentinel-300 transition-colors bg-transparent border-none cursor-pointer"
                     title="Refresh"
                 >
