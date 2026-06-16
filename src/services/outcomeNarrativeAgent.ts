@@ -105,6 +105,7 @@ export class OutcomeNarrativeAgent {
                     )
                 `)
                 .neq('outcome', 'pending')
+                .eq('is_simulated', false)
                 .not('completed_at', 'is', null)
                 .order('completed_at', { ascending: false })
                 .limit(NARRATIVE_MAX_SIGNALS_PER_CYCLE * 2); // fetch extra for filtering

@@ -80,6 +80,7 @@ export function Performance({ embedded = false }: { embedded?: boolean }) {
             const { data, error } = await supabase
                 .from('signal_outcomes')
                 .select('*, signals!inner(signal_type, confidence_score, bias_type)')
+                .eq('is_simulated', false)
                 .order('tracked_at', { ascending: true });
 
             if (!error && data) {

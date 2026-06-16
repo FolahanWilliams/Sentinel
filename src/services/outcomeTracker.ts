@@ -44,7 +44,8 @@ export class OutcomeTracker {
                     const { count } = await supabase
                         .from('signal_outcomes')
                         .select('*', { count: 'exact', head: true })
-                        .neq('outcome', 'pending');
+                        .neq('outcome', 'pending')
+                        .eq('is_simulated', false);
 
                     // Run reflection every 10 completed outcomes (trigger when we cross a 10-boundary)
                     const crossed10 = count != null && count >= 5 && Math.floor(count / 10) > Math.floor((count - updatedCount) / 10);
@@ -134,6 +135,7 @@ export class OutcomeTracker {
                 .from('signal_outcomes')
                 .select('*, signals!inner(thesis, ticker, agent_outputs)')
                 .neq('outcome', 'pending')
+                .eq('is_simulated', false)
                 .order('completed_at', { ascending: false })
                 .limit(10);
 

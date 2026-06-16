@@ -107,7 +107,8 @@ export class DynamicCalibrator {
     const { data: outcomes, error } = await supabase
       .from('signal_outcomes')
       .select('outcome, signals!inner(confidence_score, conviction_score)')
-      .neq('outcome', 'pending');
+      .neq('outcome', 'pending')
+      .eq('is_simulated', false);
 
     if (error || !outcomes || outcomes.length < MIN_OUTCOMES_FOR_FIT) {
       return this.emptyCurve();
@@ -306,7 +307,8 @@ export class DynamicCalibrator {
       const { count, error } = await supabase
         .from('signal_outcomes')
         .select('*', { count: 'exact', head: true })
-        .neq('outcome', 'pending');
+        .neq('outcome', 'pending')
+        .eq('is_simulated', false);
 
       if (error) return false;
       return (count ?? 0) >= MIN_OUTCOMES_FOR_FIT;
@@ -316,7 +318,8 @@ export class DynamicCalibrator {
     const { count, error } = await supabase
       .from('signal_outcomes')
       .select('*', { count: 'exact', head: true })
-      .neq('outcome', 'pending');
+      .neq('outcome', 'pending')
+      .eq('is_simulated', false);
 
     if (error) return false;
 
@@ -379,6 +382,7 @@ export class DynamicCalibrator {
       .from('signal_outcomes')
       .select('outcome, return_at_5d, signals!inner(confidence_score, conviction_score)')
       .neq('outcome', 'pending')
+      .eq('is_simulated', false)
       .not('return_at_5d', 'is', null);
 
     if (error || !outcomes || outcomes.length < MIN_OUTCOMES_FOR_FIT) {

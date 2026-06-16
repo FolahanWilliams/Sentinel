@@ -61,6 +61,7 @@ export function useDecisionAccuracy(): DecisionAccuracyData {
                     .from('signal_outcomes')
                     .select('*, signals!inner(confidence_score, created_at, bias_type, agent_outputs)')
                     .neq('outcome', 'pending')
+                    .eq('is_simulated', false)
                     .order('completed_at', { ascending: true }),
                 supabase.from('signals').select('*', { count: 'exact', head: true }),
                 ConfidenceCalibrator.getCachedCurve(),

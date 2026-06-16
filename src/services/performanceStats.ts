@@ -48,7 +48,8 @@ export class PerformanceStats {
         const { data: joined } = await supabase
             .from('signal_outcomes')
             .select('outcome, signals!inner(bias_type)')
-            .neq('outcome', 'pending');
+            .neq('outcome', 'pending')
+            .eq('is_simulated', false);
 
         if (!joined || joined.length === 0) return {};
 
@@ -77,7 +78,8 @@ export class PerformanceStats {
     async getWinRateBySector(): Promise<Record<string, WinRateResult>> {
         const { data: signals } = await supabase
             .from('signals')
-            .select('id, ticker');
+            .select('id, ticker')
+            .eq('is_simulated', false);
 
         if (!signals || signals.length === 0) return {};
 
@@ -94,7 +96,8 @@ export class PerformanceStats {
             .from('signal_outcomes')
             .select('signal_id, outcome')
             .in('signal_id', signalIds)
-            .neq('outcome', 'pending');
+            .neq('outcome', 'pending')
+            .eq('is_simulated', false);
 
         if (!outcomes) return {};
 
@@ -129,7 +132,8 @@ export class PerformanceStats {
         const { data: joined } = await supabase
             .from('signal_outcomes')
             .select('outcome, signals!inner(confidence_score)')
-            .neq('outcome', 'pending');
+            .neq('outcome', 'pending')
+            .eq('is_simulated', false);
 
         if (!joined || joined.length === 0) return [];
 
@@ -182,7 +186,8 @@ export class PerformanceStats {
             .from('signal_outcomes')
             .select('signal_id, outcome, return_at_30d')
             .in('signal_id', signalIds)
-            .neq('outcome', 'pending');
+            .neq('outcome', 'pending')
+            .eq('is_simulated', false);
 
         if (!outcomes) return [];
 
@@ -230,7 +235,8 @@ export class PerformanceStats {
         const { data: joined } = await supabase
             .from('signal_outcomes')
             .select('outcome, return_at_5d, return_at_10d, signals!inner(signal_type)')
-            .neq('outcome', 'pending');
+            .neq('outcome', 'pending')
+            .eq('is_simulated', false);
 
         if (!joined || joined.length === 0) return {};
 
@@ -384,6 +390,7 @@ export class PerformanceStats {
                 .select('signal_id, outcome, return_at_30d')
                 .in('signal_id', signalIds)
                 .neq('outcome', 'pending')
+                .eq('is_simulated', false)
             : { data: [] };
 
         const resolved = outcomes || [];

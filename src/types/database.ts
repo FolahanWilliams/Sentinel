@@ -638,6 +638,7 @@ export type Database = {
         Insert: {
           completed_at?: string | null
           entry_price: number
+          is_simulated?: boolean
           hit_stop_loss?: boolean
           hit_target?: boolean
           id?: string
@@ -664,6 +665,7 @@ export type Database = {
         Update: {
           completed_at?: string | null
           entry_price?: number
+          is_simulated?: boolean
           hit_stop_loss?: boolean
           hit_target?: boolean
           id?: string
@@ -782,6 +784,7 @@ export type Database = {
           agent_outputs?: Json | null
           bias_explanation?: string | null
           bias_type: string
+          is_simulated?: boolean
           calibrated_confidence?: number | null
           confidence_score: number
           confluence_level?: string | null
@@ -829,6 +832,7 @@ export type Database = {
           agent_outputs?: Json | null
           bias_explanation?: string | null
           bias_type?: string
+          is_simulated?: boolean
           calibrated_confidence?: number | null
           confidence_score?: number
           confluence_level?: string | null

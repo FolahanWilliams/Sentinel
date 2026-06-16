@@ -97,6 +97,7 @@ export function Leaderboard() {
             const { data: outcomes } = await supabase
                 .from('signal_outcomes')
                 .select('signal_id, outcome, return_at_5d, return_at_10d, return_at_30d, hit_target, hit_stop_loss')
+                .eq('is_simulated', false)
                 .in('signal_id', signalIds);
 
             const outcomeMap = new Map<string, SignalWithOutcome['outcome']>();

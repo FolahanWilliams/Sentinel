@@ -40,7 +40,8 @@ serve(async (req) => {
         const { data: outcomes, error } = await supabase
             .from('signal_outcomes')
             .select('*')
-            .eq('outcome', 'pending');
+            .eq('outcome', 'pending')
+            .eq('is_simulated', false);
 
         if (error) return json({ success: false, error: error.message }, 500);
         if (!outcomes || outcomes.length === 0) {

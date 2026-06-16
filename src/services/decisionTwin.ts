@@ -72,7 +72,8 @@ async function fetchInstitutionalMemory(
         const { data: outcomes } = await supabase
             .from('signal_outcomes')
             .select('outcome, signals!inner(signal_type)')
-            .neq('outcome', 'pending');
+            .neq('outcome', 'pending')
+            .eq('is_simulated', false);
 
         let winRate: number | null = null;
         if (outcomes && outcomes.length > 0) {

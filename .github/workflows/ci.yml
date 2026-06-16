@@ -30,8 +30,14 @@ jobs:
       - name: Silent-catch ratchet
         run: npm run lint:silent-catches
 
+      - name: Live-outcomes ratchet
+        run: npm run lint:live-outcomes
+
       - name: TypeScript check
         run: npx tsc --noEmit
+
+      - name: Tests
+        run: npm test
 
       - name: Build
         run: npm run build

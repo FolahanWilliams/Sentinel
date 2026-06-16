@@ -40,7 +40,8 @@ export class BiasGenomeService {
         const { data: outcomes } = await supabase
             .from('signal_outcomes')
             .select('signal_id, outcome, return_at_30d, return_at_10d, return_at_5d, return_at_1d')
-            .neq('outcome', 'pending');
+            .neq('outcome', 'pending')
+            .eq('is_simulated', false);
 
         if (!signals) {
             return { benchmarks: [], totalSignals: 0, totalWithOutcomes: 0, dominantBias: null, improvingBiases: [], worseningBiases: [] };
