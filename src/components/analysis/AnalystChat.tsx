@@ -125,7 +125,7 @@ function AnalystChatInner() {
                     supabase.from('portfolio_config').select('*').limit(1).maybeSingle(),
                     supabase.from('positions').select('*').order('opened_at', { ascending: false }),
                     supabase.from('signals').select('ticker, signal_type, confidence_score, thesis, target_price, stop_loss, created_at')
-                        .eq('status', 'active').order('created_at', { ascending: false }).limit(20),
+                        .eq('status', 'active').eq('is_simulated', false).order('created_at', { ascending: false }).limit(20),
                     supabase.from('watchlist').select('ticker, sector'),
                 ]);
 

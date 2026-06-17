@@ -71,7 +71,10 @@ export class MarketDataService {
 
             // Yahoo Finance returns LSE (.L) prices in GBX (pence).
             // Normalize to GBP (pounds) to match entry prices stored from HL import.
-            if (ticker.toUpperCase().endsWith('.L') && quoteData.price != null) {
+            // Check the RESOLVED symbol, not the requested one: a bare ticker (e.g. "VOD")
+            // can be resolved server-side to "VOD.L" and returned as pence keyed under the
+            // bare symbol — checking the request would skip the ÷100 and leave a 100× price.
+            if ((quoteData.resolvedTicker ?? ticker).toUpperCase().endsWith('.L') && quoteData.price != null) {
                 quoteData.price = quoteData.price / 100;
                 // Keep high/low consistent if present
                 if (quoteData.high != null) quoteData.high /= 100;
@@ -155,8 +158,10 @@ export class MarketDataService {
                     const quoteData = bulkData[key];
                     if (quoteData && quoteData.price != null) {
                         const quote = quoteData as Quote;
-                        // Normalize LSE pence → pounds
-                        if (key.endsWith('.L') && quote.price != null) {
+                        // Normalize LSE pence → pounds. Check the RESOLVED symbol, not the
+                        // requested key: a bare ticker resolved server-side to ".L" returns
+                        // pence keyed under the bare symbol — keying on `key` skips the ÷100.
+                        if ((quote.resolvedTicker ?? key).toUpperCase().endsWith('.L') && quote.price != null) {
                             quote.price = quote.price / 100;
                             if (quote.high != null) quote.high /= 100;
                             if (quote.low != null) quote.low /= 100;

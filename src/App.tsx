@@ -49,6 +49,7 @@ const Journal = lazyWithRetry(() => import('@/pages/Journal'), 'Journal');
 const StockAnalysis = lazyWithRetry(() => import('@/pages/StockAnalysis'), 'StockAnalysis');
 const Positions = lazyWithRetry(() => import('@/pages/Positions'), 'Positions');
 const RiskDashboard = lazyWithRetry(() => import('@/pages/RiskDashboard'), 'RiskDashboard');
+const Learning = lazyWithRetry(() => import('@/pages/Learning'), 'Learning');
 const NotFound = lazyWithRetry(() => import('@/pages/NotFound'), 'NotFound');
 const TrainingDojo = lazyWithRetry(() => import('@/pages/TrainingDojo'), 'default');
 const Showcase = lazyWithRetry(() => import('@/pages/Showcase'), 'Showcase');
@@ -161,6 +162,7 @@ export default function App() {
                                 <Route path="/journal" element={<Journal />} />
                                 <Route path="/positions" element={<Positions />} />
                                 <Route path="/risk" element={<RiskDashboard />} />
+                                <Route path="/learning" element={<Learning />} />
                                 <Route path="/training-dojo" element={<TrainingDojo />} />
                                 {/* Redirects for consolidated pages */}
                                 <Route path="/watchlist" element={<Navigate to="/?tab=watchlist" replace />} />

@@ -48,9 +48,11 @@ async function fetchQuotes() {
         };
         // Yahoo returns LSE (.L) prices in GBX (pence); normalize to pounds so they
         // match the pound-denominated entry prices (mirrors MarketDataService).
+        // Use the RESOLVED symbol: a bare ticker resolved server-side to ".L" arrives as
+        // pence under the bare key, so checking the requested symbol would skip the ÷100.
         const toQuote = (ticker: string, q: any): QuoteData | null => {
             if (!q || q.price == null) return null;
-            const factor = ticker.toUpperCase().endsWith('.L') ? 100 : 1;
+            const factor = (q.resolvedTicker ?? ticker).toUpperCase().endsWith('.L') ? 100 : 1;
             return {
                 price: q.price / factor,
                 changePercent: q.changePercent ?? 0,

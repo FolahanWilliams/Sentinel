@@ -11,6 +11,8 @@
 
 import { supabase } from '@/config/supabase';
 import type { LynchCategory } from '@/types/signals';
+import { toUSD, inferCurrency } from '@/utils/portfolio';
+import { getForexRates } from '@/services/forexRates';
 
 export interface GuardrailResult {
     passed: boolean;
@@ -97,12 +99,16 @@ export class ConvictionGuardrails {
                 };
             }
 
-            // Calculate category exposure
+            // Calculate category exposure. position_size_usd is a misnomer — it's stored in the
+            // position's NATIVE currency (entry_price × shares), so a raw sum across .L (GBP) and
+            // USD positions is meaningless and corrupts the % gates below. Normalize each to USD
+            // first (matches SignalsSection / RiskDashboard); totalCapital is the USD base.
+            const forex = await getForexRates();
             let cyclicalExposure = 0;
             let lowMoatExposure = 0;
 
             for (const pos of positions) {
-                const sizeUsd = (pos as any).position_size_usd || 0;
+                const sizeUsd = toUSD((pos as any).position_size_usd || 0, inferCurrency((pos as any).ticker), forex);
                 const signal = (pos as any).signals;
 
                 if (signal?.lynch_category === 'cyclical') {

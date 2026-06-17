@@ -418,6 +418,15 @@ export class ScannerService {
             if (scanType === 'screener') {
                 const anomalies = await MarketWideScreener.runScreener();
                 if (anomalies.length === 0) {
+                    // Terminal-state the scan_log before the early return, else the row is
+                    // stuck at status='running' forever (mirrors the budget-gate exit above).
+                    if (scanLog) {
+                        await supabase.from('scan_logs').update({
+                            status: 'completed',
+                            error_message: 'Completed: No anomalies found',
+                            duration_ms: Date.now() - startTime,
+                        }).eq('id', scanLog.id);
+                    }
                     return { success: true, summary: 'Scan completed: No anomalies found.' };
                 }
                 tickers = anomalies.map(a => a.ticker);
@@ -2103,9 +2112,8 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             console.warn(`[Scanner] DQI computation failed for ${ev.ticker} (non-fatal):`, dqiErr);
                                         }
 
-                                        // 8. WINNER! WE HAVE A SIGNAL.
-                                        signalsGenerated++;
-
+                                        // 8. Candidate cleared every gate. (Counted only after a
+                                        // confirmed persist below — see the savedSignal block.)
                                         const entryPrice = quote.price;
 
                                         // TA Confluence scoring — computed early for dynamic stop sizing
@@ -2156,8 +2164,8 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                     analysis.data.confidence_score,
                                                     tickerSector || 'Unknown'
                                                 );
-                                            } catch { /* non-fatal fallback to raw */
-                                                calibratedConfidence = analysis.data.confidence_score;
+                                            } catch { /* non-fatal — leave calibrated null; never store raw confidence as calibrated */
+                                                calibratedConfidence = null;
                                             }
                                         }
 
@@ -2425,8 +2433,13 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             console.error(`[Scanner] Failed to save signal for ${ev.ticker}:`, signalInsertErr.message);
                                         }
 
-                                        // 8b. Seed outcome tracking row so OutcomeTracker can follow this signal
+                                        // 8b. Seed outcome tracking row so OutcomeTracker can follow this
+                                        // signal. Count the signal only after a confirmed persist — it was
+                                        // previously incremented before the dedup gate + a failable insert,
+                                        // over-counting dropped/failed signals in scan_logs.signals_generated.
                                         if (savedSignal) {
+                                            signalsGenerated++;
+
                                             // Invalidate correlation + conflict caches
                                             CorrelationGuard.invalidateCache();
                                             ConflictDetector.invalidateCache();
@@ -2435,7 +2448,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                             // Dispatch alert rules
                                             NotificationService.checkAndDispatchAlerts(savedSignal);
 
-                                            await supabase.from('signal_outcomes').insert({
+                                            const { error: seedErr } = await supabase.from('signal_outcomes').insert({
                                                 signal_id: savedSignal.id,
                                                 ticker: ev.ticker,
                                                 entry_price: entryPrice,
@@ -2443,6 +2456,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                 hit_stop_loss: false,
                                                 hit_target: false,
                                             });
+                                            if (seedErr) console.warn(`[Scanner] Outcome seed failed for ${ev.ticker} (${savedSignal.id}):`, seedErr.message);
                                         }
 
                                         // 9. Position sizing recommendation (portfolio-aware V2 with dynamic stops)
@@ -2571,8 +2585,6 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                                 ? Math.round((((satQuote as any).fiftyTwoWeekHigh - satQuote.price) / (satQuote as any).fiftyTwoWeekHigh) * 1000) / 10
                                                                 : null;
 
-                                                            signalsGenerated++;
-
                                                             // Confluence for contagion signal
                                                             const satSnapshot = await TechnicalAnalysisService.getSnapshot(sat.ticker);
                                                             const contagionConfluence = TechnicalAnalysisService.computeConfluence(
@@ -2605,7 +2617,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                                         const curve = await ConfidenceCalibrator.getCachedCurve();
                                                                         const score = contagion.data?.confidence_score ?? 0;
                                                                         return ConfidenceCalibrator.getCalibratedWinRate(score, curve);
-                                                                    } catch { return contagion.data?.confidence_score ?? 0; }
+                                                                    } catch { return null; /* never store raw confidence as calibrated */ }
                                                                 })(),
                                                                 margin_of_safety_pct: contagionMarginPct,
                                                                 conviction_score: typeof contagion.data?.conviction_score === 'number'
@@ -2628,14 +2640,15 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                                 console.error(`[Scanner] Failed to save contagion signal for ${sat.ticker}:`, contagionInsertErr.message);
                                                             }
 
-                                                            // Seed outcome tracking
+                                                            // Seed outcome tracking — count only after a confirmed persist.
                                                             if (savedContagionSignal) {
+                                                                signalsGenerated++;
                                                                 ConflictDetector.invalidateCache();
                                                                 CorrelationGuard.invalidateCache();
                                                                 PriceCorrelationMatrix.invalidateCache();
                                                                 NotificationService.checkAndDispatchAlerts(savedContagionSignal);
 
-                                                                await supabase.from('signal_outcomes').insert({
+                                                                const { error: contagionSeedErr } = await supabase.from('signal_outcomes').insert({
                                                                     signal_id: savedContagionSignal.id,
                                                                     ticker: sat.ticker,
                                                                     entry_price: satQuote.price,
@@ -2643,6 +2656,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                                                     hit_stop_loss: false,
                                                                     hit_target: false,
                                                                 });
+                                                                if (contagionSeedErr) console.warn(`[Scanner] Contagion outcome seed failed for ${sat.ticker}:`, contagionSeedErr.message);
                                                             }
 
                                                             console.log(`[Scanner] Contagion signal: ${sat.ticker} (sympathy drop from ${ev.ticker})`);
@@ -2738,7 +2752,12 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                 }
                             } catch { /* non-fatal */ }
 
-                            // Quality Gate 2: Sanity Check (Red Team) — attack the proactive thesis
+                            // Quality Gate 2: Sanity Check (Red Team) — attack the proactive thesis.
+                            // FAIL CLOSED: a thesis that can't clear — or even reach — the Red Team is
+                            // dropped, never saved. Red Team killing flawed signals is the structural
+                            // difference between Sentinel and a normal signal generator; it must never be
+                            // advisory. Mirrors the reactive + single-ticker gates (redTeamGate()).
+                            let proactiveSanity: import('@/types/agents').SanityCheckResult | null = null;
                             try {
                                 const sanityResult = await AgentService.runSanityCheck({
                                     ticker: thesis.ticker,
@@ -2748,12 +2767,25 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                     agentType: 'PROACTIVE_THESIS_ENGINE'
                                 });
                                 if (sanityResult.success && sanityResult.data) {
-                                    if (!sanityResult.data.passes_sanity_check) {
-                                        console.warn(`[Scanner] Proactive thesis for ${thesis.ticker} FAILED sanity check: ${sanityResult.data.fatal_flaws?.join(', ')}`);
-                                        continue;
-                                    }
+                                    proactiveSanity = sanityResult.data;
+                                } else {
+                                    console.warn(`[Scanner] Proactive Red Team unavailable for ${thesis.ticker}: ${sanityResult.error ?? 'no data'} — dropping (fail closed)`);
                                 }
-                            } catch { /* non-fatal — save anyway if sanity check fails */ }
+                            } catch (sanityErr: any) {
+                                console.warn(`[Scanner] Proactive Red Team threw for ${thesis.ticker}: ${sanityErr?.message ?? sanityErr} — dropping (fail closed)`);
+                            }
+                            if (!proactiveSanity) {
+                                continue; // no adversarial verdict obtained → do not ship the thesis
+                            }
+                            if (!proactiveSanity.passes_sanity_check) {
+                                console.warn(`[Scanner] Proactive thesis for ${thesis.ticker} FAILED sanity check: ${proactiveSanity.fatal_flaws?.join(', ')}`);
+                                continue;
+                            }
+                            const proactiveRtGate = redTeamGate(proactiveSanity);
+                            if (!proactiveRtGate.allow) {
+                                console.warn(`[Scanner] RED TEAM BLOCKED proactive ${thesis.ticker}: ${proactiveRtGate.reason}`);
+                                continue;
+                            }
 
                             // Quality Gate 3: Minimum confidence after adjustments
                             if (thesis.confidence < adaptiveMinConfidence) {
@@ -2872,7 +2904,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                             }
 
                             // Save proactive thesis as a fully enriched signal
-                            await supabase.from('signals').insert({
+                            const { data: savedProactiveSignal, error: proactiveInsertErr } = await supabase.from('signals').insert({
                                 ticker: thesis.ticker,
                                 signal_type: thesis.direction === 'short' ? 'short_overreaction' : 'long_overreaction',
                                 status: 'active',
@@ -2905,6 +2937,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                     conflict_resolution: proactiveConflictResult?.resolutions?.filter(r => r.action !== 'none').length
                                         ? proactiveConflictResult.resolutions.filter(r => r.action !== 'none')
                                         : null,
+                                    red_team: proactiveSanity,
                                     bias_detective: proactiveBiasOutput,
                                     noise_confidence: proactiveNoiseOutput,
                                     decision_twin: proactiveTwinOutput,
@@ -2913,9 +2946,32 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                 } as any,
                                 data_quality: 'full',
                                 is_paper: false,
-                            });
-                            signalsGenerated++;
-                            console.log(`[Scanner] Proactive signal saved: ${thesis.ticker} (${thesis.catalyst}, ${thesis.urgency}, conf=${thesis.confidence})`);
+                            }).select().single();
+
+                            if (proactiveInsertErr) {
+                                console.warn(`[Scanner] Failed to save proactive signal for ${thesis.ticker}:`, proactiveInsertErr.message);
+                            }
+                            // Count + seed outcome tracking only after a confirmed persist. Without the
+                            // seed row OutcomeTracker can never close these signals — they were previously
+                            // orphaned (live signals with no trackable outcome, invisible to calibration).
+                            if (savedProactiveSignal) {
+                                signalsGenerated++;
+                                const proactiveEntry = thesis.suggested_entry_high ?? thesis.suggested_entry_low;
+                                if (proactiveEntry != null) {
+                                    const { error: proactiveSeedErr } = await supabase.from('signal_outcomes').insert({
+                                        signal_id: savedProactiveSignal.id,
+                                        ticker: thesis.ticker,
+                                        entry_price: proactiveEntry,
+                                        outcome: 'pending',
+                                        hit_stop_loss: false,
+                                        hit_target: false,
+                                    });
+                                    if (proactiveSeedErr) console.warn(`[Scanner] Proactive outcome seed failed for ${thesis.ticker}:`, proactiveSeedErr.message);
+                                } else {
+                                    console.warn(`[Scanner] Proactive signal ${thesis.ticker} has no suggested entry — outcome seed skipped`);
+                                }
+                                console.log(`[Scanner] Proactive signal saved: ${thesis.ticker} (${thesis.catalyst}, ${thesis.urgency}, conf=${thesis.confidence})`);
+                            }
                         } catch (saveErr) {
                             console.warn(`[Scanner] Failed to save proactive thesis for ${thesis.ticker}:`, saveErr);
                         }
@@ -2954,7 +3010,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
 
                             if (eaSig.confidence < adaptiveMinConfidence) continue;
 
-                            await supabase.from('signals').insert({
+                            const { data: savedEaSignal, error: eaInsertErr } = await supabase.from('signals').insert({
                                 ticker: eaSig.ticker,
                                 signal_type: eaSig.direction === 'short' ? 'short_overreaction' : 'long_overreaction',
                                 status: 'active',
@@ -2983,9 +3039,31 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                 } as any,
                                 data_quality: 'partial',
                                 is_paper: false,
-                            });
-                            signalsGenerated++;
-                            console.log(`[Scanner] Earnings anticipation signal saved: ${eaSig.ticker} (${eaSig.setupType}, ${eaSig.daysUntilEarnings}d to earnings, conf=${eaSig.confidence})`);
+                            }).select().single();
+
+                            if (eaInsertErr) {
+                                console.warn(`[Scanner] Failed to save earnings anticipation signal for ${eaSig.ticker}:`, eaInsertErr.message);
+                            }
+                            // Count + seed outcome tracking only after a confirmed persist (EA signals
+                            // were previously orphaned — no outcome row meant they could never close).
+                            if (savedEaSignal) {
+                                signalsGenerated++;
+                                const eaEntry = eaSig.suggested_entry_high ?? eaSig.suggested_entry_low;
+                                if (eaEntry != null) {
+                                    const { error: eaSeedErr } = await supabase.from('signal_outcomes').insert({
+                                        signal_id: savedEaSignal.id,
+                                        ticker: eaSig.ticker,
+                                        entry_price: eaEntry,
+                                        outcome: 'pending',
+                                        hit_stop_loss: false,
+                                        hit_target: false,
+                                    });
+                                    if (eaSeedErr) console.warn(`[Scanner] EA outcome seed failed for ${eaSig.ticker}:`, eaSeedErr.message);
+                                } else {
+                                    console.warn(`[Scanner] EA signal ${eaSig.ticker} has no suggested entry — outcome seed skipped`);
+                                }
+                                console.log(`[Scanner] Earnings anticipation signal saved: ${eaSig.ticker} (${eaSig.setupType}, ${eaSig.daysUntilEarnings}d to earnings, conf=${eaSig.confidence})`);
+                            }
                         } catch (saveErr) {
                             console.warn(`[Scanner] Failed to save earnings anticipation for ${eaSig.ticker}:`, saveErr);
                         }
@@ -3311,12 +3389,13 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                         rejectionStage = 'Margin of Safety';
                         rejectionReason = singleMosCheck.reason || 'Entry leaves insufficient margin of safety below the 52-week high.';
                     } else {
-                        // 7c. Calibrated confidence
-                        let calibratedConf = singleConfidence;
+                        // 7c. Calibrated confidence — null (not raw) when calibration is
+                        // unavailable, so a fabricated number never masquerades as a calibrated win rate.
+                        let calibratedConf: number | null = null;
                         try {
                             const curve = await ConfidenceCalibrator.getCachedCurve();
                             calibratedConf = ConfidenceCalibrator.getCalibratedWinRate(singleConfidence, curve);
-                        } catch { /* non-fatal */ }
+                        } catch { /* non-fatal — leave calibrated null */ }
 
                         // 7d. Confluence with TA
                         const discConfluence = TechnicalAnalysisService.computeConfluence(

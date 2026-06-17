@@ -224,7 +224,7 @@ When a constant or algorithm has a canonical source, every consumer MUST import 
 
 The portfolio mixes currencies (GBP via `.L` LSE tickers, USD otherwise).
 
-1. **`.L` prices are pence (GBX) at the source but pounds by the time they reach app logic.** The quote layer — both `MarketDataService` and `quotePoller` — divides `.L` quotes ÷100 to pounds, and entry prices are stored in pounds. So `LSE_QUOTES_IN_PENCE = false` in `portfolio.ts` (no further /100). Add a new quote path → normalize `.L` ÷100 there too, or you reintroduce a 100× error.
+1. **`.L` prices are pence (GBX) at the source but pounds by the time they reach app logic.** The quote layer — both `MarketDataService` and `quotePoller` — divides `.L` quotes ÷100 to pounds, and entry prices are stored in pounds. So `LSE_QUOTES_IN_PENCE = false` in `portfolio.ts` (no further /100). Add a new quote path → normalize `.L` ÷100 there too, or you reintroduce a 100× error. **Normalize on the RESOLVED symbol, not the requested one.** `proxy-market-data` resolves a bare ticker (e.g. `VOD`) to its real listing (`VOD.L`) and returns the pence price keyed under the *bare* symbol with the real one in a separate `resolvedTicker` field. The quote path normalizes client-side, so every `.L` check must read `(quote.resolvedTicker ?? requestedTicker).endsWith('.L')` — checking the requested symbol skips the ÷100 and leaves a 100× price (poisons P&L, makes every stop read instantly "hit"). Keep `.L` normalization in ONE layer per path (quote path = client-side in `MarketDataService`/`quotePoller`; historical-bars path = server-side in `proxy-market-data`) — never both, or you double-divide.
 2. **Never sum per-position value/P&L/exposure across positions in native currency** — a `.L` (GBP) amount added to a USD amount is meaningless. Route every per-position amount through the canonical helpers in `src/utils/portfolio.ts` (`toUSD` / `nativeToUSD` / `calcUnrealizedPnlUSD` / `getPositionExposureUSD` / `realizedPnlUSD`) before aggregating. React surfaces get rates from `useForex()`; non-React services from `getForexRates()` (`src/services/forexRates.ts`, base USD, shares the session cache). Per-ROW display stays native (the position's currency symbol); only TOTALS convert to USD.
 
 ## Lint Ratchets (build these as the codebase grows)
@@ -240,6 +240,8 @@ These are not all required day-1. Add when they earn their keep:
 Each ratchet bump requires (i) edit the const, (ii) inline comment naming the exception class, (iii) update the trajectory line in CLAUDE.md within the same commit.
 
 ## Decision-Making with the Founder
+
+**Standing directive (founder preference): bias hard toward proactive + autonomous.** Default to ACTING, not asking. When the founder hands a set of issues ("proceed with the most important ones", "fix the bugs"), pick the highest-leverage items, ship the deep version, and report after — don't present menus or ask which to start. Fold in adjacent low-risk fixes in the same area rather than deferring them. Only stop to ask when genuinely blocked on a founder-only decision — the explicit "Ask before" list below (schema deploys, pricing, agent-prompt/calibration-math changes, confidentiality-lock surfaces, deleting routes/services). Writing a migration FILE on a feature branch is autonomous (it only deploys on merge-to-main, which the founder controls); irreversibly applying one is not. Surface deferred work as a short "next" line, not a blocking question.
 
 ### Default to autonomous
 
