@@ -92,17 +92,17 @@ supabase functions logs <name>      # Tail edge function logs (manual)
 
 ```text
 src/
-├── components/         # UI components (analysis, dashboard, scanner, sentinel, signals, shared, landing)
+├── components/         # UI components (analysis, dashboard, scanner, sentinel, signals, shared, landing, learning)
 ├── config/             # constants.ts (all thresholds), rssFeeds.ts (42 feeds), supabase.ts
 ├── hooks/              # React hooks
-├── pages/              # 15 route pages (Landing = public home, Showcase = public /about)
-├── services/           # 48+ specialized services
+├── pages/              # 18 route pages (Landing = public home, Showcase = public /about, Learning = analyst toolkit)
+├── services/           # 80+ specialized services
 ├── stores/             # Zustand state
 ├── types/              # TypeScript type definitions
 └── utils/              # Formatting, validation, calculations
 
 supabase/
-├── functions/          # 14 edge functions
+├── functions/          # 16 edge functions
 └── migrations/         # Database schema
 ```
 
