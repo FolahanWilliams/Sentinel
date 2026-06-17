@@ -2752,7 +2752,12 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                 }
                             } catch { /* non-fatal */ }
 
-                            // Quality Gate 2: Sanity Check (Red Team) — attack the proactive thesis
+                            // Quality Gate 2: Sanity Check (Red Team) — attack the proactive thesis.
+                            // FAIL CLOSED: a thesis that can't clear — or even reach — the Red Team is
+                            // dropped, never saved. Red Team killing flawed signals is the structural
+                            // difference between Sentinel and a normal signal generator; it must never be
+                            // advisory. Mirrors the reactive + single-ticker gates (redTeamGate()).
+                            let proactiveSanity: import('@/types/agents').SanityCheckResult | null = null;
                             try {
                                 const sanityResult = await AgentService.runSanityCheck({
                                     ticker: thesis.ticker,
@@ -2762,12 +2767,25 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                     agentType: 'PROACTIVE_THESIS_ENGINE'
                                 });
                                 if (sanityResult.success && sanityResult.data) {
-                                    if (!sanityResult.data.passes_sanity_check) {
-                                        console.warn(`[Scanner] Proactive thesis for ${thesis.ticker} FAILED sanity check: ${sanityResult.data.fatal_flaws?.join(', ')}`);
-                                        continue;
-                                    }
+                                    proactiveSanity = sanityResult.data;
+                                } else {
+                                    console.warn(`[Scanner] Proactive Red Team unavailable for ${thesis.ticker}: ${sanityResult.error ?? 'no data'} — dropping (fail closed)`);
                                 }
-                            } catch { /* non-fatal — save anyway if sanity check fails */ }
+                            } catch (sanityErr: any) {
+                                console.warn(`[Scanner] Proactive Red Team threw for ${thesis.ticker}: ${sanityErr?.message ?? sanityErr} — dropping (fail closed)`);
+                            }
+                            if (!proactiveSanity) {
+                                continue; // no adversarial verdict obtained → do not ship the thesis
+                            }
+                            if (!proactiveSanity.passes_sanity_check) {
+                                console.warn(`[Scanner] Proactive thesis for ${thesis.ticker} FAILED sanity check: ${proactiveSanity.fatal_flaws?.join(', ')}`);
+                                continue;
+                            }
+                            const proactiveRtGate = redTeamGate(proactiveSanity);
+                            if (!proactiveRtGate.allow) {
+                                console.warn(`[Scanner] RED TEAM BLOCKED proactive ${thesis.ticker}: ${proactiveRtGate.reason}`);
+                                continue;
+                            }
 
                             // Quality Gate 3: Minimum confidence after adjustments
                             if (thesis.confidence < adaptiveMinConfidence) {
@@ -2919,6 +2937,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                                     conflict_resolution: proactiveConflictResult?.resolutions?.filter(r => r.action !== 'none').length
                                         ? proactiveConflictResult.resolutions.filter(r => r.action !== 'none')
                                         : null,
+                                    red_team: proactiveSanity,
                                     bias_detective: proactiveBiasOutput,
                                     noise_confidence: proactiveNoiseOutput,
                                     decision_twin: proactiveTwinOutput,
