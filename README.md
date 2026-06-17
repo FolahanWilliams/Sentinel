@@ -145,6 +145,10 @@ Raw AI confidence scores are remapped to actual observed win rates using **isoto
 - Gated by confidence threshold + TA alignment + confluence score
 - Configurable per-signal-type notification preferences
 
+### Analyst Toolkit (Learning)
+- In-app education suite spanning the full portfolio-analytics curriculum — returns & compounding, risk & distribution, the risk-adjusted ratios, market risk & CAPM, Modern Portfolio Theory, tail risk & VaR, and performance attribution
+- Interactive pure-SVG visualizations — drag sliders to watch correlation clouds morph, the efficient frontier form, VaR tails shift, and Monte Carlo fans widen
+
 ---
 
 ## Tech Stack
@@ -160,8 +164,8 @@ Raw AI confidence scores are remapped to actual observed win rates using **isoto
 | **Deployment** | Vercel |
 
 ### Architecture Highlights
-- **13 Edge Functions** handling AI proxy, market data aggregation, RSS parsing, Reddit sentiment, crypto/forex/treasury/macro data, and email alerts
-- **48+ specialized services** — from scanner orchestration and agent pipelines to isotonic regression calibrators and correlation matrices
+- **16 Edge Functions** handling AI proxy, market data aggregation, RSS parsing, Reddit sentiment, crypto/forex/treasury/macro data, automated outcome tracking, index-rebalance analysis, paper-trade execution, and email alerts
+- **80+ specialized services** — from scanner orchestration and agent pipelines to isotonic regression calibrators and correlation matrices
 - **Intelligent caching** at every layer (quotes: 60s, fundamentals: 6h, AI content: 30m, regime: 2h) to minimize API costs
 - **Budget controls** with daily/monthly Gemini API spend limits and 80% threshold alerts
 - **Strict TypeScript** with enforced `tsc --noEmit` before every deploy
@@ -175,6 +179,8 @@ src/
 ├── components/
 │   ├── analysis/      # Agent reasoning, bias breakdown, risk/reward charts
 │   ├── dashboard/     # Market snapshot, portfolio, signals, watchlist, heatmaps
+│   ├── landing/       # Public landing + showcase sections (shared, canonical copy)
+│   ├── learning/      # Analyst Toolkit — interactive concept visualizations
 │   ├── scanner/       # Scanner controls & activity logs
 │   ├── sentinel/      # News intelligence, convergence alerts, briefings
 │   ├── signals/       # Signal filtering & display
@@ -184,8 +190,8 @@ src/
 │   ├── rssFeeds.ts    # 42 RSS feed definitions
 │   └── supabase.ts    # Supabase client initialization
 ├── hooks/             # React hooks (market data, signals, settings)
-├── pages/             # 15 route pages (Dashboard, Scanner, Analysis, Journal, etc.)
-├── services/          # 48+ specialized services (see below)
+├── pages/             # 18 route pages (Dashboard, Scanner, Analysis, Journal, Risk, Learning, etc.)
+├── services/          # 80+ specialized services (see below)
 ├── stores/            # Zustand state management
 ├── types/             # TypeScript type definitions
 └── utils/             # Formatting, validation, calculations
@@ -203,6 +209,9 @@ supabase/
 │   ├── proxy-macro/         # Macro data aggregation
 │   ├── proxy-fear-greed/    # Fear & Greed Index
 │   ├── post-mortem/         # AI-powered trade post-mortems
+│   ├── outcome-tracker/     # Automated 1d/5d/10d/30d outcome tracking
+│   ├── index-rebalance/     # Index-rebalance arbitrage analysis
+│   ├── proxy-alpaca/        # Paper-trade execution gateway (Alpaca)
 │   ├── sentinel/            # Main scanner execution loop
 │   └── send-alert-email/    # Email alerts via Resend
 └── migrations/              # Database schema
