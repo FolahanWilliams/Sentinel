@@ -3252,11 +3252,9 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
             }
 
             const marketContext: MarketContext = {
-                fiftyTwoWeekHigh: quote.fiftyTwoWeekHigh,
-                fiftyTwoWeekLow: quote.fiftyTwoWeekLow,
-                avgVolume: quote.avgVolume,
+                fiftyTwoWeekHigh: quote.fiftyTwoWeekHigh ?? undefined,
+                fiftyTwoWeekLow: quote.fiftyTwoWeekLow ?? undefined,
                 currentVolume: quote.volume,
-                sectorPerformance: quote.sectorPerformance,
                 fearGreedScore,
                 fearGreedRating,
             };
@@ -3828,7 +3826,7 @@ You MUST respond with ONLY a JSON object — no markdown, no commentary, no code
                     // Normalize the move magnitude; tolerate strings like "-9%" or "6".
                     const rawMove = typeof t.price_move_pct === 'number'
                         ? t.price_move_pct
-                        : parseFloat(String(t.price_move_pct ?? '').replace(/[^0-9.\-]/g, ''));
+                        : parseFloat(String(t.price_move_pct ?? '').replace(/[^0-9.-]/g, ''));
                     const expectedMovePct = Number.isFinite(rawMove) && rawMove !== 0 ? rawMove : null;
                     // Direction: trust the model's tag, else infer from the move sign.
                     const rawDir = String(t.direction ?? '').toLowerCase();

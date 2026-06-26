@@ -38,7 +38,7 @@ Sentinel is an autonomous market intelligence engine that runs every signal thro
   ```
   After rebasing, force-push with `git push --force-with-lease` (never bare `--force`). Conventional commit prefixes: `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`.
 - Standing autonomy for `git add` (explicit filenames only) / `git push` / `npx tsc --noEmit` / `node` / `echo`. No per-invocation ask. Gates-green-per-commit. Destructive ops (`git reset --hard`, `git push --force`, `rm -rf`) still need an ask.
-- Prefer `npx tsc --noEmit` over `npm run build` during dev — fast type-check, no full Vite bundle. Full build only as pre-push gate.
+- Prefer `npx tsc -b --noEmit` over `npm run build` during dev — fast type-check, no full Vite bundle. Full build only as pre-push gate. **Use `tsc -b`, NOT bare `tsc --noEmit`:** this repo uses TypeScript project references (`tsconfig.app.json`), and bare `tsc --noEmit` checks only the root config — it silently SKIPS `src/` and reports a false green. CI runs `tsc -b` (via `npm run build`), so a bare-`tsc` "pass" can still fail CI with real `src/` type errors. (Cost this session: a Vercel build failure on type errors a bare `tsc --noEmit` reported clean.)
 - Never use Bash for file-read ops (`cat`/`head`/`tail`/`grep` on files Claude could use Read/Glob for). Bash for terminal-state operations only.
 - Batch large file writes. If a generation is >800 lines, split into sequential Write/Edit chunks.
 - Stage explicit filenames (`git add path/to/file.ts`), never `git add -A` or `git add -u`. The repo accumulates local dev-tool files (`.claude/`, `.mcp.json`, local notes) that should not be swept in.
@@ -84,7 +84,7 @@ supabase functions deploy <name>    # Deploy a single edge function
 supabase functions logs <name>      # Tail edge function logs (manual)
 ```
 
-**Pre-commit discipline:** `npx tsc --noEmit` must be clean. Add lint scripts as ratchets when they earn their keep (silent-catches, count-drift, canonical-imports — see "Lint Ratchets" below).
+**Pre-commit discipline:** `npx tsc -b --noEmit` must be clean (use `-b` — bare `tsc --noEmit` skips `src/` under project references and gives a false green). Add lint scripts as ratchets when they earn their keep (silent-catches, count-drift, canonical-imports — see "Lint Ratchets" below).
 
 **Pre-push discipline:** full `npm run build` must pass. Vercel CI catches frontend build errors; Supabase edge function deploys are independent and must be tested separately (`supabase functions invoke <name>` against local then prod).
 
@@ -279,7 +279,7 @@ Each ratchet bump requires (i) edit the const, (ii) inline comment naming the ex
 
 1. **Read `TODO.md` first.** Known bugs, active priorities, pending tasks. Update as work completes.
 2. **Start small.** One focused task per session beats a mega-batch.
-3. **Build-check before pushing.** `npx tsc --noEmit` is the minimum gate.
+3. **Build-check before pushing.** `npx tsc -b --noEmit` is the minimum gate (`-b` is mandatory — bare `tsc --noEmit` skips `src/` under project references).
 4. **Commit after each logical unit.** Don't batch 12 changes into one commit.
 5. **Don't rediscover — read CLAUDE.md.** Conventions here have been learned the hard way.
 6. **Keep CLAUDE.md current — proactively, not at session end.** Whenever a change introduces a new convention, renames a field, adds a critical file, changes a workflow pattern, or discovers a gotcha that cost time — update CLAUDE.md in the same commit. Don't wait. Don't ask permission.
