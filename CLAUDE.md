@@ -38,7 +38,7 @@ Sentinel is an autonomous market intelligence engine that runs every signal thro
   ```
   After rebasing, force-push with `git push --force-with-lease` (never bare `--force`). Conventional commit prefixes: `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`.
 - Standing autonomy for `git add` (explicit filenames only) / `git push` / `npx tsc --noEmit` / `node` / `echo`. No per-invocation ask. Gates-green-per-commit. Destructive ops (`git reset --hard`, `git push --force`, `rm -rf`) still need an ask.
-- Prefer `npx tsc --noEmit` over `npm run build` during dev — fast type-check, no full Vite bundle. Full build only as pre-push gate.
+- Prefer `npx tsc -b --noEmit` over `npm run build` during dev — fast type-check, no full Vite bundle. Full build only as pre-push gate. **Use `tsc -b`, NOT bare `tsc --noEmit`:** this repo uses TypeScript project references (`tsconfig.app.json`), and bare `tsc --noEmit` checks only the root config — it silently SKIPS `src/` and reports a false green. CI runs `tsc -b` (via `npm run build`), so a bare-`tsc` "pass" can still fail CI with real `src/` type errors. (Cost this session: a Vercel build failure on type errors a bare `tsc --noEmit` reported clean.)
 - Never use Bash for file-read ops (`cat`/`head`/`tail`/`grep` on files Claude could use Read/Glob for). Bash for terminal-state operations only.
 - Batch large file writes. If a generation is >800 lines, split into sequential Write/Edit chunks.
 - Stage explicit filenames (`git add path/to/file.ts`), never `git add -A` or `git add -u`. The repo accumulates local dev-tool files (`.claude/`, `.mcp.json`, local notes) that should not be swept in.
@@ -84,7 +84,7 @@ supabase functions deploy <name>    # Deploy a single edge function
 supabase functions logs <name>      # Tail edge function logs (manual)
 ```
 
-**Pre-commit discipline:** `npx tsc --noEmit` must be clean. Add lint scripts as ratchets when they earn their keep (silent-catches, count-drift, canonical-imports — see "Lint Ratchets" below).
+**Pre-commit discipline:** `npx tsc -b --noEmit` must be clean (use `-b` — bare `tsc --noEmit` skips `src/` under project references and gives a false green). Add lint scripts as ratchets when they earn their keep (silent-catches, count-drift, canonical-imports — see "Lint Ratchets" below).
 
 **Pre-push discipline:** full `npm run build` must pass. Vercel CI catches frontend build errors; Supabase edge function deploys are independent and must be tested separately (`supabase functions invoke <name>` against local then prod).
 
@@ -171,6 +171,7 @@ Never swallow errors with `.catch(() => {})` on operations that affect signal de
   2. Founder explicit approval
   3. A CLAUDE.md session-lock documenting the change + the regression evidence
 - **Adding a new agent is a cascade** — pipeline orchestrator, agent prompts file, schema types (`src/types/`), RAG injection for lessons, post-mortem outputs, dashboard renderer that surfaces the new agent's reasoning. Same commit.
+- **Two scan entry points, ONE routing contract.** The RSS full scan (`runScan`) and the discovery/single-ticker scan (`runSingleTickerScan`) MUST route by catalyst direction identically: `up` → Bullish Catalyst agent, `down` → Overreaction agent (both are LONG setups, so downstream TA/confluence direction stays `'long'`). The single-ticker path was historically overreaction-only, which silently rejected every bullish/neutral discovered ticker at "Overreaction" ("the move looks rational"). `runDiscoveryScan` passes `discoveryContext` (`reason`/`catalyst`/`direction`/`expectedMovePct`) into `runSingleTickerScan` — never re-derive a thin event there. A pre-agent **dislocation gate** (`DISCOVERY_FLAT_MOVE_PCT` in `constants.ts`) skips flat tickers with no directional catalyst so the gauntlet isn't burned on nothing-burgers. Agents must receive real context (market mood, regime, sector, TA, the grounded-search news body) — a bare `Event Type: X | Severity: Y` stub is what makes a thesis thin enough for the Red Team to nuke.
 - **Confidence calibration math** (isotonic regression / PAVA in `dynamicCalibrator.ts`, static buckets in `confidenceCalibrator.ts` as fallback): never silently change buckets, weights, or remapping. Bumping calibration means re-running on the historical sample + persisting the new calibration version alongside scores so old signals stay interpretable.
 - **Methodology versioning:** stamp every signal with the calibration version that produced its confidence score. A future audit asking "which version produced this score?" should resolve from the signal record, not from inferring git history.
 - **The Self-Critique pass is load-bearing** — never bypass it for performance. If latency is a concern, run it async and reconcile, never skip it.
@@ -278,7 +279,7 @@ Each ratchet bump requires (i) edit the const, (ii) inline comment naming the ex
 
 1. **Read `TODO.md` first.** Known bugs, active priorities, pending tasks. Update as work completes.
 2. **Start small.** One focused task per session beats a mega-batch.
-3. **Build-check before pushing.** `npx tsc --noEmit` is the minimum gate.
+3. **Build-check before pushing.** `npx tsc -b --noEmit` is the minimum gate (`-b` is mandatory — bare `tsc --noEmit` skips `src/` under project references).
 4. **Commit after each logical unit.** Don't batch 12 changes into one commit.
 5. **Don't rediscover — read CLAUDE.md.** Conventions here have been learned the hard way.
 6. **Keep CLAUDE.md current — proactively, not at session end.** Whenever a change introduces a new convention, renames a field, adds a critical file, changes a workflow pattern, or discovers a gotcha that cost time — update CLAUDE.md in the same commit. Don't wait. Don't ask permission.
