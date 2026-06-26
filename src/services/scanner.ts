@@ -59,7 +59,8 @@ import { RPDPatternMatcher } from './rpdPatternMatcher';
 import { BeneficialPatternDetector, type BeneficialContext } from './beneficialPatternDetector';
 import { DecisionQualityIndex, type DQIInputs } from './decisionQualityIndex';
 import { MarketWideScreener } from './marketWideScreener';
-import { DEFAULT_MIN_CONFIDENCE, DEFAULT_MIN_PRICE_RISE_PCT, CONFIDENCE_GATE_OVERREACTION, CONFIDENCE_GATE_CATALYST, CONFIDENCE_GATE_CONTAGION, CONFIDENCE_GATE_CRITIQUE, CONFIDENCE_FLOOR, CONFIDENCE_CEILING, MAX_CUMULATIVE_PENALTY, MAX_CUMULATIVE_BOOST, SWOT_WEAKNESS_IMBALANCE_PENALTY, SWOT_SEVERE_IMBALANCE_PENALTY, ROTATION_FAVORED_SECTOR_BOOST, ROTATION_DISFAVORED_SECTOR_PENALTY, ROTATION_HEADWIND_PENALTY, SEVERITY_THRESHOLD, DQI_MINIMUM_THRESHOLD, SCREENER_MIN_DOLLAR_VOLUME } from '@/config/constants';
+import { DEFAULT_MIN_PRICE_RISE_PCT, CONFIDENCE_GATE_OVERREACTION, CONFIDENCE_GATE_CATALYST, CONFIDENCE_GATE_CONTAGION, CONFIDENCE_GATE_CRITIQUE, CONFIDENCE_FLOOR, CONFIDENCE_CEILING, MAX_CUMULATIVE_PENALTY, MAX_CUMULATIVE_BOOST, SWOT_WEAKNESS_IMBALANCE_PENALTY, SWOT_SEVERE_IMBALANCE_PENALTY, ROTATION_FAVORED_SECTOR_BOOST, ROTATION_DISFAVORED_SECTOR_PENALTY, ROTATION_HEADWIND_PENALTY, SEVERITY_THRESHOLD, DQI_MINIMUM_THRESHOLD, SCREENER_MIN_DOLLAR_VOLUME, DISCOVERY_FLAT_MOVE_PCT } from '@/config/constants';
+import { SP500_TICKERS, FTSE100_TICKERS } from '@/config/tickerUniverse';
 import { sanitizeUntrustedText } from '@/utils/promptSanitizer';
 import { isDuplicateThesis } from '@/utils/thesisDedup';
 import { runPrimaryWithSelfConsistency, SELF_CONSISTENCY_TEMP } from './selfConsistency';
@@ -87,7 +88,31 @@ import type { Quote } from '@/types/market';
 // Caching for 30 minutes avoids redundant discovery within the same session.
 // ---------------------------------------------------------------------------
 const DISCOVERY_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
-let _discoveryCache: { result: { ticker: string; reason: string; catalyst: string }[]; expiresAt: number } | null = null;
+/**
+ * A ticker surfaced by AI discovery, with the directional read needed to route it
+ * to the correct primary agent (overreaction vs. bullish catalyst) downstream.
+ * `direction` is the catalyst's expected price impact; `expectedMovePct` is the
+ * recent move magnitude the model observed (null when it couldn't quantify it).
+ */
+interface DiscoveredTicker {
+    ticker: string;
+    reason: string;
+    catalyst: string;
+    direction: 'up' | 'down' | 'neutral';
+    expectedMovePct: number | null;
+}
+let _discoveryCache: { result: DiscoveredTicker[]; expiresAt: number } | null = null;
+
+/**
+ * Best-effort sector lookup for a ticker from the known universe (S&P 500 + FTSE 100).
+ * Returns undefined for tickers outside the curated lists — the agent's sector overlay
+ * is optional, so a miss simply means no sector-specific prompt injection.
+ */
+function lookupSectorForTicker(ticker: string): string | undefined {
+    const t = ticker.toUpperCase();
+    const hit = [...SP500_TICKERS, ...FTSE100_TICKERS].find(x => x.ticker.toUpperCase() === t);
+    return hit?.sector;
+}
 
 /**
  * Clamp confidence within bounds, respecting cumulative adjustment limits.
@@ -3119,7 +3144,11 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
      * Run a manual, single-ticker scan.
      * Bypasses the active watchlist and runs the full pipeline on a specific ticker immediately.
      */
-    static async runSingleTickerScan(ticker: string, isPaper: boolean = true) {
+    static async runSingleTickerScan(
+        ticker: string,
+        isPaper: boolean = true,
+        discoveryContext?: { reason: string; catalyst: string; direction: 'up' | 'down' | 'neutral'; expectedMovePct: number | null },
+    ) {
         const startTime = Date.now();
         console.log(`[Scanner] Initiating manual scan for ${ticker}...`);
 
@@ -3172,52 +3201,91 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
             }
 
             const currentPrice = quote.price;
-            const priceDropPct = quote.changePercent || 0;
+            const priceChangePct = quote.changePercent || 0;
 
-            // 3. Instead of waiting for RSS, we use Gemini's grounded search to find the latest "event" for this ticker
-            const eventPrompt = `Find the most recent, significant news event for ${ticker} from the last 48 hours. Focus on earnings, regulatory news, product launches, or major macroeconomic impacts specific to this company. If there is no major news, summarize the current market sentiment.`;
+            // 3. Grounded search for the latest, concrete event. When discovery handed us a
+            // catalyst, anchor the search to it so we retrieve the SPECIFIC facts (numbers,
+            // analyst reaction) rather than generic sentiment.
+            const eventPrompt = discoveryContext
+                ? `Find concrete, recent (last ~5 trading days) news for ${ticker} related to: ${discoveryContext.reason}. Report the specific facts — magnitude, numbers, and the analyst/market reaction.`
+                : `Find the most recent, significant news event for ${ticker} from the last 48 hours. Focus on earnings, regulatory news, product launches, or major macroeconomic impacts specific to this company. If there is no major news, summarize the current market sentiment.`;
 
             const eventExtraction = await AgentService.extractEventsFromText(eventPrompt);
+            const extractedEvent = (eventExtraction.success && eventExtraction.data?.events?.length > 0)
+                ? eventExtraction.data.events[0] : null;
+            const extractedEventType: string = extractedEvent?.event_type || '';
 
-            // Generate an event context
-            let mockHeadline = `Recent market activity for ${ticker}`;
-            let mockDesc = `Evaluating recent price action and news sentiment for ${ticker} across the market.`;
+            // Event headline/description — prefer the discovery catalyst, enrich with the
+            // extracted factual summary. This replaces the old "Event Type: X | Severity: Y"
+            // stub the agent could never judge irrationality from.
+            const eventHeadline = discoveryContext?.reason
+                ? sanitizeUntrustedText(discoveryContext.reason, 200)
+                : (extractedEvent?.headline || `Recent market activity for ${ticker}`);
+            const descParts: string[] = [];
+            if (discoveryContext) {
+                descParts.push(`Discovery catalyst (${discoveryContext.catalyst}, direction=${discoveryContext.direction}): ${sanitizeUntrustedText(discoveryContext.reason, 300)}`);
+            }
+            if (extractedEvent?.summary) {
+                descParts.push(sanitizeUntrustedText(extractedEvent.summary, 600));
+            } else if (extractedEvent) {
+                descParts.push(`Event: ${sanitizeUntrustedText(extractedEvent.event_type, 80)} (severity ${extractedEvent.severity}) — ${sanitizeUntrustedText(extractedEvent.headline, 200)}`);
+            }
+            const eventDesc = descParts.length > 0
+                ? descParts.join('\n')
+                : `Evaluating recent price action and news sentiment for ${ticker}.`;
 
-            if (eventExtraction.success && eventExtraction.data?.events?.length > 0) {
-                const e = eventExtraction.data.events[0];
-                mockHeadline = e.headline;
-                mockDesc = `Event Type: ${e.event_type} | Severity: ${e.severity}`;
+            // 3b. Enriched scan context — mirror the full scan so the agent reasons over
+            // market regime, mood, sector, and TA instead of a bare headline. Thin context
+            // is why the single-ticker path produced weak theses the Red Team then nuked.
+            let perfContext = '';
+            let regimeResult: Awaited<ReturnType<typeof buildScanContext>>['regimeResult'] = null;
+            let fearGreedScore: number | undefined;
+            let fearGreedRating: string | undefined;
+            try {
+                const ctx = await buildScanContext();
+                perfContext = ctx.perfContext;
+                regimeResult = ctx.regimeResult;
+                fearGreedScore = ctx.fearGreedScore;
+                fearGreedRating = ctx.fearGreedRating;
+            } catch (ctxErr) {
+                console.warn(`[Scanner] buildScanContext failed for ${ticker} (non-fatal):`, ctxErr);
             }
 
-            // 4. Save the event (upsert, fallback to insert if constraint missing)
-            const { error: upsertErr } = await supabase.from('market_events').upsert({
-                ticker: ticker,
-                event_type: 'manual_scan',
-                headline: mockHeadline,
-                severity: 8, // Force trigger analysis
-                is_overreaction_candidate: true,
-                source_type: 'manual'
-            }, { onConflict: 'ticker,headline', ignoreDuplicates: true });
-            if (upsertErr) {
-                console.warn('[Scanner] Upsert failed, falling back to insert:', upsertErr.message);
-                await supabase.from('market_events').insert({
-                    ticker: ticker,
-                    event_type: 'manual_scan',
-                    headline: mockHeadline,
-                    severity: 8,
-                    is_overreaction_candidate: true,
-                    source_type: 'manual'
-                });
-            }
+            const marketContext: MarketContext = {
+                fiftyTwoWeekHigh: quote.fiftyTwoWeekHigh,
+                fiftyTwoWeekLow: quote.fiftyTwoWeekLow,
+                avgVolume: quote.avgVolume,
+                currentVolume: quote.volume,
+                sectorPerformance: quote.sectorPerformance,
+                fearGreedScore,
+                fearGreedRating,
+            };
+            const sector = lookupSectorForTicker(ticker);
 
-            // 5. Run Overreaction Analysis
-            const analysis = await AgentService.evaluateOverreaction({
-                ticker,
-                eventHeadline: mockHeadline,
-                eventDesc: mockDesc,
-                currentPrice,
-                priceDropPct
-            });
+            // Early TA snapshot — fed to the primary agent as context (reused for confluence below).
+            let earlySnapshot: import('@/types/signals').TASnapshot | null = null;
+            let taContext = '';
+            try {
+                earlySnapshot = await TechnicalAnalysisService.getSnapshot(ticker);
+                if (earlySnapshot) taContext = TechnicalAnalysisService.formatForPrompt(earlySnapshot);
+            } catch { /* non-fatal — agent runs without TA context */ }
+
+            // 3c. Resolve trade direction. Trust discovery's explicit read first, then the
+            // catalyst keyword, then the recent price move. 'neutral' = no clear setup.
+            const positiveCatalystKeys = ['upgrade', 'beat', 'approval', 'launch', 'partnership', 'guidance_raise', 'contract', 'tailwind', 'rotation', 'buyback', 'insider_buy', 'breakout', 'raise', 'acquisition_target'];
+            const negativeCatalystKeys = ['miss', 'cut', 'downgrade', 'rejection', 'recall', 'lawsuit', 'investigation', 'fraud', 'warning', 'halt', 'default', 'probe', 'selloff', 'sell_off'];
+            const catalystKey = (discoveryContext?.catalyst || extractedEventType || '').toLowerCase();
+            const signedMove = (discoveryContext?.expectedMovePct ?? null) !== null
+                ? discoveryContext!.expectedMovePct!
+                : priceChangePct;
+            const absMove = Math.abs(signedMove);
+
+            let resolvedDirection: 'up' | 'down' | 'neutral' = discoveryContext?.direction ?? 'neutral';
+            if (resolvedDirection === 'neutral') {
+                if (positiveCatalystKeys.some(k => catalystKey.includes(k))) resolvedDirection = 'up';
+                else if (negativeCatalystKeys.some(k => catalystKey.includes(k))) resolvedDirection = 'down';
+                else if (absMove >= DISCOVERY_FLAT_MOVE_PCT) resolvedDirection = signedMove > 0 ? 'up' : 'down';
+            }
 
             let signalsGenerated = 0;
             // Captures which gauntlet stage rejected the ticker (null = a signal was emitted).
@@ -3225,14 +3293,123 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
             let rejectionStage: string | null = null;
             let rejectionReason: string | null = null;
 
-            if (analysis.success && analysis.data?.is_overreaction && analysis.data.confidence_score > DEFAULT_MIN_CONFIDENCE) {
+            // 4. Save the event (upsert, fallback to insert if constraint missing)
+            const savedEventType = discoveryContext ? `discovery_${discoveryContext.catalyst}` : 'manual_scan';
+            const { error: upsertErr } = await supabase.from('market_events').upsert({
+                ticker: ticker,
+                event_type: savedEventType,
+                headline: eventHeadline,
+                severity: 8, // Force trigger analysis
+                is_overreaction_candidate: resolvedDirection !== 'up',
+                source_type: discoveryContext ? 'ai_discovery' : 'manual'
+            }, { onConflict: 'ticker,headline', ignoreDuplicates: true });
+            if (upsertErr) {
+                console.warn('[Scanner] Upsert failed, falling back to insert:', upsertErr.message);
+                await supabase.from('market_events').insert({
+                    ticker: ticker,
+                    event_type: savedEventType,
+                    headline: eventHeadline,
+                    severity: 8,
+                    is_overreaction_candidate: resolvedDirection !== 'up',
+                    source_type: discoveryContext ? 'ai_discovery' : 'manual'
+                });
+            }
+
+            // 4b. DISLOCATION GATE — don't burn the gauntlet on a nothing-burger. With no
+            // directional catalyst AND no real recent move, there's no mispricing to trade.
+            if (resolvedDirection === 'neutral' && absMove < DISCOVERY_FLAT_MOVE_PCT) {
+                console.log(`[Scanner] ${ticker} skipped at Dislocation gate: flat (${signedMove.toFixed(2)}%) and no directional catalyst.`);
+                if (scanLog) {
+                    await supabase.from('scan_logs').update({
+                        status: 'completed', tickers_scanned: 1, events_detected: 1,
+                        signals_generated: 0, duration_ms: Date.now() - startTime,
+                    }).eq('id', scanLog.id);
+                }
+                return {
+                    success: true,
+                    verdict: 'rejected' as const,
+                    stage: 'Dislocation',
+                    reason: 'No actionable dislocation — price is flat and no directional catalyst to exploit.',
+                    summary: `${ticker}: no signal — no tradeable dislocation (flat price, no clear catalyst).`,
+                    signalsGenerated: 0,
+                };
+            }
+
+            // 5. Route to the directionally-appropriate primary agent (mirror full scan):
+            //    up  → Bullish Catalyst (under-priced upside)
+            //    down→ Overreaction (mispriced sell-off, buy-the-dip)
+            // Both are LONG setups, so downstream TA/confluence direction stays 'long'.
+            const agentBaseInput = {
+                ticker,
+                eventHeadline,
+                eventDesc,
+                currentPrice,
+                performanceContext: perfContext,
+                marketContext,
+                taContext,
+                regime: regimeResult?.regime,
+                sector,
+            };
+            let analysis: import('@/types/agents').AgentResult<import('@/types/agents').OverreactionResult>;
+            let signalType: import('@/types/signals').SignalType = 'long_overreaction';
+            let catalystAgentUsed = false;
+
+            if (resolvedDirection === 'up') {
+                const catalystResult = await AgentService.evaluateBullishCatalyst({
+                    ...agentBaseInput,
+                    priceChangePct: signedMove >= 0 ? signedMove : absMove,
+                });
+                if (catalystResult.success && catalystResult.data?.is_underreaction) {
+                    // Normalize catalyst shape to the overreaction shape for unified downstream processing.
+                    analysis = {
+                        ...catalystResult,
+                        data: {
+                            ...catalystResult.data,
+                            is_overreaction: true,
+                            financial_impact_assessment: catalystResult.data.catalyst_impact_assessment,
+                        },
+                    } as any;
+                    signalType = 'bullish_catalyst';
+                    catalystAgentUsed = true;
+                } else {
+                    // Catalyst already priced in — normalize to a non-actionable shape so the
+                    // gate below rejects cleanly with a catalyst-specific reason.
+                    analysis = catalystResult.success
+                        ? ({ ...catalystResult, data: catalystResult.data ? { ...catalystResult.data, is_overreaction: false } : null } as any)
+                        : (catalystResult as any);
+                }
+            } else {
+                analysis = await AgentService.evaluateOverreaction({
+                    ...agentBaseInput,
+                    priceDropPct: signedMove <= 0 ? signedMove : -absMove,
+                });
+            }
+
+            console.log(`[Scanner] ${catalystAgentUsed ? 'Catalyst' : 'Overreaction'} result for ${ticker} (dir=${resolvedDirection}): pass=${analysis.data?.is_overreaction}, confidence=${analysis.data?.confidence_score}`);
+
+            const primaryGate = catalystAgentUsed ? CONFIDENCE_GATE_CATALYST : CONFIDENCE_GATE_OVERREACTION;
+            if (analysis.success && analysis.data?.is_overreaction && analysis.data.confidence_score > primaryGate) {
                 // 6. Run Sanity Check
+                const primaryAgentName = catalystAgentUsed ? 'BULLISH_CATALYST_AGENT' : 'OVERREACTION_AGENT';
                 const sanity = await AgentService.runSanityCheck({
                     ticker,
                     originalThesis: analysis.data.thesis,
                     targetPrice: analysis.data.target_price,
                     stopLoss: analysis.data.stop_loss,
-                    agentType: 'OVERREACTION_AGENT'
+                    agentType: signalType,
+                    performanceContext: perfContext,
+                    taContext,
+                    regime: regimeResult?.regime,
+                    priorAgentContext: {
+                        agentName: primaryAgentName,
+                        confidence: analysis.data.confidence_score,
+                        thesis: analysis.data.thesis,
+                        reasoning: analysis.data.reasoning || analysis.data.thesis,
+                        identifiedBiases: analysis.data.identified_biases || [],
+                        convictionScore: analysis.data.conviction_score,
+                        moatRating: analysis.data.moat_rating,
+                        financialImpact: analysis.data.financial_impact_assessment,
+                    },
                 });
 
                 // Red Team HARD GATE — same as primary pipeline. Single-ticker discovery
@@ -3268,7 +3445,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                             analysis.data.thesis,
                             analysis.data.reasoning || analysis.data.thesis,
                             analysis.data.confidence_score,
-                            'OVERREACTION_AGENT'
+                            primaryAgentName
                         );
                         if (biasResult.success && biasResult.data) {
                             singleBiasDetectiveOutput = biasResult.data;
@@ -3290,7 +3467,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                             analysis.data.reasoning || analysis.data.thesis,
                             analysis.data.confidence_score,
                             sanity.data?.counter_thesis,
-                            'long_overreaction'
+                            signalType
                         );
                         critiqueOutput = critique;
                         const rawAdj = critique.adjustedConfidence ?? singleConfidence;
@@ -3308,7 +3485,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                             analysis.data.thesis,
                             analysis.data.reasoning || analysis.data.thesis,
                             singleConfidence,
-                            'OVERREACTION_AGENT'
+                            primaryAgentName
                         );
                         singleNoiseConfidenceOutput = noiseResult;
                         if (noiseResult.confidence_adjustment !== 0) {
@@ -3328,7 +3505,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                             stopLoss: analysis.data.stop_loss,
                             currentPrice,
                             entryHigh: analysis.data.suggested_entry_high,
-                            signalType: 'long_overreaction',
+                            signalType,
                             moatRating: analysis.data.moat_rating,
                             lynchCategory: analysis.data.lynch_category,
                             convictionScore: analysis.data.conviction_score,
@@ -3407,11 +3584,11 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                         try {
                             singleSwotOutput = await SWOTAnalysisService.analyze({
                                 ticker,
-                                headline: `Manual scan: ${ticker}`,
+                                headline: eventHeadline,
                                 thesis: analysis.data.thesis,
                                 reasoning: analysis.data.reasoning || analysis.data.thesis,
                                 confidence: singleConfidence,
-                                signalType: 'long_overreaction',
+                                signalType,
                                 counterThesis: sanity.data?.counter_thesis ?? null,
                                 criticalFlaws: critiqueOutput?.criticalFlaws ?? [],
                                 decisionTwin: singleDecisionTwinOutput,
@@ -3423,7 +3600,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
 
                         // Thesis dedup — same guard as the primary pipeline. Prevents a
                         // single-ticker re-scan from re-emitting a near-duplicate signal.
-                        const singleDedupCheck = await isDuplicateThesis(ticker, 'long_overreaction', analysis.data.thesis);
+                        const singleDedupCheck = await isDuplicateThesis(ticker, signalType, analysis.data.thesis);
                         if (singleDedupCheck.duplicate) {
                             console.log(`[Scanner] Thesis dedup REJECTED ${ticker} (single-scan): matched ${singleDedupCheck.matchedSignalId} (${singleDedupCheck.reason})`);
                             // Fall through — signal is not inserted, but signalsGenerated
@@ -3435,11 +3612,11 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                         } else {
                         const { data: savedSignal, error: discSignalErr } = await supabase.from('signals').insert({
                             ticker: ticker,
-                            signal_type: 'long_overreaction',
+                            signal_type: signalType,
                             confidence_score: singleConfidence,
                             calibrated_confidence: calibratedConf,
                             risk_level: sanity.data.risk_score > 80 ? 'low' : 'medium',
-                            bias_type: (analysis.data as any).bias_type || 'recency_bias',
+                            bias_type: (analysis.data as any).bias_type || (catalystAgentUsed ? 'underreaction' : 'recency_bias'),
                             thesis: analysis.data.thesis,
                             counter_argument: sanity.data.counter_thesis,
                             suggested_entry_low: analysis.data.suggested_entry_low,
@@ -3451,7 +3628,8 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                             confluence_score: discConfluence.score,
                             confluence_level: discConfluence.level,
                             agent_outputs: {
-                                overreaction: analysis.data,
+                                overreaction: catalystAgentUsed ? undefined : analysis.data,
+                                bullish_catalyst: catalystAgentUsed ? (analysis.data as any) : undefined,
                                 red_team: sanity.data,
                                 self_critique: critiqueOutput,
                                 bias_detective: singleBiasDetectiveOutput,
@@ -3513,14 +3691,18 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                     }
                 }
             } else {
-                // Overreaction rejection — no exploitable mispricing at the entry threshold.
-                rejectionStage = 'Overreaction';
+                // Primary-agent rejection — no exploitable mispricing at the entry threshold.
+                // Direction-aware: the catalyst and overreaction agents fail for different reasons.
+                rejectionStage = catalystAgentUsed ? 'Bullish Catalyst' : 'Overreaction';
+                const gateFloor = catalystAgentUsed ? CONFIDENCE_GATE_CATALYST : CONFIDENCE_GATE_OVERREACTION;
                 if (!analysis.success) {
-                    rejectionReason = 'The Overreaction agent could not complete its evaluation.';
+                    rejectionReason = `The ${catalystAgentUsed ? 'Bullish Catalyst' : 'Overreaction'} agent could not complete its evaluation.`;
                 } else if (!analysis.data?.is_overreaction) {
-                    rejectionReason = 'No mispriced overreaction — the move looks rational, not an exploitable dislocation.';
+                    rejectionReason = resolvedDirection === 'up'
+                        ? 'Catalyst already priced in — no under-reaction left to exploit on the upside.'
+                        : 'No mispriced overreaction — the move looks rational, not an exploitable dislocation.';
                 } else {
-                    rejectionReason = `Conviction ${analysis.data.confidence_score}% sits below the ${DEFAULT_MIN_CONFIDENCE}% entry floor.`;
+                    rejectionReason = `Conviction ${analysis.data.confidence_score}% sits below the ${gateFloor}% entry floor.`;
                 }
             }
 
@@ -3574,7 +3756,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
      * based on current market events, news catalysts, and unusual market action.
      * Returns up to `count` tickers with context on why each was flagged.
      */
-    static async discoverTrendingTickers(count: number = 5): Promise<{ ticker: string; reason: string; catalyst: string }[]> {
+    static async discoverTrendingTickers(count: number = 5): Promise<DiscoveredTicker[]> {
         // Return cached result if still fresh (avoids expensive grounded search calls)
         if (_discoveryCache && Date.now() < _discoveryCache.expiresAt) {
             console.log(`[Scanner] discoverTrendingTickers: returning cached result (${_discoveryCache.result.length} tickers, expires in ${Math.round((_discoveryCache.expiresAt - Date.now()) / 1000)}s)`);
@@ -3586,11 +3768,18 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
         try {
             const { data: geminiRes, error: geminiErr } = await supabase.functions.invoke('proxy-gemini', {
                 body: {
-                    systemInstruction: `You are an elite market analyst for a quantitative trading desk. Today is ${new Date().toISOString().split('T')[0]}. Your job is to identify equities experiencing significant catalytic events RIGHT NOW that could create short-term trading opportunities. Focus on: earnings surprises, FDA decisions, analyst upgrades/downgrades, unusual volume spikes, sector rotation, insider activity, and geopolitical events affecting specific companies. You may include both US and international equities (e.g. FRES.L, AAF.L, THX.V) — preserve exchange suffixes. No penny stocks, no OTC.`,
-                    prompt: `Identify the top ${count} most actionable stock tickers to analyze right now based on today's market conditions. Include both US and major international equities where catalysts are strongest. For each, explain the specific catalyst driving the opportunity. To ensure diverse coverage, focus on different sectors than your previous scans. (Random seed for variance: ${Math.random()}).
+                    systemInstruction: `You are an elite market analyst for a quantitative trading desk. Today is ${new Date().toISOString().split('T')[0]}. The desk trades MISPRICED DISLOCATIONS — stocks where a specific, recent catalyst has driven a SHARP price move that the market has likely over- or under-reacted to. You are NOT looking for "quality stocks" or "stocks in the news"; you are hunting tradeable dislocations with a clear directional thesis. Each pick MUST have (a) a concrete catalyst in the last ~5 trading days, and (b) a meaningful recent price move (ideally ≥3%). Skip mega-caps drifting on no news. You may include both US and international equities (e.g. FRES.L, AAF.L, THX.V) — preserve exchange suffixes. No penny stocks, no OTC.`,
+                    prompt: `Identify the top ${count} stock tickers with the strongest MISPRICED DISLOCATION setups right now. For each, the catalyst must be specific and recent, and there must be a real price move to react to. To ensure diverse coverage, span different sectors. (Random seed for variance: ${Math.random()}).
+
+For each ticker provide:
+- "ticker": symbol (preserve exchange suffix)
+- "reason": the specific catalyst AND why the price reaction may be mispriced (1-2 sentences, concrete facts)
+- "catalyst": short snake_case tag (e.g. earnings_miss, earnings_beat, fda_rejection, analyst_downgrade, guidance_cut, product_launch, sector_rotation)
+- "direction": "down" if the catalyst drove/should drive the price DOWN (overreaction buy-the-dip candidate), "up" if it drove/should drive it UP (under-priced bullish catalyst), or "neutral" if genuinely unclear
+- "price_move_pct": the approximate recent % move you observed (negative for a drop, positive for a rise; use 0 if you cannot estimate)
 
 You MUST respond with ONLY a JSON object — no markdown, no commentary, no code fences. Use this exact format:
-{"tickers": [{"ticker": "NVDA", "reason": "Earnings beat expectations by 15%", "catalyst": "earnings_beat"}, {"ticker": "FRES.L", "reason": "Gold price surge lifting miners", "catalyst": "sector_rotation"}]}`,
+{"tickers": [{"ticker": "NVDA", "reason": "Sold off 9% on a guidance cut the market is extrapolating too far", "catalyst": "guidance_cut", "direction": "down", "price_move_pct": -9}, {"ticker": "FRES.L", "reason": "Up 6% as the gold surge re-rates miners but estimates haven't caught up", "catalyst": "sector_rotation", "direction": "up", "price_move_pct": 6}]}`,
                     requireGroundedSearch: true,
                     temperature: 0.8,
                     // responseSchema is intentionally omitted — incompatible with grounded search.
@@ -3635,12 +3824,30 @@ You MUST respond with ONLY a JSON object — no markdown, no commentary, no code
                 // Accept both { tickers: [...] } and bare array formats
                 const tickerArray = Array.isArray(parsed) ? parsed : (parsed.tickers || []);
 
-                const discovered = tickerArray.slice(0, count).map((t: any) => ({
-                    // Preserve exchange suffixes like .L, .TO, .V, .DE — only strip truly invalid chars
-                    ticker: (t.ticker || '').toUpperCase().replace(/[^A-Z0-9.]/g, ''),
-                    reason: t.reason || 'Trending',
-                    catalyst: t.catalyst || 'other',
-                })).filter((t: any) => {
+                const discovered: DiscoveredTicker[] = tickerArray.slice(0, count).map((t: any) => {
+                    // Normalize the move magnitude; tolerate strings like "-9%" or "6".
+                    const rawMove = typeof t.price_move_pct === 'number'
+                        ? t.price_move_pct
+                        : parseFloat(String(t.price_move_pct ?? '').replace(/[^0-9.\-]/g, ''));
+                    const expectedMovePct = Number.isFinite(rawMove) && rawMove !== 0 ? rawMove : null;
+                    // Direction: trust the model's tag, else infer from the move sign.
+                    const rawDir = String(t.direction ?? '').toLowerCase();
+                    let direction: DiscoveredTicker['direction'] =
+                        rawDir === 'up' || rawDir === 'down' || rawDir === 'neutral'
+                            ? (rawDir as DiscoveredTicker['direction'])
+                            : 'neutral';
+                    if (direction === 'neutral' && expectedMovePct !== null) {
+                        direction = expectedMovePct > 0 ? 'up' : 'down';
+                    }
+                    return {
+                        // Preserve exchange suffixes like .L, .TO, .V, .DE — only strip truly invalid chars
+                        ticker: (t.ticker || '').toUpperCase().replace(/[^A-Z0-9.]/g, ''),
+                        reason: t.reason || 'Trending',
+                        catalyst: t.catalyst || 'other',
+                        direction,
+                        expectedMovePct,
+                    };
+                }).filter((t: DiscoveredTicker) => {
                     const base = t.ticker.replace(/\.[A-Z]{1,3}$/, '');
                     return base.length >= 1 && base.length <= 5 && t.ticker.length <= 8;
                 });
@@ -3737,8 +3944,15 @@ You MUST respond with ONLY a JSON object — no markdown, no commentary, no code
                     } as any);
                 }
 
-                // Run full single-ticker scan
-                const result = await this.runSingleTickerScan(ticker);
+                // Run full single-ticker scan — pass the discovery context so the
+                // pipeline routes by catalyst direction and reasons over the real
+                // grounded-search catalyst instead of re-deriving a thin one.
+                const result = await this.runSingleTickerScan(ticker, true, {
+                    reason: item.reason,
+                    catalyst: item.catalyst,
+                    direction: item.direction,
+                    expectedMovePct: item.expectedMovePct,
+                });
                 scannedTickers.push(ticker);
 
                 // Capture WHY each ticker passed or was rejected so the discovery

@@ -624,6 +624,7 @@ Return JSON.
                                 ticker: { type: "string" },
                                 event_type: { type: "string", description: "e.g., earnings_miss, guidance_cut, fda_decision, analyst_upgrade, product_launch, m_and_a, tariff, price_movement" },
                                 headline: { type: "string" },
+                                summary: { type: "string", description: "2-4 sentence factual summary: what happened, the magnitude (numbers if available), and the market/analyst reaction. This is the evidence downstream agents use to judge mispricing — be concrete, not generic." },
                                 severity: { type: "integer", description: "1-10 impact scale" }
                             },
                             required: ["ticker", "event_type", "headline", "severity"]

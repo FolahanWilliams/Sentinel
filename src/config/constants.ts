@@ -55,6 +55,12 @@ export const ROTATION_DISFAVORED_SECTOR_PENALTY = 8;
 export const ROTATION_HEADWIND_PENALTY = 5;
 export const SEVERITY_THRESHOLD = 3; // Lowered from 4 to let more events into deep analysis
 export const DEFAULT_SIGNAL_TIMEFRAME_DAYS = 10; // Default expected holding period
+/**
+ * Discovery scan: absolute % daily move below which price action is treated as
+ * non-directional ("flat"). Used by the single-ticker dislocation gate to decide
+ * whether a discovered ticker has an actionable setup or is a nothing-burger.
+ */
+export const DISCOVERY_FLAT_MOVE_PCT = 1.5;
 
 // ===========================
 // MARKET MOOD THRESHOLDS
