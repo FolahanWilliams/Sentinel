@@ -33,6 +33,12 @@ export const CONFIDENCE_GATE_CATALYST = 65; // Initial gate for bullish catalyst
 export const CONFIDENCE_GATE_CONTAGION = 70; // Initial gate for contagion signal
 export const CONFIDENCE_GATE_CRITIQUE = 50; // Floor after self-critique pass
 export const CONFIDENCE_EXPIRY_THRESHOLD = 40; // Below this, signal is expired by decay
+/**
+ * Red Team risk_score at or below this is a hard block. Convention (SANITY_CHECK_SCHEMA):
+ * higher = safer (100 perfectly safe, 0 catastrophic). A score ≤ this indicates a trade
+ * the Red Team considers deeply unsafe — block unconditionally. Tune here, not inline.
+ */
+export const RED_TEAM_BLOCK_SAFETY_THRESHOLD = 25;
 // ===========================
 // SCREENER CONSTANTS
 // ===========================
