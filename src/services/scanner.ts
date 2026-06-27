@@ -3271,7 +3271,7 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
             const oneDayMovePct = Number.isFinite(priceChangePct) ? priceChangePct : null;
             let fiveDayMovePct: number | null = null;
             try {
-                const past = new Date(Date.now() - 7 * 86_400_000).toISOString().split('T')[0];
+                const past = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
                 const pastPrice = await MarketDataService.getHistoricalPriceAtDate(ticker, past);
                 if (pastPrice && pastPrice > 0) {
                     fiveDayMovePct = ((currentPrice - pastPrice) / pastPrice) * 100;
