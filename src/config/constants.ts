@@ -67,6 +67,12 @@ export const DEFAULT_SIGNAL_TIMEFRAME_DAYS = 10; // Default expected holding per
  * whether a discovered ticker has an actionable setup or is a nothing-burger.
  */
 export const DISCOVERY_FLAT_MOVE_PCT = 1.5;
+/**
+ * Max concurrent tickers in a discovery scan. Each single-ticker scan fires ~8-10 Gemini
+ * calls, so keep this low enough to respect GEMINI_MAX_CALLS_PER_MINUTE (the proxy rate-limits;
+ * a burst of all tickers at once would queue and risk timeouts). 3 balances latency vs. limits.
+ */
+export const DISCOVERY_SCAN_CONCURRENCY = 3;
 
 // ===========================
 // MARKET MOOD THRESHOLDS

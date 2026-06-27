@@ -59,7 +59,7 @@ import { RPDPatternMatcher } from './rpdPatternMatcher';
 import { BeneficialPatternDetector, type BeneficialContext } from './beneficialPatternDetector';
 import { DecisionQualityIndex, type DQIInputs } from './decisionQualityIndex';
 import { MarketWideScreener } from './marketWideScreener';
-import { DEFAULT_MIN_PRICE_RISE_PCT, CONFIDENCE_GATE_OVERREACTION, CONFIDENCE_GATE_CATALYST, CONFIDENCE_GATE_CONTAGION, CONFIDENCE_GATE_CRITIQUE, CONFIDENCE_FLOOR, CONFIDENCE_CEILING, MAX_CUMULATIVE_PENALTY, MAX_CUMULATIVE_BOOST, SWOT_WEAKNESS_IMBALANCE_PENALTY, SWOT_SEVERE_IMBALANCE_PENALTY, ROTATION_FAVORED_SECTOR_BOOST, ROTATION_DISFAVORED_SECTOR_PENALTY, ROTATION_HEADWIND_PENALTY, SEVERITY_THRESHOLD, DQI_MINIMUM_THRESHOLD, SCREENER_MIN_DOLLAR_VOLUME, DISCOVERY_FLAT_MOVE_PCT, RED_TEAM_BLOCK_SAFETY_THRESHOLD } from '@/config/constants';
+import { DEFAULT_MIN_PRICE_RISE_PCT, CONFIDENCE_GATE_OVERREACTION, CONFIDENCE_GATE_CATALYST, CONFIDENCE_GATE_CONTAGION, CONFIDENCE_GATE_CRITIQUE, CONFIDENCE_FLOOR, CONFIDENCE_CEILING, MAX_CUMULATIVE_PENALTY, MAX_CUMULATIVE_BOOST, SWOT_WEAKNESS_IMBALANCE_PENALTY, SWOT_SEVERE_IMBALANCE_PENALTY, ROTATION_FAVORED_SECTOR_BOOST, ROTATION_DISFAVORED_SECTOR_PENALTY, ROTATION_HEADWIND_PENALTY, SEVERITY_THRESHOLD, DQI_MINIMUM_THRESHOLD, SCREENER_MIN_DOLLAR_VOLUME, DISCOVERY_FLAT_MOVE_PCT, RED_TEAM_BLOCK_SAFETY_THRESHOLD, DISCOVERY_SCAN_CONCURRENCY } from '@/config/constants';
 import { SP500_TICKERS, FTSE100_TICKERS } from '@/config/tickerUniverse';
 import { sanitizeUntrustedText } from '@/utils/promptSanitizer';
 import { isDuplicateThesis } from '@/utils/thesisDedup';
@@ -3372,36 +3372,65 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
             let analysis: import('@/types/agents').AgentResult<import('@/types/agents').OverreactionResult>;
             let signalType: import('@/types/signals').SignalType = 'long_overreaction';
             let catalystAgentUsed = false;
+            // Bound after the first call so self-consistency re-uses the SAME branch at a
+            // higher temperature (mirrors the full scan).
+            let rerunPrimary: (() => Promise<import('@/types/agents').AgentResult<import('@/types/agents').OverreactionResult>>) | null = null;
 
             if (resolvedDirection === 'up') {
-                const catalystResult = await AgentService.evaluateBullishCatalyst({
-                    ...agentBaseInput,
-                    priceChangePct: signedMove >= 0 ? signedMove : absMove,
-                });
+                const catalystInput = { ...agentBaseInput, priceChangePct: signedMove >= 0 ? signedMove : absMove };
+                // Normalize catalyst shape to the overreaction shape for unified downstream
+                // processing. A non-underreaction is synthesized as is_overreaction=false so the
+                // self-consistency direction check can detect a disagreeing re-sample.
+                const normalizeCatalyst = (r: any): any => (r.success && r.data?.is_underreaction)
+                    ? ({ ...r, data: { ...r.data, is_overreaction: true, financial_impact_assessment: r.data.catalyst_impact_assessment } })
+                    : (r.success ? ({ ...r, data: r.data ? { ...r.data, is_overreaction: false } : null }) : r);
+                const catalystResult = await AgentService.evaluateBullishCatalyst(catalystInput);
+                analysis = normalizeCatalyst(catalystResult);
                 if (catalystResult.success && catalystResult.data?.is_underreaction) {
-                    // Normalize catalyst shape to the overreaction shape for unified downstream processing.
-                    analysis = {
-                        ...catalystResult,
-                        data: {
-                            ...catalystResult.data,
-                            is_overreaction: true,
-                            financial_impact_assessment: catalystResult.data.catalyst_impact_assessment,
-                        },
-                    } as any;
                     signalType = 'bullish_catalyst';
                     catalystAgentUsed = true;
-                } else {
-                    // Catalyst already priced in — normalize to a non-actionable shape so the
-                    // gate below rejects cleanly with a catalyst-specific reason.
-                    analysis = catalystResult.success
-                        ? ({ ...catalystResult, data: catalystResult.data ? { ...catalystResult.data, is_overreaction: false } : null } as any)
-                        : (catalystResult as any);
                 }
+                rerunPrimary = async () => normalizeCatalyst(
+                    await AgentService.evaluateBullishCatalyst({ ...catalystInput, temperature: SELF_CONSISTENCY_TEMP })
+                );
             } else {
-                analysis = await AgentService.evaluateOverreaction({
-                    ...agentBaseInput,
-                    priceDropPct: signedMove <= 0 ? signedMove : -absMove,
-                });
+                const overreactionInput = { ...agentBaseInput, priceDropPct: signedMove <= 0 ? signedMove : -absMove };
+                analysis = await AgentService.evaluateOverreaction(overreactionInput);
+                rerunPrimary = () => AgentService.evaluateOverreaction({ ...overreactionInput, temperature: SELF_CONSISTENCY_TEMP });
+            }
+
+            // Conditional self-consistency — only re-samples when first-sample confidence sits in
+            // the uncertainty zone; aborts entirely on directional disagreement across samples.
+            if (rerunPrimary) {
+                try {
+                    const consistency = await runPrimaryWithSelfConsistency({
+                        firstSample: analysis,
+                        rerun: rerunPrimary,
+                        extractConfidence: (d: any) => (d?.confidence_score ?? 0),
+                        extractDirection: (d: any) => (d?.is_overreaction ? 'long' : 'none'),
+                        tag: `${ticker}/${signalType}`,
+                    });
+                    if (consistency.abort) {
+                        console.warn(`[Scanner] Self-consistency abort for ${ticker}: directional disagreement across samples.`);
+                        if (scanLog) {
+                            await supabase.from('scan_logs').update({
+                                status: 'completed', tickers_scanned: 1, events_detected: 1,
+                                signals_generated: 0, duration_ms: Date.now() - startTime,
+                            }).eq('id', scanLog.id);
+                        }
+                        return {
+                            success: true,
+                            verdict: 'rejected' as const,
+                            stage: 'Self-Consistency',
+                            reason: 'Primary agent disagreed on direction across temperature re-samples — thesis too unstable to trade.',
+                            summary: `${ticker}: no signal — self-consistency abort (unstable direction).`,
+                            signalsGenerated: 0,
+                        };
+                    }
+                    analysis = consistency.finalSample;
+                } catch (scErr: any) {
+                    console.warn(`[Scanner] Self-consistency failed for ${ticker} (non-fatal):`, scErr?.message || scErr);
+                }
             }
 
             console.log(`[Scanner] ${catalystAgentUsed ? 'Catalyst' : 'Overreaction'} result for ${ticker} (dir=${resolvedDirection}): pass=${analysis.data?.is_overreaction}, confidence=${analysis.data?.confidence_score}`);
@@ -3928,14 +3957,13 @@ You MUST respond with ONLY a JSON object — no markdown, no commentary, no code
 
         let totalSignals = 0;
         const scannedTickers: string[] = [];
-        const outcomes: ScanOutcome[] = [];
 
-        // 3. Run agent pipeline on each discovered ticker
-        for (let i = 0; i < discovered.length; i++) {
-            const item = discovered[i]!;
+        // 3. Run the agent pipeline on each discovered ticker. Tickers are independent
+        // (separate scan_log + market_event rows), so we run them with bounded concurrency
+        // instead of strictly sequentially — much lower wall-clock for a 5-ticker scan while
+        // staying under the Gemini rate limit. Results are collected in discovery order.
+        const scanOne = async (item: DiscoveredTicker, index: number): Promise<ScanOutcome> => {
             const { ticker, reason, catalyst } = item;
-            onProgress?.(`Scanning ${ticker} (${i + 1}/${discovered.length}): ${reason}`);
-
             try {
                 // Ensure ticker exists in watchlist (FK constraint on market_events)
                 await this.ensureWatchlistEntry(ticker);
@@ -3974,37 +4002,49 @@ You MUST respond with ONLY a JSON object — no markdown, no commentary, no code
                 });
                 scannedTickers.push(ticker);
 
-                // Capture WHY each ticker passed or was rejected so the discovery
-                // ledger can surface the pipeline's rigor instead of dropping it.
                 const r = result as {
                     success: boolean; signalsGenerated?: number; summary?: string;
                     error?: string; verdict?: ScanOutcome['verdict']; stage?: string | null; reason?: string;
                 };
                 const signals = r.signalsGenerated ?? 0;
-                outcomes.push({
+                const outcome: ScanOutcome = {
                     ticker,
                     catalyst,
                     verdict: r.verdict ?? (r.success ? (signals > 0 ? 'signal' : 'rejected') : 'error'),
                     stage: r.stage ?? null,
                     reason: r.reason ?? r.summary ?? r.error ?? '',
                     signals,
-                });
-
-                if (result.success && signals > 0) {
-                    totalSignals += signals;
-                }
+                };
+                onProgress?.(`Scanned ${ticker} (${index + 1}/${discovered.length}): ${outcome.verdict}${signals > 0 ? ' — signal' : ''}`);
+                return outcome;
             } catch (e: any) {
                 console.warn(`[Scanner] Discovery scan failed for ${ticker}:`, e.message);
-                outcomes.push({
+                return {
                     ticker,
                     catalyst,
                     verdict: 'error',
                     stage: 'Pipeline Error',
                     reason: e?.message || 'Scan failed unexpectedly.',
                     signals: 0,
-                });
+                };
             }
-        }
+        };
+
+        // Bounded worker pool — at most DISCOVERY_SCAN_CONCURRENCY tickers in flight at once.
+        const outcomes: ScanOutcome[] = new Array(discovered.length);
+        let nextIndex = 0;
+        const worker = async (): Promise<void> => {
+            while (true) {
+                const i = nextIndex++;
+                if (i >= discovered.length) return;
+                outcomes[i] = await scanOne(discovered[i]!, i);
+            }
+        };
+        await Promise.all(
+            Array.from({ length: Math.min(DISCOVERY_SCAN_CONCURRENCY, discovered.length) }, () => worker())
+        );
+
+        totalSignals = outcomes.reduce((sum, o) => sum + (o.verdict === 'signal' ? (o.signals ?? 0) : 0), 0);
 
         // 4. Update scan log
         const duration = Date.now() - startTime;
