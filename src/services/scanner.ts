@@ -59,7 +59,7 @@ import { RPDPatternMatcher } from './rpdPatternMatcher';
 import { BeneficialPatternDetector, type BeneficialContext } from './beneficialPatternDetector';
 import { DecisionQualityIndex, type DQIInputs } from './decisionQualityIndex';
 import { MarketWideScreener } from './marketWideScreener';
-import { DEFAULT_MIN_PRICE_RISE_PCT, CONFIDENCE_GATE_OVERREACTION, CONFIDENCE_GATE_CATALYST, CONFIDENCE_GATE_CONTAGION, CONFIDENCE_GATE_CRITIQUE, CONFIDENCE_FLOOR, CONFIDENCE_CEILING, MAX_CUMULATIVE_PENALTY, MAX_CUMULATIVE_BOOST, SWOT_WEAKNESS_IMBALANCE_PENALTY, SWOT_SEVERE_IMBALANCE_PENALTY, ROTATION_FAVORED_SECTOR_BOOST, ROTATION_DISFAVORED_SECTOR_PENALTY, ROTATION_HEADWIND_PENALTY, SEVERITY_THRESHOLD, DQI_MINIMUM_THRESHOLD, SCREENER_MIN_DOLLAR_VOLUME, DISCOVERY_FLAT_MOVE_PCT } from '@/config/constants';
+import { DEFAULT_MIN_PRICE_RISE_PCT, CONFIDENCE_GATE_OVERREACTION, CONFIDENCE_GATE_CATALYST, CONFIDENCE_GATE_CONTAGION, CONFIDENCE_GATE_CRITIQUE, CONFIDENCE_FLOOR, CONFIDENCE_CEILING, MAX_CUMULATIVE_PENALTY, MAX_CUMULATIVE_BOOST, SWOT_WEAKNESS_IMBALANCE_PENALTY, SWOT_SEVERE_IMBALANCE_PENALTY, ROTATION_FAVORED_SECTOR_BOOST, ROTATION_DISFAVORED_SECTOR_PENALTY, ROTATION_HEADWIND_PENALTY, SEVERITY_THRESHOLD, DQI_MINIMUM_THRESHOLD, SCREENER_MIN_DOLLAR_VOLUME, DISCOVERY_FLAT_MOVE_PCT, RED_TEAM_BLOCK_SAFETY_THRESHOLD } from '@/config/constants';
 import { SP500_TICKERS, FTSE100_TICKERS } from '@/config/tickerUniverse';
 import { sanitizeUntrustedText } from '@/utils/promptSanitizer';
 import { isDuplicateThesis } from '@/utils/thesisDedup';
@@ -165,16 +165,6 @@ function applyBoundedAdjustment(
 // The verdict field is new; cached responses may not have it. In that case we
 // fall back to risk_score + passes_sanity_check. See SanityCheckResult type.
 // ---------------------------------------------------------------------------
-
-/**
- * Red Team risk_score at or below this is treated as a hard block.
- *
- * Note: the risk_score convention in SANITY_CHECK_SCHEMA is "higher is safer".
- * 100 = perfectly safe, 0 = catastrophic. scanner.ts already uses `risk_score > 80`
- * to mean "low risk". A score ≤ 25 therefore indicates a trade the Red Team
- * considers deeply unsafe — block unconditionally.
- */
-const RED_TEAM_BLOCK_SAFETY_THRESHOLD = 25;
 
 /**
  * Decide whether a Red Team result should block signal emission entirely.
@@ -3273,9 +3263,23 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
             const positiveCatalystKeys = ['upgrade', 'beat', 'approval', 'launch', 'partnership', 'guidance_raise', 'contract', 'tailwind', 'rotation', 'buyback', 'insider_buy', 'breakout', 'raise', 'acquisition_target'];
             const negativeCatalystKeys = ['miss', 'cut', 'downgrade', 'rejection', 'recall', 'lawsuit', 'investigation', 'fraud', 'warning', 'halt', 'default', 'probe', 'selloff', 'sell_off'];
             const catalystKey = (discoveryContext?.catalyst || extractedEventType || '').toLowerCase();
-            const signedMove = (discoveryContext?.expectedMovePct ?? null) !== null
-                ? discoveryContext!.expectedMovePct!
-                : priceChangePct;
+
+            // 3c-i. Corroborate against the REAL price tape. The model's self-reported
+            // direction/magnitude can be hallucinated, so we measure the actual recent
+            // return — 1-day from the live quote, ~5-trading-day from a historical lookup —
+            // and feed the agent the measured magnitude rather than the model's claim.
+            const oneDayMovePct = Number.isFinite(priceChangePct) ? priceChangePct : null;
+            let fiveDayMovePct: number | null = null;
+            try {
+                const past = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
+                const pastPrice = await MarketDataService.getHistoricalPriceAtDate(ticker, past);
+                if (pastPrice && pastPrice > 0) {
+                    fiveDayMovePct = ((currentPrice - pastPrice) / pastPrice) * 100;
+                }
+            } catch { /* non-fatal — fall back to the 1-day change for corroboration */ }
+
+            const measuredMovePct = fiveDayMovePct ?? oneDayMovePct;
+            const signedMove = measuredMovePct ?? (discoveryContext?.expectedMovePct ?? priceChangePct);
             const absMove = Math.abs(signedMove);
 
             let resolvedDirection: 'up' | 'down' | 'neutral' = discoveryContext?.direction ?? 'neutral';
@@ -3284,6 +3288,12 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                 else if (negativeCatalystKeys.some(k => catalystKey.includes(k))) resolvedDirection = 'down';
                 else if (absMove >= DISCOVERY_FLAT_MOVE_PCT) resolvedDirection = signedMove > 0 ? 'up' : 'down';
             }
+
+            // Per-window tape direction (only meaningful moves count) for the corroboration gate.
+            const tapeDirOf = (m: number | null): 'up' | 'down' | null =>
+                m !== null && Math.abs(m) >= DISCOVERY_FLAT_MOVE_PCT ? (m > 0 ? 'up' : 'down') : null;
+            const oneDayDir = tapeDirOf(oneDayMovePct);
+            const fiveDayDir = tapeDirOf(fiveDayMovePct);
 
             let signalsGenerated = 0;
             // Captures which gauntlet stage rejected the ticker (null = a signal was emitted).
@@ -3313,10 +3323,21 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                 });
             }
 
-            // 4b. DISLOCATION GATE — don't burn the gauntlet on a nothing-burger. With no
-            // directional catalyst AND no real recent move, there's no mispricing to trade.
-            if (resolvedDirection === 'neutral' && absMove < DISCOVERY_FLAT_MOVE_PCT) {
-                console.log(`[Scanner] ${ticker} skipped at Dislocation gate: flat (${signedMove.toFixed(2)}%) and no directional catalyst.`);
+            // 4b. DISLOCATION + CORROBORATION GATE.
+            //  (a) No directional catalyst AND a flat tape → nothing to trade.
+            //  (b) The model claimed a direction the real tape clearly contradicts on BOTH
+            //      the 1-day and 5-day windows → a stale or fabricated dislocation; don't
+            //      trade fiction. Requires both windows meaningful to avoid false rejects
+            //      from intraday-vs-multiday windowing noise.
+            const tapeContradicts = discoveryContext != null
+                && resolvedDirection !== 'neutral'
+                && oneDayDir != null && fiveDayDir != null
+                && oneDayDir !== resolvedDirection && fiveDayDir !== resolvedDirection;
+            if ((resolvedDirection === 'neutral' && absMove < DISCOVERY_FLAT_MOVE_PCT) || tapeContradicts) {
+                const reason = tapeContradicts
+                    ? `Claimed a ${resolvedDirection}-move catalyst the price tape contradicts (1d ${oneDayMovePct?.toFixed(1)}%, 5d ${fiveDayMovePct?.toFixed(1)}%) — likely a stale or fabricated dislocation.`
+                    : 'No actionable dislocation — price is flat and no directional catalyst to exploit.';
+                console.log(`[Scanner] ${ticker} skipped at Dislocation gate: ${reason}`);
                 if (scanLog) {
                     await supabase.from('scan_logs').update({
                         status: 'completed', tickers_scanned: 1, events_detected: 1,
@@ -3327,8 +3348,8 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
                     success: true,
                     verdict: 'rejected' as const,
                     stage: 'Dislocation',
-                    reason: 'No actionable dislocation — price is flat and no directional catalyst to exploit.',
-                    summary: `${ticker}: no signal — no tradeable dislocation (flat price, no clear catalyst).`,
+                    reason,
+                    summary: `${ticker}: no signal — ${tapeContradicts ? 'price tape contradicts the claimed catalyst' : 'no tradeable dislocation (flat price, no clear catalyst)'}.`,
                     signalsGenerated: 0,
                 };
             }
