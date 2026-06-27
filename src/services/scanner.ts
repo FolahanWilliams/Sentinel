@@ -100,6 +100,8 @@ interface DiscoveredTicker {
     catalyst: string;
     direction: 'up' | 'down' | 'neutral';
     expectedMovePct: number | null;
+    /** Model's self-rated conviction (0-100) on the mispricing thesis; used to rank the pool. */
+    conviction: number;
 }
 let _discoveryCache: { result: DiscoveredTicker[]; expiresAt: number } | null = null;
 
@@ -3813,21 +3815,29 @@ If none of these tickers have earnings in the next 3 days, return: {"upcoming_ea
 
         console.log(`[Scanner] Discovering ${count} trending tickers via AI...`);
 
+        // Draw from a larger pool than we need, then keep only the highest-conviction setups.
+        // The downstream agents apply a strict moat/mean-reversion conviction gate (65%), so
+        // surfacing mediocre movers just wastes the gauntlet — we want pre-qualified quality.
+        const poolSize = Math.min(Math.max(count * 2, count + 3), 12);
+
         try {
             const { data: geminiRes, error: geminiErr } = await supabase.functions.invoke('proxy-gemini', {
                 body: {
-                    systemInstruction: `You are an elite market analyst for a quantitative trading desk. Today is ${new Date().toISOString().split('T')[0]}. The desk trades MISPRICED DISLOCATIONS — stocks where a specific, recent catalyst has driven a SHARP price move that the market has likely over- or under-reacted to. You are NOT looking for "quality stocks" or "stocks in the news"; you are hunting tradeable dislocations with a clear directional thesis. Each pick MUST have (a) a concrete catalyst in the last ~5 trading days, and (b) a meaningful recent price move (ideally ≥3%). Skip mega-caps drifting on no news. You may include both US and international equities (e.g. FRES.L, AAF.L, THX.V) — preserve exchange suffixes. No penny stocks, no OTC.`,
-                    prompt: `Identify the top ${count} stock tickers with the strongest MISPRICED DISLOCATION setups right now. For each, the catalyst must be specific and recent, and there must be a real price move to react to. To ensure diverse coverage, span different sectors. (Random seed for variance: ${Math.random()}).
+                    systemInstruction: `You are an elite market analyst for a quantitative trading desk. Today is ${new Date().toISOString().split('T')[0]}. The desk trades HIGH-CONVICTION MISPRICED DISLOCATIONS — a specific recent catalyst drove a sharp move that the market has clearly over- or under-reacted to, in a business whose fundamentals make the reaction look wrong. The downstream model is a Buffett/Lynch-style judge: it rewards durable franchises, healthy balance sheets, and an OBVIOUS asymmetric mean-reversion (or under-pricing) case, and it rejects value traps, structurally-impaired names, vague "macro/rotation" themes, and reactions that are actually justified. So do NOT surface every mover — surface only setups you would stake real conviction on. Each pick MUST have (a) a concrete catalyst in the last ~5 trading days, (b) a meaningful real price move (ideally ≥4%), (c) a quality, liquid business (skip penny stocks, OTC, and structurally-broken names), and (d) a clear, quantifiable reason the move OVERSHOOTS (down) or UNDER-PRICES (up) the actual fundamental impact. Both US and international equities welcome (e.g. FRES.L, AAF.L) — preserve exchange suffixes.`,
+                    prompt: `Survey the market and shortlist the ${poolSize} STRONGEST high-conviction mispriced-dislocation setups right now, then return them ranked best-first. Favor quality businesses where a sharp, specific, recent catalyst has clearly mispriced the stock and there is an obvious mean-reversion (down) or under-pricing (up) case. Span different sectors. Reject anything where the move looks justified, the business is structurally impaired, or the thesis is vague. (Random seed for variance: ${Math.random()}).
 
 For each ticker provide:
 - "ticker": symbol (preserve exchange suffix)
-- "reason": the specific catalyst AND why the price reaction may be mispriced (1-2 sentences, concrete facts)
-- "catalyst": short snake_case tag (e.g. earnings_miss, earnings_beat, fda_rejection, analyst_downgrade, guidance_cut, product_launch, sector_rotation)
+- "reason": the specific catalyst AND the concrete, quantified reason the reaction is mispriced — cite the fundamental that contradicts the move (1-2 sentences, hard facts, not vibes)
+- "catalyst": short snake_case tag (e.g. earnings_miss, earnings_beat, fda_rejection, analyst_downgrade, guidance_cut, product_launch, litigation_overhang)
 - "direction": "down" if the catalyst drove/should drive the price DOWN (overreaction buy-the-dip candidate), "up" if it drove/should drive it UP (under-priced bullish catalyst), or "neutral" if genuinely unclear
 - "price_move_pct": the approximate recent % move you observed (negative for a drop, positive for a rise; use 0 if you cannot estimate)
+- "conviction": YOUR honest 0-100 conviction that this is a genuine, tradeable mispricing a strict quality-focused judge would APPROVE (be discriminating — reserve 80+ for setups with a durable business and an unmistakable asymmetric case; most "interesting" movers are 50-65)
+
+Only include setups you rate ≥70 conviction; if fewer than ${poolSize} clear that bar, return fewer rather than padding with weak ideas.
 
 You MUST respond with ONLY a JSON object — no markdown, no commentary, no code fences. Use this exact format:
-{"tickers": [{"ticker": "NVDA", "reason": "Sold off 9% on a guidance cut the market is extrapolating too far", "catalyst": "guidance_cut", "direction": "down", "price_move_pct": -9}, {"ticker": "FRES.L", "reason": "Up 6% as the gold surge re-rates miners but estimates haven't caught up", "catalyst": "sector_rotation", "direction": "up", "price_move_pct": 6}]}`,
+{"tickers": [{"ticker": "NVDA", "reason": "Sold off 9% on a guidance cut, but the cut is one supply-constrained quarter while the order book and FCF are intact — the tape extrapolates a structural break that the fundamentals don't support", "catalyst": "guidance_cut", "direction": "down", "price_move_pct": -9, "conviction": 82}]}`,
                     requireGroundedSearch: true,
                     temperature: 0.8,
                     // responseSchema is intentionally omitted — incompatible with grounded search.
@@ -3872,7 +3882,7 @@ You MUST respond with ONLY a JSON object — no markdown, no commentary, no code
                 // Accept both { tickers: [...] } and bare array formats
                 const tickerArray = Array.isArray(parsed) ? parsed : (parsed.tickers || []);
 
-                const discovered: DiscoveredTicker[] = tickerArray.slice(0, count).map((t: any) => {
+                const discovered: DiscoveredTicker[] = tickerArray.slice(0, poolSize).map((t: any) => {
                     // Normalize the move magnitude; tolerate strings like "-9%" or "6".
                     const rawMove = typeof t.price_move_pct === 'number'
                         ? t.price_move_pct
@@ -3887,6 +3897,11 @@ You MUST respond with ONLY a JSON object — no markdown, no commentary, no code
                     if (direction === 'neutral' && expectedMovePct !== null) {
                         direction = expectedMovePct > 0 ? 'up' : 'down';
                     }
+                    // Self-rated conviction (0-100); default to a neutral 60 when the model omits it.
+                    const rawConv = typeof t.conviction === 'number'
+                        ? t.conviction
+                        : parseFloat(String(t.conviction ?? '').replace(/[^0-9.]/g, ''));
+                    const conviction = Number.isFinite(rawConv) ? Math.max(0, Math.min(100, rawConv)) : 60;
                     return {
                         // Preserve exchange suffixes like .L, .TO, .V, .DE — only strip truly invalid chars
                         ticker: (t.ticker || '').toUpperCase().replace(/[^A-Z0-9.]/g, ''),
@@ -3894,18 +3909,23 @@ You MUST respond with ONLY a JSON object — no markdown, no commentary, no code
                         catalyst: t.catalyst || 'other',
                         direction,
                         expectedMovePct,
+                        conviction,
                     };
                 }).filter((t: DiscoveredTicker) => {
                     const base = t.ticker.replace(/\.[A-Z]{1,3}$/, '');
                     return base.length >= 1 && base.length <= 5 && t.ticker.length <= 8;
-                });
+                })
+                    // Rank by the model's self-rated conviction so the scan spends its gauntlet
+                    // budget on the strongest setups first.
+                    .sort((a: DiscoveredTicker, b: DiscoveredTicker) => b.conviction - a.conviction);
 
-                console.log(`[Scanner] Discovered ${discovered.length} trending tickers:`, discovered.map((d: any) => `${d.ticker} (${d.catalyst})`).join(', '));
-                // Populate cache so subsequent calls within the TTL window skip this expensive grounded search
+                console.log(`[Scanner] Discovered ${discovered.length} candidates (pool ${poolSize}), top ${count} by conviction:`, discovered.slice(0, count).map((d: any) => `${d.ticker} (${d.catalyst}, conv ${d.conviction})`).join(', '));
+                // Cache the full ranked pool; callers slice to their requested count. Subsequent
+                // calls within the TTL window skip this expensive grounded search.
                 if (discovered.length > 0) {
                     _discoveryCache = { result: discovered, expiresAt: Date.now() + DISCOVERY_CACHE_TTL_MS };
                 }
-                return discovered;
+                return discovered.slice(0, count);
             }
 
             console.warn('[Scanner] Ticker discovery returned empty response (no text in AI reply)');
